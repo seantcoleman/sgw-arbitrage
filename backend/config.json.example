@@ -1,0 +1,16 @@
+{
+  "auth_info": {
+    "username": "your_sgw_username",
+    "password": "your_sgw_password"
+  },
+  "bid_sniper": {
+    "bid_snipe_time_delta": "30 seconds",
+    "refresh_seconds": 300,
+    "favorites_max_cache_seconds": 60,
+    "alert_time_deltas": ["5 minutes", "1 minute"]
+  },
+  "friend_list": [],
+  "logging": {
+    "log_level": 20
+  }
+}
