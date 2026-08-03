@@ -11,10 +11,18 @@ interface DealCardProps {
   onConfirmWatch: () => void;
 }
 
+function parseEndTime(endTime: string): Date {
+  // New records are stored as UTC (ends in "Z"); legacy records are Pacific
+  if (endTime.endsWith("Z") || endTime.includes("+")) {
+    return new Date(endTime);
+  }
+  // Pacific time fallback — append offset (PST/PDT approximation)
+  return new Date(endTime + "-08:00");
+}
+
 function timeUntil(endTime: string | null): string {
   if (!endTime) return "Unknown";
-  const end = new Date(endTime + " PST");
-  const diff = end.getTime() - Date.now();
+  const diff = parseEndTime(endTime).getTime() - Date.now();
   if (diff < 0) return "Ended";
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);

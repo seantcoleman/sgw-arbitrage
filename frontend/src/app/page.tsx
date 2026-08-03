@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addToWatchlist, Deal, getDeals } from "@/lib/api";
+import toast from "react-hot-toast";
+import { addToWatchlist, Deal, getDeals, getScanStatus } from "@/lib/api";
 import { DealCard } from "@/components/DealCard";
 
 export default function DealsPage() {
@@ -12,9 +13,11 @@ export default function DealsPage() {
   const [watchingId, setWatchingId] = useState<number | null>(null);
   const [maxBidInput, setMaxBidInput] = useState<Record<number, string>>({});
   const [error, setError] = useState("");
+  const [scanRunning, setScanRunning] = useState(false);
 
   const fetchDeals = async () => {
     setLoading(true);
+    setError("");
     try {
       const data = await getDeals({ min_profit: minProfit, min_margin: minMargin });
       setDeals(data.deals);
@@ -25,20 +28,45 @@ export default function DealsPage() {
     }
   };
 
-  useEffect(() => { fetchDeals(); }, [minProfit, minMargin]);
+  useEffect(() => {
+    fetchDeals();
+  }, [minProfit, minMargin]);
+
+  // Auto-refresh deals and scan status every 30s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const [, scan] = await Promise.all([
+        fetchDeals(),
+        getScanStatus().catch(() => ({ running: false })),
+      ]);
+      setScanRunning((scan as { running: boolean }).running);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [minProfit, minMargin]);
+
+  // Poll scan status independently
+  useEffect(() => {
+    const poll = async () => {
+      const scan = await getScanStatus().catch(() => ({ running: false }));
+      setScanRunning(scan.running);
+    };
+    poll();
+    const interval = setInterval(poll, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleWatch = async (deal: Deal) => {
     const maxBid = parseFloat(maxBidInput[deal.item_id] ?? "0");
     if (!maxBid || maxBid <= deal.current_bid) {
-      alert(`Max bid must be greater than current bid ($${deal.current_bid.toFixed(2)})`);
+      toast.error(`Max bid must be greater than current bid ($${deal.current_bid.toFixed(2)})`);
       return;
     }
     try {
       await addToWatchlist(deal.item_id, maxBid);
       setWatchingId(null);
-      alert(`Added to watchlist! Sniper will bid up to $${maxBid.toFixed(2)}`);
+      toast.success(`Added to watchlist! Sniper will bid up to $${maxBid.toFixed(2)}`);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Error adding to watchlist");
+      toast.error(e instanceof Error ? e.message : "Error adding to watchlist");
     }
   };
 
@@ -47,6 +75,13 @@ export default function DealsPage() {
 
   return (
     <div>
+      {scanRunning && (
+        <div className="flex items-center gap-2 bg-yellow-950 border border-yellow-800 text-yellow-300 rounded-xl px-4 py-2.5 mb-5 text-sm">
+          <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+          Scan in progress — deals will update automatically when it completes.
+        </div>
+      )}
+
       {/* Stats */}
       <div className="flex items-center justify-between mb-6">
         <div>

@@ -14,7 +14,9 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import db
 import ebay
@@ -184,7 +186,7 @@ class Scanner:
                 "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
                 "current_bid": current_bid,
                 "shipping_est": shipping,
-                "end_time": item.get("endTime"),
+                "end_time": self._to_utc(item.get("endTime")),
                 "seller_id": item.get("sellerId"),
                 "image_url": image_url,
                 "keyword": keyword,
@@ -195,6 +197,21 @@ class Scanner:
             deals += 1
 
         return {"scanned": scanned, "deals": deals, "item_ids": item_ids}
+
+    @staticmethod
+    def _to_utc(end_time_str: str | None) -> str | None:
+        """Convert SGW's Pacific-time end time string to UTC ISO format."""
+        if not end_time_str:
+            return None
+        try:
+            fmt = "%Y-%m-%dT%H:%M:%S"
+            if "." in end_time_str:
+                fmt += ".%f"
+            dt = datetime.strptime(end_time_str, fmt)
+            dt = dt.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+            return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            return end_time_str
 
     def _get_shipping(self, item_id: int) -> Optional[float]:
         try:

@@ -7,6 +7,7 @@ Register at: https://developer.ebay.com/
 
 import os
 import statistics
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from xml.etree import ElementTree as ET
 
@@ -76,6 +77,10 @@ def get_sold_prices(
         "sortOrder": "EndTimeSoonest",
         "paginationInput.entriesPerPage": str(max_results),
         "paginationInput.pageNumber": "1",
+        "itemFilter(4).name": "EndTimeFrom",
+        "itemFilter(4).value": (
+            datetime.now(timezone.utc) - timedelta(days=days_back)
+        ).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
     }
 
     try:

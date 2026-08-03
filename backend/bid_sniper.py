@@ -27,6 +27,7 @@ import parsedatetime
 from requests.exceptions import HTTPError
 from requests.models import Response
 
+import db
 import shopgoodwill
 
 
@@ -187,6 +188,10 @@ class BidSniper:
             except HTTPError as he:
                 self.logger.error(f"HTTPError placing bid on '{favorite['title']}' - {he}")
                 return None
+            try:
+                db.update_watchlist_status(item_id, "bid_placed")
+            except Exception as e:
+                self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
         self.logger.warning(f"{self.dry_run_msg}Placing bid on '{favorite['title']}' for {max_bid}")
         return None

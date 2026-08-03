@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { getSniperStatus, getWatchlist, removeFromWatchlist, startSniper, stopSniper, WatchlistItem } from "@/lib/api";
+
+function parseEndTime(endTime: string): Date {
+  if (endTime.endsWith("Z") || endTime.includes("+")) {
+    return new Date(endTime);
+  }
+  return new Date(endTime + "-08:00");
+}
 
 function countdown(endTime: string | null): string {
   if (!endTime) return "—";
-  const end = new Date(endTime + " PST");
-  const diff = end.getTime() - Date.now();
+  const diff = parseEndTime(endTime).getTime() - Date.now();
   if (diff < 0) return "Ended";
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
@@ -38,23 +45,33 @@ export default function WatchlistPage() {
       setSniperRunning(sniper.running);
     };
     load();
-    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    const tickInterval = setInterval(() => setTick(t => t + 1), 1000);
     const pollInterval = setInterval(load, 15000);
-    return () => { clearInterval(interval); clearInterval(pollInterval); };
+    return () => { clearInterval(tickInterval); clearInterval(pollInterval); };
   }, []);
+
+  // suppress unused-variable lint; tick drives countdown re-renders
+  void tick;
 
   const handleRemove = async (item_id: number) => {
     await removeFromWatchlist(item_id);
     setWatchlist(prev => prev.filter(i => i.item_id !== item_id));
+    toast.success("Removed from watchlist");
   };
 
   const handleSniper = async () => {
-    if (sniperRunning) {
-      await stopSniper();
-      setSniperRunning(false);
-    } else {
-      await startSniper();
-      setSniperRunning(true);
+    try {
+      if (sniperRunning) {
+        await stopSniper();
+        setSniperRunning(false);
+        toast("Sniper stopped");
+      } else {
+        await startSniper();
+        setSniperRunning(true);
+        toast.success("Sniper started — watching favorites for bids");
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to toggle sniper");
     }
   };
 

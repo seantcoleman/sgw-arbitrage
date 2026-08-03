@@ -10,8 +10,11 @@ import os
 import subprocess
 import sys
 import threading
+from contextlib import asynccontextmanager
 from typing import Optional
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -19,10 +22,45 @@ from pydantic import BaseModel
 import db
 import shopgoodwill
 
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SGW Arbitrage API", version="1.0.0")
+_sniper_process: Optional[subprocess.Popen] = None
+_scan_lock = threading.Lock()
+_scan_running = False
+_scheduler = BackgroundScheduler()
+
+
+def _schedule_scan(interval_minutes: int) -> None:
+    """(Re)schedule the recurring auto-scan job."""
+    _scheduler.remove_all_jobs()
+    if interval_minutes > 0:
+        _scheduler.add_job(
+            _run_scan,
+            "interval",
+            minutes=interval_minutes,
+            id="auto_scan",
+            replace_existing=True,
+        )
+        logger.info(f"Auto-scan scheduled every {interval_minutes} minutes")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    logger.info("Database initialized")
+    settings = db.get_settings()
+    interval = int(settings.get("scan_interval_minutes", 15))
+    _schedule_scan(interval)
+    _scheduler.start()
+    logger.info("Scheduler started")
+    yield
+    _scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="SGW Arbitrage API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,17 +69,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Global sniper process reference
-_sniper_process: Optional[subprocess.Popen] = None
-_scan_lock = threading.Lock()
-_scan_running = False
-
-
-@app.on_event("startup")
-def startup():
-    db.init_db()
-    logger.info("Database initialized")
 
 
 # ── Deals ──────────────────────────────────────────────────────────────────
@@ -78,7 +105,6 @@ def get_watchlist():
 
 @app.post("/watchlist")
 def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks):
-    # Find the deal in our DB
     deals = db.get_deals(limit=1000, status="active")
     deal = next((d for d in deals if d["item_id"] == req.item_id), None)
 
@@ -103,7 +129,6 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         "profit": deal["profit"],
     })
 
-    # Add to SGW favorites with max_bid in notes
     background_tasks.add_task(_add_sgw_favorite, req.item_id, req.max_bid)
 
     return {"success": True, "item_id": req.item_id, "max_bid": req.max_bid}
@@ -181,6 +206,35 @@ def _run_scan():
 
 # ── Bid Sniper ───────────────────────────────────────────────────────────────
 
+def _build_sniper_config() -> dict:
+    """Build sniper config from env vars + DB settings."""
+    settings = db.get_settings()
+    snipe_secs = int(settings.get("snipe_seconds_before", 30))
+
+    if os.getenv("SGW_ENCRYPTED_USERNAME"):
+        auth_info = {
+            "encrypted_username": os.getenv("SGW_ENCRYPTED_USERNAME"),
+            "encrypted_password": os.getenv("SGW_ENCRYPTED_PASSWORD"),
+        }
+    else:
+        auth_info = {
+            "username": os.getenv("SGW_USERNAME", ""),
+            "password": os.getenv("SGW_PASSWORD", ""),
+        }
+
+    return {
+        "auth_info": auth_info,
+        "bid_sniper": {
+            "bid_snipe_time_delta": f"{snipe_secs} seconds",
+            "refresh_seconds": 300,
+            "favorites_max_cache_seconds": 60,
+            "alert_time_deltas": ["5 minutes", "1 minute"],
+        },
+        "friend_list": [],
+        "logging": {"log_level": 20},
+    }
+
+
 @app.post("/sniper/start")
 def start_sniper():
     global _sniper_process
@@ -188,8 +242,10 @@ def start_sniper():
         return {"running": True, "message": "Sniper already running"}
 
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if not os.path.exists(config_path):
-        raise HTTPException(status_code=400, detail="config.json not found — see config.json.example")
+    config = _build_sniper_config()
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    logger.info("Wrote config.json from env/DB settings")
 
     _sniper_process = subprocess.Popen(
         [sys.executable, "bid_sniper.py", "--config", config_path],
@@ -232,6 +288,8 @@ class SettingsUpdateRequest(BaseModel):
 @app.put("/settings")
 def update_setting(req: SettingsUpdateRequest):
     db.update_setting(req.key, req.value)
+    if req.key == "scan_interval_minutes":
+        _schedule_scan(int(req.value))
     return {"success": True, "key": req.key, "value": req.value}
 
 
