@@ -271,11 +271,11 @@ export default function SettingsPage() {
           <div>
             <div className="text-sm font-medium text-zinc-200">Scan interval</div>
             <div className="text-xs text-zinc-600 mt-0.5">
-              The backend auto-scans every 30 minutes — new deals appear automatically
+              The backend auto-scans every 2 hours — new deals appear automatically
             </div>
           </div>
           <div className="flex items-center bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 gap-1.5">
-            <span className="text-sm text-zinc-400 font-medium">30</span>
+            <span className="text-sm text-zinc-400 font-medium">120</span>
             <span className="text-xs text-zinc-600">min</span>
           </div>
         </div>

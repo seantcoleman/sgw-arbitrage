@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     db.init_db()
     logger.info("Database initialized")
     settings = db.get_settings()
-    interval = 30  # fixed at 30 min to stay within eBay API limits
+    interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
     _scheduler.add_job(
         _check_bid_results,
