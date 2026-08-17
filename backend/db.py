@@ -63,6 +63,14 @@ def init_db():
                 ebay_median REAL,
                 profit      REAL,
                 sniper_status TEXT DEFAULT 'scheduled',
+                final_price REAL,
+                final_shipping REAL,
+                handling_price REAL,
+                tax         REAL,
+                order_id    INTEGER,
+                tracking_number TEXT,
+                shipper_name TEXT,
+                due_date    TEXT,
                 added_at    TEXT DEFAULT (datetime('now'))
             );
 
@@ -93,6 +101,20 @@ def init_db():
                 ('ebay_days_back', '90'),
                 ('scan_category_ids', '[]');
         """)
+        # Migrate existing DBs that predate final_price / final_shipping columns
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
+        for col, typedef in [
+            ("final_price",    "REAL"),
+            ("final_shipping", "REAL"),
+            ("handling_price", "REAL"),
+            ("tax",            "REAL"),
+            ("order_id",       "INTEGER"),
+            ("tracking_number","TEXT"),
+            ("shipper_name",   "TEXT"),
+            ("due_date",       "TEXT"),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typedef}")
 
 
 # ── Deals ──────────────────────────────────────────────────────────────────
@@ -181,6 +203,44 @@ def update_watchlist_status(item_id: int, status: str) -> None:
             "UPDATE watchlist SET sniper_status = ? WHERE item_id = ?",
             (status, item_id),
         )
+
+
+def update_watchlist_result(item_id: int, status: str, final_price: Optional[float], final_shipping: Optional[float]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE watchlist SET sniper_status = ?, final_price = ?, final_shipping = ? WHERE item_id = ?",
+            (status, final_price, final_shipping, item_id),
+        )
+
+
+def update_watchlist_order(
+    item_id: int,
+    status: str,
+    order_id: Optional[int] = None,
+    final_price: Optional[float] = None,
+    final_shipping: Optional[float] = None,
+    handling_price: Optional[float] = None,
+    tax: Optional[float] = None,
+    tracking_number: Optional[str] = None,
+    shipper_name: Optional[str] = None,
+    due_date: Optional[str] = None,
+) -> None:
+    with get_conn() as conn:
+        conn.execute("""
+            UPDATE watchlist SET
+                sniper_status   = ?,
+                order_id        = COALESCE(?, order_id),
+                final_price     = COALESCE(?, final_price),
+                final_shipping  = COALESCE(?, final_shipping),
+                handling_price  = COALESCE(?, handling_price),
+                tax             = COALESCE(?, tax),
+                tracking_number = COALESCE(?, tracking_number),
+                shipper_name    = COALESCE(?, shipper_name),
+                due_date        = COALESCE(?, due_date)
+            WHERE item_id = ?
+        """, (status, order_id, final_price, final_shipping,
+              handling_price, tax, tracking_number, shipper_name,
+              due_date, item_id))
 
 
 # ── Settings ────────────────────────────────────────────────────────────────

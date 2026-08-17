@@ -94,6 +94,14 @@ export interface WatchlistItem {
   ebay_median: number | null;
   profit: number | null;
   sniper_status: string;
+  final_price: number | null;
+  final_shipping: number | null;
+  handling_price: number | null;
+  tax: number | null;
+  order_id: number | null;
+  tracking_number: string | null;
+  shipper_name: string | null;
+  due_date: string | null;
   added_at: string;
 }
 

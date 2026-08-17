@@ -23,19 +23,22 @@ function countdown(endTime: string | null): { label: string; urgency: "normal" |
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  scheduled:  "Ready to snipe",
-  bid_placed: "Bid placed",
-  won:        "Won",
-  lost:       "Lost",
-  error:      "Error",
+  scheduled:          "Ready to snipe",
+  bid_placed:         "Bid placed",
+  won:                "Won",
+  awaiting_payment:   "Pay now",
+  shipped:            "Shipped",
+  lost:               "Lost",
+  error:              "Error",
 };
-
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
-  scheduled:  { bg: "bg-blue-950/40",    text: "text-blue-300",    dot: "bg-blue-500 animate-pulse" },
-  bid_placed: { bg: "bg-green-950/40",   text: "text-green-300",   dot: "bg-green-500" },
-  won:        { bg: "bg-emerald-950/40", text: "text-emerald-300", dot: "bg-emerald-400" },
-  lost:       { bg: "bg-zinc-800/40",    text: "text-zinc-500",    dot: "bg-zinc-600" },
-  error:      { bg: "bg-red-950/40",     text: "text-red-400",     dot: "bg-red-500" },
+  scheduled:        { bg: "bg-blue-950/40",    text: "text-blue-300",    dot: "bg-blue-500 animate-pulse" },
+  bid_placed:       { bg: "bg-amber-950/40",   text: "text-amber-300",   dot: "bg-amber-500 animate-pulse" },
+  won:              { bg: "bg-emerald-950/40", text: "text-emerald-300", dot: "bg-emerald-400" },
+  awaiting_payment: { bg: "bg-yellow-950/40",  text: "text-yellow-300",  dot: "bg-yellow-400 animate-pulse" },
+  shipped:          { bg: "bg-sky-950/40",     text: "text-sky-300",     dot: "bg-sky-400" },
+  lost:             { bg: "bg-zinc-800/40",    text: "text-zinc-500",    dot: "bg-zinc-600" },
+  error:            { bg: "bg-red-950/40",     text: "text-red-400",     dot: "bg-red-500" },
 };
 
 export default function WatchlistPage() {
@@ -174,17 +177,93 @@ export default function WatchlistPage() {
                   >
                     {item.title}
                   </a>
-                  <div className="flex items-center gap-3 mt-1.5 text-xs">
-                    <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-zinc-500">Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span></span>
-                    {item.profit && (
-                      <>
-                        <span className="text-zinc-700">·</span>
-                        <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
-                      </>
-                    )}
-                  </div>
+
+                  {/* Won result — show final price instead of live prices */}
+                  {item.sniper_status === "awaiting_payment" ? (
+                    <div className="mt-1.5 text-xs space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-yellow-400 font-semibold">
+                          Won · ${item.final_price?.toFixed(2) ?? "—"}
+                        </span>
+                        <span className="text-zinc-600">+ shipping/tax at checkout</span>
+                        {item.due_date && (
+                          <>
+                            <span className="text-zinc-700">·</span>
+                            <span className="text-red-400">Pay by {new Date(item.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                          </>
+                        )}
+                      </div>
+                      <a
+                        href="https://shopgoodwill.com/shopgoodwill/open-orders"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-yellow-400 hover:text-yellow-300 font-medium"
+                      >
+                        Pay on ShopGoodwill →
+                      </a>
+                    </div>
+                  ) : item.sniper_status === "shipped" ? (
+                    <div className="mt-1.5 text-xs space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap text-zinc-400">
+                        {item.final_price != null && (
+                          <span>
+                            ${item.final_price.toFixed(2)}
+                            {item.final_shipping ? ` + $${item.final_shipping.toFixed(2)} ship` : ""}
+                            {item.handling_price ? ` + $${item.handling_price.toFixed(2)} handling` : ""}
+                            {item.tax ? ` + $${item.tax.toFixed(2)} tax` : ""}
+                            {" = "}
+                            <span className="text-zinc-200 font-semibold">
+                              ${((item.final_price ?? 0) + (item.final_shipping ?? 0) + (item.handling_price ?? 0) + (item.tax ?? 0)).toFixed(2)} total
+                            </span>
+                          </span>
+                        )}
+                        {item.ebay_median != null && item.final_price != null && (() => {
+                          const profit = item.ebay_median - (item.final_price ?? 0) - (item.final_shipping ?? 0) - (item.handling_price ?? 0) - (item.tax ?? 0);
+                          return (
+                            <>
+                              <span className="text-zinc-700">·</span>
+                              <span className={profit > 0 ? "text-green-400" : "text-red-400"}>
+                                {profit > 0 ? "+" : ""}${profit.toFixed(0)} profit
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      {item.tracking_number && (
+                        <a
+                          href={`https://www.google.com/search?q=${encodeURIComponent((item.shipper_name ?? "") + " tracking " + item.tracking_number)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-medium"
+                        >
+                          {item.shipper_name ?? "Carrier"} #{item.tracking_number} →
+                        </a>
+                      )}
+                    </div>
+                  ) : item.sniper_status === "won" && item.final_price != null ? (
+                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                      <span className="text-emerald-400 font-semibold">
+                        Won · ${item.final_price.toFixed(2)}
+                      </span>
+                      <span className="text-zinc-600 text-[10px]">Syncing order details…</span>
+                    </div>
+                  ) : item.sniper_status === "lost" ? (
+                    <div className="mt-1.5 text-xs text-zinc-600">
+                      Outbid — max was ${item.max_bid.toFixed(2)}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                      <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
+                      <span className="text-zinc-700">·</span>
+                      <span className="text-zinc-500">Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span></span>
+                      {item.profit && (
+                        <>
+                          <span className="text-zinc-700">·</span>
+                          <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Countdown */}

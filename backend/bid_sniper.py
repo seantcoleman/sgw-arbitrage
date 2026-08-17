@@ -193,8 +193,70 @@ class BidSniper:
             except Exception as e:
                 self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
+            # Schedule a win/loss check 2 minutes after auction end
+            end_time_str = favorite.get("endTime", "")
+            if end_time_str:
+                try:
+                    date_format = self.date_format
+                    if "." in end_time_str:
+                        date_format += ".%f"
+                    end_dt = (
+                        datetime.datetime.strptime(end_time_str, date_format)
+                        .replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+                        .astimezone(ZoneInfo("Etc/UTC"))
+                    )
+                    check_dt = end_dt + datetime.timedelta(minutes=2)
+                    self.event_loop.create_task(
+                        self.schedule_task(
+                            self.check_win(item_id, favorite["title"]),
+                            check_dt,
+                            [self.task_err_handler],
+                        )
+                    ).add_done_callback(self.task_err_handler)
+                except Exception as e:
+                    self.logger.error(f"Could not schedule win check for {item_id}: {e}")
+
         self.logger.warning(f"{self.dry_run_msg}Placing bid on '{favorite['title']}' for {max_bid}")
         return None
+
+    async def check_win(self, item_id: int) -> None:
+        """Check SGW ~2 min after auction end to see if we won."""
+        try:
+            username = self.config["auth_info"].get("username", "")
+            info = self.shopgoodwill_client.get_item_info(item_id)
+
+            # Final hammer price
+            final_price = None
+            final_shipping = None
+            try:
+                final_price = float(info.get("currentPrice", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            try:
+                final_shipping = float(info.get("shippingPrice", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+
+            # Determine winner from bid history
+            bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
+            winner = bid_summary[0]["bidderName"] if bid_summary else None
+            won = winner and winner.lower() == username.lower()
+
+            status = "won" if won else "lost"
+            db.update_watchlist_result(item_id, status, final_price, final_shipping)
+
+            if won:
+                self.logger.warning(
+                    f"WON '{info.get('title', item_id)}' — "
+                    f"final ${final_price:.2f} + ${final_shipping:.2f} shipping"
+                )
+            else:
+                self.logger.info(
+                    f"Lost '{info.get('title', item_id)}' — "
+                    f"winner: {winner or 'unknown'}"
+                )
+        except Exception as e:
+            self.logger.error(f"Win check failed for item {item_id}: {e}")
 
     def start(self) -> None:
         self.event_loop.create_task(self.main_loop())

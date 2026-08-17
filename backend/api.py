@@ -61,11 +61,20 @@ async def lifespan(app: FastAPI):
     settings = db.get_settings()
     interval = int(settings.get("scan_interval_minutes", 15))
     _schedule_scan(interval)
+    _scheduler.add_job(
+        _check_bid_results,
+        "interval",
+        minutes=3,
+        id="bid_result_check",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("Scheduler started")
     # Auto-start sniper and keep it alive
     _ensure_sniper_running()
     _start_sniper_watchdog()
+    # Run an immediate win-check sweep on startup
+    threading.Thread(target=_check_bid_results, daemon=True, name="bid-result-startup").start()
     yield
     _scheduler.shutdown(wait=False)
     if _sniper_process and _sniper_process.poll() is None:
@@ -256,6 +265,108 @@ def _sgw_to_utc(end_time_str: Optional[str]) -> Optional[str]:
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         return end_time_str
+
+
+def _check_bid_results() -> None:
+    """
+    Single sweep that handles two jobs:
+    1. Resolve bid_placed items → won/lost using SGW item detail
+    2. Sync won items → awaiting_payment / shipped using order APIs
+    """
+    watchlist = db.get_watchlist()
+    pending_bid = [w for w in watchlist if w.get("sniper_status") == "bid_placed"]
+    won_items   = [w for w in watchlist if w.get("sniper_status") in ("won", "awaiting_payment")]
+
+    if not pending_bid and not won_items:
+        return
+
+    try:
+        sgw = _get_sgw_client()
+    except Exception as e:
+        logger.error(f"Win-check: could not create SGW client: {e}")
+        return
+
+    username = os.getenv("SGW_USERNAME", "").lower()
+
+    # ── Step 1: resolve bid_placed → won / lost ──────────────────────────────
+    if pending_bid:
+        logger.info(f"Win-check sweep: {len(pending_bid)} item(s) with bid_placed status")
+    for item in pending_bid:
+        item_id = item["item_id"]
+        try:
+            info = sgw.get_item_info(item_id)
+            try:
+                final_price = float(info.get("currentPrice") or 0)
+            except (TypeError, ValueError):
+                final_price = None
+            try:
+                final_shipping = float(info.get("shippingPrice") or 0)
+            except (TypeError, ValueError):
+                final_shipping = None
+            bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
+            winner = bid_summary[0]["bidderName"].lower() if bid_summary else None
+
+            end_time_str = item.get("end_time")
+            if end_time_str:
+                try:
+                    end_dt = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                    if end_dt > datetime.now(timezone.utc):
+                        continue  # not ended yet
+                except Exception:
+                    pass
+
+            if not winner and not info.get("isClosed"):
+                continue
+
+            won = bool(winner and winner == username)
+            status = "won" if won else "lost"
+            db.update_watchlist_result(item_id, status, final_price, final_shipping)
+            if won:
+                logger.warning(f"WIN confirmed: '{item.get('title', item_id)}' — ${final_price:.2f}")
+            else:
+                logger.info(f"Lost: '{item.get('title', item_id)}' — winner: {winner or 'unknown'}")
+        except Exception as e:
+            logger.error(f"Win-check failed for item {item_id}: {e}")
+
+    # ── Step 2: sync won items against open/shipped orders ───────────────────
+    if not won_items:
+        return
+    try:
+        open_orders    = {int(o["itemId"]): o for o in sgw.get_open_orders()}
+        shipped_orders = {int(o["itemId"]): o for o in sgw.get_shipped_orders()}
+    except Exception as e:
+        logger.error(f"Order sync failed: {e}")
+        return
+
+    for item in won_items:
+        item_id = item["item_id"]
+        try:
+            if item_id in shipped_orders:
+                o = shipped_orders[item_id]
+                db.update_watchlist_order(
+                    item_id,
+                    status="shipped",
+                    order_id=o.get("orderId"),
+                    final_price=o.get("price"),
+                    final_shipping=o.get("shippingPrice"),
+                    handling_price=o.get("handlingPrice"),
+                    tax=o.get("tax"),
+                    tracking_number=o.get("trackingNumber") or None,
+                    shipper_name=o.get("shipperName") or None,
+                )
+                logger.info(f"Order shipped: '{item.get('title', item_id)}' — tracking {o.get('trackingNumber')}")
+            elif item_id in open_orders:
+                o = open_orders[item_id]
+                db.update_watchlist_order(
+                    item_id,
+                    status="awaiting_payment",
+                    order_id=o.get("orderId"),
+                    final_price=o.get("price"),
+                    due_date=o.get("pastDueEndDate"),
+                )
+                logger.info(f"Open order: '{item.get('title', item_id)}' — pay by {o.get('pastDueEndDate', '')[:10]}")
+        except Exception as e:
+            logger.error(f"Order sync failed for item {item_id}: {e}")
 
 
 def _get_sgw_client() -> shopgoodwill.Shopgoodwill:

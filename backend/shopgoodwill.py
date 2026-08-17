@@ -230,6 +230,30 @@ class Shopgoodwill:
             f"{Shopgoodwill.API_ROOT}/itemBid/ShowBidModal", params={"itemId": item_id}
         ).json()
 
+    @requires_auth
+    def get_open_orders(self) -> List[Dict]:
+        """Return unpaid won items from the buyer's Open Orders page."""
+        res = self.shopgoodwill_session.get(
+            f"{Shopgoodwill.API_ROOT}/OpenOrders/GetOpenOrders"
+        )
+        data = res.json()
+        return data.get("data", {}).get("orderItems", []) or []
+
+    @requires_auth
+    def get_shipped_orders(self) -> List[Dict]:
+        """Return paid/shipped orders, grouped by order ID."""
+        res = self.shopgoodwill_session.get(
+            f"{Shopgoodwill.API_ROOT}/ShippedOrders/GetAll"
+        )
+        data = res.json()
+        groups = data.get("data", {}).get("details", []) or []
+        # Flatten groups into a single list of order items
+        items = []
+        for group in groups:
+            for item in group.get("orderItems", []):
+                items.append(item)
+        return items
+
     def get_query_results(self, query_json: Dict, page_size: Optional[int] = 40) -> List[Dict]:
         """
         Search SGW using the Azure-backed ItemListingData endpoint (GET).
