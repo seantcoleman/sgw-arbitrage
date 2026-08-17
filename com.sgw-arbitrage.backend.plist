@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sgw-arbitrage.backend</string>
+
+    <!--
+        Credentials are loaded from backend/.env by start-backend.sh
+        Do NOT add secrets directly to this file.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/seancoleman/Desktop/Coding/sgw-arbitrage/start-backend.sh</string>
+    </array>
+
+    <!-- Restart automatically if it crashes -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Wait 10s before restarting after a crash -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/seancoleman/Library/Logs/sgw-arbitrage/backend.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/seancoleman/Library/Logs/sgw-arbitrage/backend-error.log</string>
+</dict>
+</plist>

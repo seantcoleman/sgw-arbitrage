@@ -7,7 +7,7 @@ import base64
 import datetime
 import re
 import urllib.parse
-from copy import deepcopy
+from copy import deepcopy  # kept for any external callers
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -178,6 +178,48 @@ class Shopgoodwill:
             f"{Shopgoodwill.API_ROOT}/ItemBid/PlaceBid", json=bid_json
         ).json()
 
+    def get_categories(self) -> List[Dict]:
+        """Fetch top-level SGW categories. Returns list of {id, name}."""
+        try:
+            res = self.shopgoodwill_session.get(
+                f"{Shopgoodwill.API_ROOT}/Category/GetAllCategories"
+            )
+            data = res.json()
+            categories = data if isinstance(data, list) else data.get("data", [])
+            return [
+                {"id": int(c.get("categoryId", c.get("id", 0))),
+                 "name": c.get("categoryName", c.get("name", ""))}
+                for c in categories if c.get("categoryId") or c.get("id")
+            ]
+        except Exception:
+            # Fallback: well-known SGW category IDs
+            return [
+                {"id": 1,  "name": "Antiques"},
+                {"id": 2,  "name": "Art"},
+                {"id": 3,  "name": "Books / Movies / Music"},
+                {"id": 4,  "name": "Business & Industrial"},
+                {"id": 5,  "name": "Cameras & Photo"},
+                {"id": 6,  "name": "Cell Phones & Accessories"},
+                {"id": 7,  "name": "Clothing, Shoes & Accessories"},
+                {"id": 8,  "name": "Coins & Currency"},
+                {"id": 9,  "name": "Collectibles"},
+                {"id": 10, "name": "Computers & Tablets"},
+                {"id": 11, "name": "Consumer Electronics"},
+                {"id": 12, "name": "Crafts"},
+                {"id": 13, "name": "Dolls & Bears"},
+                {"id": 14, "name": "DVDs & Movies"},
+                {"id": 15, "name": "Home & Garden"},
+                {"id": 16, "name": "Jewelry & Watches"},
+                {"id": 17, "name": "Musical Instruments"},
+                {"id": 18, "name": "Office Equipment"},
+                {"id": 19, "name": "Pottery & Glass"},
+                {"id": 20, "name": "Sporting Goods"},
+                {"id": 21, "name": "Stamps"},
+                {"id": 22, "name": "Toys & Hobbies"},
+                {"id": 23, "name": "Video Games & Consoles"},
+                {"id": 24, "name": "Everything Else"},
+            ]
+
     def get_item_info(self, item_id: int) -> Dict:
         return self.shopgoodwill_session.get(
             f"{Shopgoodwill.API_ROOT}/itemDetail/GetItemDetailModelByItemId/{item_id}"
@@ -189,26 +231,36 @@ class Shopgoodwill:
         ).json()
 
     def get_query_results(self, query_json: Dict, page_size: Optional[int] = 40) -> List[Dict]:
-        tmp_query_json = deepcopy(query_json)
-        tmp_query_json["page"] = 1
-        tmp_query_json["pageSize"] = page_size
-        total_listings = list()
-        tmp_query_json["searchText"] = tmp_query_json["searchText"].replace('"', "")
+        """
+        Search SGW using the Azure-backed ItemListingData endpoint (GET).
+        The API caps results at ~80 items across pages; page_size is always 40 on the server side.
+        """
+        search_text = urllib.parse.quote(query_json.get("searchText", "").replace('"', ""))
+        total_listings: List[Dict] = []
+        page = 1
+        max_pages = 3  # safety cap; SGW caps at ~80 items (2 full pages)
 
-        while True:
-            query_res = self.shopgoodwill_session.post(
-                Shopgoodwill.API_ROOT + "/Search/ItemListing", json=tmp_query_json
+        while page <= max_pages:
+            url = (
+                f"{Shopgoodwill.API_ROOT}/Search/ItemListingData"
+                f"?pn=0&cl=0&cids=&scids=&p={page}&sc=1&sd=false&cid=0&sg=&st={search_text}"
             )
-            page_listings = query_res.json()["searchResults"]["items"]
-            if query_res.json().get("categoryListModel", None) is None:
-                raise Exception("Error response from query endpoint")
+            query_res = self.shopgoodwill_session.get(url)
+            data = query_res.json()
+            search_results = data.get("searchResults", {})
+            if not isinstance(search_results, dict):
+                raise Exception("Unexpected response from ItemListingData")
+            page_listings = search_results.get("items") or []
             if not page_listings:
-                return total_listings
-            else:
-                tmp_query_json["page"] += 1
-                total_listings += page_listings
-            if len(total_listings) == query_res.json()["searchResults"]["itemCount"]:
-                return total_listings
+                break
+            total_listings += page_listings
+            # Stop if we've fetched all available items
+            item_count = search_results.get("itemCount") or 0
+            if len(total_listings) >= item_count or len(page_listings) < 40:
+                break
+            page += 1
+
+        return total_listings
 
     def get_item_shipping_estimate(self, item_id: int, zip_code: str) -> Optional[float]:
         resp = self.shopgoodwill_session.post(

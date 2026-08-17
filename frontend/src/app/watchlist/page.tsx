@@ -1,39 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { getSniperStatus, getWatchlist, removeFromWatchlist, startSniper, stopSniper, WatchlistItem } from "@/lib/api";
+import { getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
 function parseEndTime(endTime: string): Date {
-  if (endTime.endsWith("Z") || endTime.includes("+")) {
-    return new Date(endTime);
-  }
-  return new Date(endTime + "-08:00");
+  if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
+  const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
+  return new Date(endTime + (isDST ? "-07:00" : "-08:00"));
 }
 
-function countdown(endTime: string | null): string {
-  if (!endTime) return "—";
+function countdown(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
+  if (!endTime) return { label: "—", urgency: "normal" };
   const diff = parseEndTime(endTime).getTime() - Date.now();
-  if (diff < 0) return "Ended";
+  if (diff < 0) return { label: "Ended", urgency: "urgent" };
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   const s = Math.floor((diff % 60000) / 1000);
-  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  return `${h}h ${m}m ${s}s`;
+  const urgency = h >= 2 ? "normal" : h >= 1 ? "soon" : "urgent";
+  if (h > 24) return { label: `${Math.floor(h / 24)}d ${h % 24}h`, urgency: "normal" };
+  return { label: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`, urgency };
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  scheduled: "bg-blue-900 text-blue-300",
-  bid_placed: "bg-emerald-900 text-emerald-300",
-  won: "bg-green-900 text-green-300",
-  lost: "bg-zinc-800 text-zinc-400",
-  error: "bg-red-900 text-red-300",
+const STATUS_LABEL: Record<string, string> = {
+  scheduled:  "Ready to snipe",
+  bid_placed: "Bid placed",
+  won:        "Won",
+  lost:       "Lost",
+  error:      "Error",
+};
+
+const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
+  scheduled:  { bg: "bg-blue-950/40",    text: "text-blue-300",    dot: "bg-blue-500 animate-pulse" },
+  bid_placed: { bg: "bg-green-950/40",   text: "text-green-300",   dot: "bg-green-500" },
+  won:        { bg: "bg-emerald-950/40", text: "text-emerald-300", dot: "bg-emerald-400" },
+  lost:       { bg: "bg-zinc-800/40",    text: "text-zinc-500",    dot: "bg-zinc-600" },
+  error:      { bg: "bg-red-950/40",     text: "text-red-400",     dot: "bg-red-500" },
 };
 
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [sniperRunning, setSniperRunning] = useState(false);
   const [tick, setTick] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState<SniperLogEntry[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const logBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -43,6 +55,7 @@ export default function WatchlistPage() {
       ]);
       setWatchlist(wl.watchlist);
       setSniperRunning(sniper.running);
+      setLoading(false);
     };
     load();
     const tickInterval = setInterval(() => setTick(t => t + 1), 1000);
@@ -50,116 +63,198 @@ export default function WatchlistPage() {
     return () => { clearInterval(tickInterval); clearInterval(pollInterval); };
   }, []);
 
-  // suppress unused-variable lint; tick drives countdown re-renders
+  useEffect(() => {
+    if (!showLogs) return;
+    const fetchLogs = async () => {
+      const data = await getSniperLogs(200).catch(() => ({ logs: [] }));
+      setLogs(data.logs);
+      setTimeout(() => logBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    };
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 3000);
+    return () => clearInterval(interval);
+  }, [showLogs]);
+
   void tick;
 
   const handleRemove = async (item_id: number) => {
     await removeFromWatchlist(item_id);
     setWatchlist(prev => prev.filter(i => i.item_id !== item_id));
-    toast.success("Removed from watchlist");
+    toast("Removed from sniper queue");
   };
 
-  const handleSniper = async () => {
-    try {
-      if (sniperRunning) {
-        await stopSniper();
-        setSniperRunning(false);
-        toast("Sniper stopped");
-      } else {
-        await startSniper();
-        setSniperRunning(true);
-        toast.success("Sniper started — watching favorites for bids");
-      }
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to toggle sniper");
-    }
-  };
+  const activeItems = watchlist.filter(i => i.sniper_status === "scheduled" || i.sniper_status === "bid_placed");
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold">Watchlist</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">{watchlist.length} items queued for sniping</p>
+          <h1 className="text-3xl font-black text-white tracking-tight">Watchlist</h1>
+          <p className="text-zinc-500 text-sm mt-1">
+            {watchlist.length} item{watchlist.length !== 1 ? "s" : ""} — sniper bids 30s before each auction ends
+          </p>
         </div>
-        <button
-          onClick={handleSniper}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            sniperRunning
-              ? "bg-red-900 hover:bg-red-800 text-red-200 border border-red-700"
-              : "bg-emerald-800 hover:bg-emerald-700 text-emerald-200 border border-emerald-600"
-          }`}
-        >
-          <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-red-400 animate-pulse" : "bg-emerald-500"}`} />
-          {sniperRunning ? "Stop Sniper" : "Start Sniper"}
-        </button>
+        {/* Sniper status indicator — no manual button needed */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+          sniperRunning
+            ? "bg-green-950/40 border-green-800/50 text-green-400"
+            : "bg-red-950/40 border-red-800/50 text-red-400"
+        }`}>
+          <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+          Sniper {sniperRunning ? "active" : "offline"}
+        </div>
       </div>
 
-      {watchlist.length === 0 ? (
-        <div className="text-center py-24 text-zinc-600">
-          <div className="text-5xl mb-4">🎯</div>
-          <div className="text-lg font-medium">No items in watchlist</div>
-          <div className="text-sm mt-2">Go to the Deals feed and click "+ Add to Sniper" on an item</div>
+      {/* Warning if sniper is offline but has active items */}
+      {!sniperRunning && activeItems.length > 0 && (
+        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 rounded-xl px-4 py-3 mb-5 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            Sniper is offline — the backend may have restarted. Your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} will not be bid on until it reconnects.
+            Restart the backend server to restore the sniper.
+          </span>
         </div>
-      ) : (
+      )}
+
+      {loading ? (
         <div className="space-y-3">
-          {watchlist.map(item => (
-            <div
-              key={item.item_id}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4"
-            >
-              {item.image_url && (
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <a
-                  href={item.sgw_url ?? "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-sm text-zinc-100 hover:text-white line-clamp-1"
-                >
-                  {item.title}
-                </a>
-                <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
-                  <span>Current: ${item.current_bid?.toFixed(2) ?? "—"}</span>
-                  <span>eBay: ${item.ebay_median?.toFixed(2) ?? "—"}</span>
-                  {item.profit && <span className="text-emerald-400">+${item.profit.toFixed(2)} est.</span>}
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 animate-pulse">
+              <div className="flex gap-4">
+                <div className="w-16 h-16 bg-zinc-800 rounded-xl flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-zinc-800 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-800 rounded w-1/3" />
                 </div>
               </div>
-
-              {/* Countdown */}
-              <div className="text-center flex-shrink-0">
-                <div className="text-sm font-mono font-bold text-zinc-200">{countdown(item.end_time)}</div>
-                <div className="text-xs text-zinc-600 mt-0.5">remaining</div>
-              </div>
-
-              {/* Max bid */}
-              <div className="text-center flex-shrink-0">
-                <div className="text-sm font-bold text-emerald-400">${item.max_bid.toFixed(2)}</div>
-                <div className="text-xs text-zinc-600 mt-0.5">max bid</div>
-              </div>
-
-              {/* Status */}
-              <span className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[item.sniper_status] ?? STATUS_COLORS.scheduled}`}>
-                {item.sniper_status}
-              </span>
-
-              {/* Remove */}
-              <button
-                onClick={() => handleRemove(item.item_id)}
-                className="text-zinc-600 hover:text-zinc-400 transition-colors flex-shrink-0"
-                title="Remove from watchlist"
-              >
-                ✕
-              </button>
             </div>
           ))}
         </div>
+      ) : watchlist.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-40 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
+            <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+          <h2 className="text-base font-semibold text-zinc-300 mb-1">No items queued</h2>
+          <p className="text-sm text-zinc-600 max-w-xs">
+            Go to Deals or Favorites and click "+ Add to Sniper" on any auction you want to bid on.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {watchlist.map(item => {
+            const { label: timeLabel, urgency } = countdown(item.end_time);
+            const status = STATUS_STYLE[item.sniper_status] ?? STATUS_STYLE.scheduled;
+            const statusLabel = STATUS_LABEL[item.sniper_status] ?? item.sniper_status;
+            const timeColor = { urgent: "text-red-400", soon: "text-amber-400", normal: "text-zinc-200" }[urgency];
+
+            return (
+              <div
+                key={item.item_id}
+                className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-4 flex items-center gap-4 transition-colors"
+              >
+                {item.image_url ? (
+                  <img src={item.image_url} alt={item.title} className="w-16 h-16 object-cover rounded-xl flex-shrink-0" />
+                ) : (
+                  <div className="w-16 h-16 bg-zinc-800 rounded-xl flex items-center justify-center flex-shrink-0 opacity-30 text-2xl">📦</div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <a
+                    href={item.sgw_url ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-sm text-zinc-100 hover:text-white line-clamp-1 block"
+                  >
+                    {item.title}
+                  </a>
+                  <div className="flex items-center gap-3 mt-1.5 text-xs">
+                    <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
+                    <span className="text-zinc-700">·</span>
+                    <span className="text-zinc-500">Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span></span>
+                    {item.profit && (
+                      <>
+                        <span className="text-zinc-700">·</span>
+                        <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Countdown */}
+                <div className="text-center flex-shrink-0">
+                  <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-0.5">Ends in</div>
+                  <div className={`text-base font-mono font-bold ${timeColor}`}>{timeLabel}</div>
+                </div>
+
+                {/* Status */}
+                <div className={`hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full flex-shrink-0 border border-transparent ${status.bg} ${status.text}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
+                  {statusLabel}
+                </div>
+
+                <button
+                  onClick={() => handleRemove(item.item_id)}
+                  className="text-zinc-700 hover:text-zinc-400 hover:bg-zinc-800 w-7 h-7 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 text-sm"
+                  title="Remove from sniper"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
+
+      {/* Sniper activity log */}
+      <div className="mt-8">
+        <button
+          onClick={() => setShowLogs(v => !v)}
+          className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors font-medium"
+        >
+          <svg
+            className={`w-3.5 h-3.5 transition-transform ${showLogs ? "rotate-90" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {showLogs ? "Hide" : "Show"} sniper activity log
+        </button>
+
+        {showLogs && (
+          <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Sniper Log</span>
+              <span className="text-[10px] text-zinc-600">live · last 200 lines</span>
+            </div>
+            <div className="h-72 overflow-y-auto p-3 font-mono text-xs space-y-0.5">
+              {logs.length === 0 ? (
+                <p className="text-zinc-600 text-center py-8">No log entries yet — sniper will write here when it checks favorites or places a bid.</p>
+              ) : (
+                logs.map((entry, i) => {
+                  const isError = /error|exception|failed/i.test(entry.line);
+                  const isBid = /placing bid|bid placed/i.test(entry.line);
+                  const isWarn = /warning/i.test(entry.line);
+                  const color = isError ? "text-red-400" : isBid ? "text-green-400" : isWarn ? "text-amber-400" : "text-zinc-500";
+                  return (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-zinc-700 flex-shrink-0">{entry.ts}</span>
+                      <span className={color}>{entry.line}</span>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={logBottomRef} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

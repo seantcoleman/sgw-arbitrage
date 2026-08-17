@@ -90,7 +90,8 @@ def init_db():
                 ('scan_interval_minutes', '15'),
                 ('snipe_seconds_before', '30'),
                 ('your_zip_code', '90210'),
-                ('ebay_days_back', '90');
+                ('ebay_days_back', '90'),
+                ('scan_category_ids', '[]');
         """)
 
 

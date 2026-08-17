@@ -16,7 +16,7 @@ Stage 3 — eBay confidence check (handled in scanner.py):
 
 import os
 import re
-from typing import Optional
+from typing import Optional, Tuple
 
 JUNK_WORDS = [
     "lot of", "as is", "as-is", "for parts", "untested", "broken",
@@ -38,14 +38,20 @@ def pre_filter(
     min_bid: float = 3.0,
     max_bid: float = 300.0,
     min_photos: int = 2,
-) -> tuple[bool, str]:
+) -> Tuple[bool, str]:
     """
     Returns (passes: bool, reason: str).
     Fast check — no external API calls.
     """
     title = item.get("title", "")
     current_bid = float(item.get("currentPrice", item.get("current_bid", 0)) or 0)
+
+    # Photo count — old API used numOfPhotos; new Azure Search API uses imageURL presence
     photo_count = int(item.get("numOfPhotos", item.get("photo_count", 0)) or 0)
+    if photo_count == 0:
+        # Fall back to checking if an image URL is present
+        has_image = bool(item.get("imageURL") or item.get("galleryURL") or item.get("imageUrls"))
+        photo_count = 1 if has_image else 0
 
     # Junk word check
     if JUNK_PATTERN.search(title):

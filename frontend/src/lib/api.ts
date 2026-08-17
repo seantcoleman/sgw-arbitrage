@@ -18,7 +18,10 @@ export const getDeals = (params?: {
   min_margin?: number;
   status?: string;
 }) => {
-  const qs = new URLSearchParams(params as Record<string, string>).toString();
+  const filtered = Object.fromEntries(
+    Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  );
+  const qs = new URLSearchParams(filtered as Record<string, string>).toString();
   return apiFetch<{ deals: Deal[]; count: number }>(`/deals${qs ? `?${qs}` : ""}`);
 };
 
@@ -43,11 +46,21 @@ export const getScanStatus = () => apiFetch<ScanStatus>("/scan/status");
 export const startSniper = () => apiFetch("/sniper/start", { method: "POST" });
 export const stopSniper = () => apiFetch("/sniper/stop", { method: "POST" });
 export const getSniperStatus = () => apiFetch<SniperStatus>("/sniper/status");
+export const getSniperLogs = (n = 100) =>
+  apiFetch<{ logs: SniperLogEntry[] }>(`/sniper/logs?n=${n}`);
 
 // Settings
 export const getSettings = () => apiFetch<Settings>("/settings");
 export const updateSetting = (key: string, value: unknown) =>
   apiFetch("/settings", { method: "PUT", body: JSON.stringify({ key, value }) });
+
+// Favorites scan
+export const triggerFavoritesScan = () => apiFetch("/favorites/scan", { method: "POST" });
+export const getFavoritesScanStatus = () => apiFetch<{ running: boolean }>("/favorites/status");
+export const getAllFavorites = () => apiFetch<{ favorites: FavoriteItem[]; count: number }>("/favorites");
+
+// Categories
+export const getCategories = () => apiFetch<{ categories: Category[] }>("/categories");
 
 // Types
 export interface Deal {
@@ -101,8 +114,14 @@ export interface SniperStatus {
   pid: number | null;
 }
 
+export interface SniperLogEntry {
+  ts: string;
+  line: string;
+}
+
 export interface Settings {
   scan_keywords: string[];
+  scan_category_ids: number[];
   min_profit_usd: number;
   min_margin_pct: number;
   min_sold_comps: number;
@@ -112,4 +131,27 @@ export interface Settings {
   snipe_seconds_before: number;
   your_zip_code: string;
   ebay_days_back: number;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+}
+
+export interface FavoriteItem {
+  item_id: number;
+  title: string;
+  current_bid: number;
+  end_time: string | null;
+  image_url: string | null;
+  sgw_url: string;
+  seller_id: number | null;
+  analyzed: boolean;
+  ebay_median: number | null;
+  ebay_low: number | null;
+  ebay_high: number | null;
+  ebay_sold_count: number | null;
+  profit: number | null;
+  margin: number | null;
+  shipping_est: number | null;
 }

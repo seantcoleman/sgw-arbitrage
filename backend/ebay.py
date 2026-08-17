@@ -1,22 +1,32 @@
 """
-eBay Finding API — sold price lookup.
-Uses findCompletedItems with soldItemsOnly=true.
-Free tier: 5,000 calls/day. No OAuth required — just an App ID.
-Register at: https://developer.ebay.com/
+eBay Browse API — current listing price lookup for arbitrage comparison.
+
+Uses the eBay Browse API v1 with OAuth Client Credentials flow.
+Fetches current BIN (Buy It Now) prices for used items as a market-rate reference.
+The Finding API (findCompletedItems) was deprecated by eBay in June 2023.
+
+Credentials: set EBAY_APP_ID and EBAY_CERT_ID in .env
+Register / manage at: https://developer.ebay.com/
 """
 
+import base64
 import os
 import statistics
-from datetime import datetime, timedelta, timezone
+import time
 from typing import Optional
-from xml.etree import ElementTree as ET
 
 import requests
 
-FINDING_API_URL = "https://svcs.ebay.com/services/search/FindingService/v1"
 EBAY_APP_ID = os.getenv("EBAY_APP_ID", "")
+EBAY_CERT_ID = os.getenv("EBAY_CERT_ID", "")
+BROWSE_API_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 
-NS = "http://www.ebay.com/marketplace/search/v1/services"
+# Used / pre-owned condition IDs (eBay Browse API)
+USED_CONDITION_IDS = "1500|2000|2500|3000"
+
+_token: Optional[str] = None
+_token_expires_at: float = 0.0
 
 
 class EbayPriceResult:
@@ -27,7 +37,7 @@ class EbayPriceResult:
         low: float,
         high: float,
         sold_count: int,
-        prices: list[float],
+        prices: list,
     ):
         self.search_term = search_term
         self.median = median
@@ -46,6 +56,37 @@ class EbayPriceResult:
         }
 
 
+def _get_token() -> str:
+    """Fetch or refresh an OAuth2 client credentials token."""
+    global _token, _token_expires_at
+
+    now = time.time()
+    if _token and now < _token_expires_at - 60:
+        return _token
+
+    if not EBAY_APP_ID or not EBAY_CERT_ID:
+        raise ValueError("EBAY_APP_ID and EBAY_CERT_ID environment variables required")
+
+    creds = base64.b64encode(f"{EBAY_APP_ID}:{EBAY_CERT_ID}".encode()).decode()
+    resp = requests.post(
+        TOKEN_URL,
+        headers={
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data="grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope",
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if "access_token" not in data:
+        raise RuntimeError(f"eBay OAuth failed: {data}")
+
+    _token = data["access_token"]
+    _token_expires_at = now + data.get("expires_in", 7200)
+    return _token
+
+
 def get_sold_prices(
     search_term: str,
     days_back: int = 90,
@@ -53,71 +94,61 @@ def get_sold_prices(
     min_comps: int = 5,
 ) -> Optional[EbayPriceResult]:
     """
-    Query eBay for completed/sold listings matching search_term.
-    Returns None if fewer than min_comps results found.
-    """
-    if not EBAY_APP_ID:
-        raise ValueError("EBAY_APP_ID environment variable not set")
+    Query eBay Browse API for current used-condition BIN listings matching search_term.
+    Returns None if fewer than min_comps results found after outlier filtering.
 
-    params = {
-        "OPERATION-NAME": "findCompletedItems",
-        "SERVICE-VERSION": "1.0.0",
-        "SECURITY-APPNAME": EBAY_APP_ID,
-        "RESPONSE-DATA-FORMAT": "XML",
-        "REST-PAYLOAD": "",
-        "keywords": search_term,
-        "itemFilter(0).name": "SoldItemsOnly",
-        "itemFilter(0).value": "true",
-        "itemFilter(1).name": "ListingType",
-        "itemFilter(1).value": "Auction",
-        "itemFilter(2).name": "ListingType(1)",
-        "itemFilter(2).value": "AuctionWithBIN",
-        "itemFilter(3).name": "ListingType(2)",
-        "itemFilter(3).value": "FixedPrice",
-        "sortOrder": "EndTimeSoonest",
-        "paginationInput.entriesPerPage": str(max_results),
-        "paginationInput.pageNumber": "1",
-        "itemFilter(4).name": "EndTimeFrom",
-        "itemFilter(4).value": (
-            datetime.now(timezone.utc) - timedelta(days=days_back)
-        ).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-    }
+    Note: eBay deprecated findCompletedItems (Finding API) in June 2023.
+    This uses current BIN prices for used items as a market-rate reference.
+    """
+    token = _get_token()
 
     try:
-        resp = requests.get(FINDING_API_URL, params=params, timeout=10)
+        resp = requests.get(
+            BROWSE_API_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "q": search_term,
+                "filter": f"conditionIds:{{{USED_CONDITION_IDS}}},buyingOptions:{{FIXED_PRICE}}",
+                "limit": str(max(max_results, 40)),
+                # Default sort = relevance; do NOT sort by price (accessories dominate low end)
+            },
+            timeout=10,
+        )
         resp.raise_for_status()
     except requests.RequestException as e:
-        raise RuntimeError(f"eBay API request failed: {e}")
+        raise RuntimeError(f"eBay Browse API request failed: {e}")
 
-    root = ET.fromstring(resp.content)
+    data = resp.json()
+    items = data.get("itemSummaries", [])
 
-    ack = root.find(f".//{{{NS}}}ack")
-    if ack is None or ack.text not in ("Success", "Warning"):
-        error_msg = root.find(f".//{{{NS}}}errorMessage/{{{NS}}}error/{{{NS}}}message")
-        raise RuntimeError(f"eBay API error: {error_msg.text if error_msg is not None else 'unknown'}")
-
-    items = root.findall(f".//{{{NS}}}item")
     prices = []
-
     for item in items:
-        selling_status = item.find(f"{{{NS}}}sellingStatus")
-        if selling_status is None:
-            continue
-        price_el = selling_status.find(f"{{{NS}}}convertedCurrentPrice")
-        if price_el is not None:
+        price_info = item.get("price", {})
+        if price_info and price_info.get("currency") == "USD":
             try:
-                prices.append(float(price_el.text))
+                prices.append(float(price_info["value"]))
             except (ValueError, TypeError):
                 continue
 
-    if len(prices) < min_comps:
+    if not prices:
+        return None
+
+    # Remove outliers: keep items within 0.25x to 4x of the rough median
+    # This filters accessories (too cheap) and overpriced anomalies
+    rough_median = statistics.median(prices)
+    prices_filtered = [
+        p for p in prices
+        if rough_median * 0.25 <= p <= rough_median * 4.0
+    ]
+
+    if len(prices_filtered) < min_comps:
         return None
 
     return EbayPriceResult(
         search_term=search_term,
-        median=statistics.median(prices),
-        low=min(prices),
-        high=max(prices),
-        sold_count=len(prices),
-        prices=prices,
+        median=statistics.median(prices_filtered),
+        low=min(prices_filtered),
+        high=max(prices_filtered),
+        sold_count=len(prices_filtered),
+        prices=prices_filtered,
     )

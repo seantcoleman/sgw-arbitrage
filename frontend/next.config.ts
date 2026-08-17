@@ -2,7 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    domains: ["cdn.shopgoodwill.com", "cdnm.shopgoodwill.com"],
+    remotePatterns: [
+      { protocol: "https", hostname: "**.shopgoodwill.com" },
+      { protocol: "https", hostname: "shopgoodwillimages.azureedge.net" },
+      { protocol: "https", hostname: "**.azureedge.net" },
+    ],
   },
 };
 

@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 from zoneinfo import ZoneInfo
 
 import db
@@ -57,6 +57,7 @@ class Scanner:
             "scan_keywords",
             ["sony headphones", "apple watch", "canon camera"],
         )
+        self.category_ids = settings.get("scan_category_ids", [])
 
         auth_info = {
             "username": os.getenv("SGW_USERNAME", ""),
@@ -103,6 +104,8 @@ class Scanner:
 
     def _scan_keyword(self, keyword: str) -> dict:
         query = {**SGW_SEARCH_TEMPLATE, "searchText": keyword}
+        if self.category_ids:
+            query["categoryId"] = self.category_ids
         try:
             items = self.sgw.get_query_results(query, page_size=40)
         except Exception as e:
@@ -118,88 +121,14 @@ class Scanner:
             item_id = int(item.get("itemId", 0))
             if not item_id:
                 continue
-
             item_ids.append(item_id)
-            current_bid = float(item.get("currentPrice", 0) or 0)
-            title = item.get("title", "")
-
-            # Stage 1: Pre-filter
-            passes, reason = item_filter.pre_filter(
-                item,
-                min_bid=self.min_bid_floor,
-                max_bid=self.max_bid_cap,
-            )
-            if not passes:
-                logger.debug(f"Pre-filter rejected '{title}': {reason}")
-                continue
-
-            # Stage 2: Clean title for eBay search
-            clean_term = item_filter.clean_title_for_ebay(title)
-            if not clean_term:
-                logger.debug(f"Could not extract search term from: '{title}'")
-                continue
-
-            # Shipping estimate
-            shipping = self._get_shipping(item_id) or 12.0  # default estimate
-
-            # Stage 3: eBay sold price lookup
-            try:
-                price_result = ebay.get_sold_prices(
-                    clean_term,
-                    days_back=self.days_back,
-                    min_comps=self.min_sold_comps,
-                )
-            except Exception as e:
-                logger.warning(f"eBay lookup failed for '{clean_term}': {e}")
-                continue
-
-            if price_result is None:
-                logger.debug(f"Not enough eBay comps for: '{clean_term}'")
-                continue
-
-            # Calculate profit
-            ebay_net = price_result.median * EBAY_FEE_RATE
-            total_cost = current_bid + shipping
-            profit = ebay_net - total_cost
-            margin = profit / total_cost if total_cost > 0 else 0
-
-            if profit < self.min_profit or margin < self.min_margin:
-                logger.debug(
-                    f"Not profitable enough: '{title}' "
-                    f"profit=${profit:.2f} margin={margin:.1%}"
-                )
-                continue
-
-            # It's a deal — save it
-            logger.info(
-                f"DEAL: '{title}' | Bid: ${current_bid:.2f} | "
-                f"eBay: ${price_result.median:.2f} | Profit: ${profit:.2f} | "
-                f"Margin: {margin:.1%}"
-            )
-
-            image_urls = item.get("imageUrls", [])
-            image_url = image_urls[0] if image_urls else None
-
-            db.upsert_deal({
-                "item_id": item_id,
-                "title": title,
-                "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
-                "current_bid": current_bid,
-                "shipping_est": shipping,
-                "end_time": self._to_utc(item.get("endTime")),
-                "seller_id": item.get("sellerId"),
-                "image_url": image_url,
-                "keyword": keyword,
-                **price_result.to_dict(),
-                "profit": round(profit, 2),
-                "margin": round(margin, 4),
-            })
-            deals += 1
+            if self._process_item(item, keyword=keyword):
+                deals += 1
 
         return {"scanned": scanned, "deals": deals, "item_ids": item_ids}
 
     @staticmethod
-    def _to_utc(end_time_str: str | None) -> str | None:
+    def _to_utc(end_time_str: Optional[str]) -> Optional[str]:
         """Convert SGW's Pacific-time end time string to UTC ISO format."""
         if not end_time_str:
             return None
@@ -212,6 +141,123 @@ class Scanner:
             return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             return end_time_str
+
+    def scan_favorites(self) -> dict:
+        """Fetch the user's SGW favorites and run each through the arbitrage pipeline."""
+        logger.info("Scanning SGW favorites...")
+        try:
+            favorites = self.sgw.get_favorites()
+        except Exception as e:
+            logger.error(f"Failed to fetch SGW favorites: {e}")
+            return {"scanned": 0, "deals": 0, "errors": [str(e)]}
+
+        scanned = 0
+        deals = 0
+        errors = []
+
+        for item_id, fav_data in favorites.items():
+            scanned += 1
+            try:
+                # Favorites may not include full details — fetch them
+                item = self.sgw.get_item_info(item_id)
+                # Normalize field names from itemDetail response
+                normalized = {
+                    "itemId": item_id,
+                    "title": item.get("title") or fav_data.get("title", ""),
+                    "currentPrice": float(
+                        item.get("currentPrice") or
+                        item.get("currentBid") or
+                        fav_data.get("currentPrice") or 0
+                    ),
+                    "endTime": item.get("endTime") or item.get("endDateTime") or fav_data.get("endTime"),
+                    "sellerId": item.get("sellerId") or fav_data.get("sellerId"),
+                    "imageURL": (
+                        (item.get("imageList") or [{}])[0].get("imageUrl") or
+                        item.get("imageURL") or
+                        fav_data.get("imageURL")
+                    ),
+                }
+                result = self._process_item(normalized, keyword="⭐ favorite")
+                if result:
+                    deals += 1
+            except Exception as e:
+                logger.warning(f"Error processing favorite {item_id}: {e}")
+                errors.append(str(e))
+
+        logger.info(f"Favorites scan complete. Scanned: {scanned}, Deals: {deals}")
+        return {"scanned": scanned, "deals": deals, "errors": errors}
+
+    def _process_item(self, item: dict, keyword: str) -> bool:
+        """Run a single normalized item through the full arbitrage pipeline. Returns True if saved as a deal."""
+        item_id = int(item.get("itemId", 0))
+        if not item_id:
+            return False
+
+        title = item.get("title", "")
+        current_bid = float(item.get("currentPrice", 0) or 0)
+
+        passes, reason = item_filter.pre_filter(
+            item,
+            min_bid=self.min_bid_floor,
+            max_bid=self.max_bid_cap,
+            min_photos=1,
+        )
+        if not passes:
+            logger.debug(f"Pre-filter rejected '{title}': {reason}")
+            return False
+
+        clean_term = item_filter.clean_title_for_ebay(title)
+        if not clean_term:
+            return False
+
+        shipping = self._get_shipping(item_id) or 12.0
+
+        try:
+            price_result = ebay.get_sold_prices(
+                clean_term,
+                days_back=self.days_back,
+                min_comps=self.min_sold_comps,
+            )
+        except Exception as e:
+            logger.warning(f"eBay lookup failed for '{clean_term}': {e}")
+            return False
+
+        if price_result is None:
+            return False
+
+        ebay_net = price_result.median * EBAY_FEE_RATE
+        total_cost = current_bid + shipping
+        profit = ebay_net - total_cost
+        margin = profit / total_cost if total_cost > 0 else 0
+
+        if profit < self.min_profit or margin < self.min_margin:
+            return False
+
+        logger.info(
+            f"DEAL ({keyword}): '{title}' | Bid: ${current_bid:.2f} | "
+            f"eBay: ${price_result.median:.2f} | Profit: ${profit:.2f}"
+        )
+
+        image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")
+        image_url = image_urls[0] if isinstance(image_urls, list) else image_urls
+        if image_url:
+            image_url = image_url.replace("\\", "/")
+
+        db.upsert_deal({
+            "item_id": item_id,
+            "title": title,
+            "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
+            "current_bid": current_bid,
+            "shipping_est": shipping,
+            "end_time": self._to_utc(item.get("endTime")),
+            "seller_id": item.get("sellerId"),
+            "image_url": image_url,
+            "keyword": keyword,
+            **price_result.to_dict(),
+            "profit": round(profit, 2),
+            "margin": round(margin, 4),
+        })
+        return True
 
     def _get_shipping(self, item_id: int) -> Optional[float]:
         try:

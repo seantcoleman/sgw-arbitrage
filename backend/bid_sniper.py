@@ -227,6 +227,11 @@ class BidSniper:
                 if (end_time - min_scheduling_timedelta) <= now + datetime.timedelta(
                     seconds=refresh_seconds * 3
                 ):
+                    # Skip items that already ended
+                    if end_time <= now:
+                        self.scheduled_tasks.add(item_id)
+                        continue
+
                     for alert_time_delta in self.alert_time_deltas:
                         execution_datetime = end_time - alert_time_delta
                         if execution_datetime < now:
@@ -239,10 +244,19 @@ class BidSniper:
                             )
                         ).add_done_callback(self.task_err_handler)
 
+                    bid_execution_datetime = end_time - self.bid_time_delta
+                    if bid_execution_datetime < now:
+                        self.logger.warning(
+                            f"Skipping bid for '{favorite_info['title']}' — "
+                            f"bid window already passed ({int((now - bid_execution_datetime).total_seconds())}s ago)"
+                        )
+                        self.scheduled_tasks.add(item_id)
+                        continue
+
                     self.event_loop.create_task(
                         self.schedule_task(
                             self.place_bid(item_id),
-                            end_time - self.bid_time_delta,
+                            bid_execution_datetime,
                             [self.task_err_handler],
                         )
                     ).add_done_callback(self.task_err_handler)

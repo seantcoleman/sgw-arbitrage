@@ -4,14 +4,19 @@ FastAPI backend — serves the web dashboard.
 Run with: uvicorn api:app --reload --port 8000
 """
 
+import collections
+import io
 import json
 import logging
 import os
 import subprocess
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -31,6 +36,8 @@ _sniper_process: Optional[subprocess.Popen] = None
 _scan_lock = threading.Lock()
 _scan_running = False
 _scheduler = BackgroundScheduler()
+# Rolling sniper log buffer (most recent 500 lines)
+_sniper_logs: collections.deque = collections.deque(maxlen=500)
 
 
 def _schedule_scan(interval_minutes: int) -> None:
@@ -56,8 +63,67 @@ async def lifespan(app: FastAPI):
     _schedule_scan(interval)
     _scheduler.start()
     logger.info("Scheduler started")
+    # Auto-start sniper and keep it alive
+    _ensure_sniper_running()
+    _start_sniper_watchdog()
     yield
     _scheduler.shutdown(wait=False)
+    if _sniper_process and _sniper_process.poll() is None:
+        _sniper_process.terminate()
+
+
+def _ensure_sniper_running() -> None:
+    """Start the sniper if it isn't already running."""
+    global _sniper_process
+    if _sniper_process and _sniper_process.poll() is None:
+        return
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        config = _build_sniper_config()
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        _sniper_process = subprocess.Popen(
+            [sys.executable, "bid_sniper.py", "--config", config_path],
+            cwd=os.path.dirname(__file__),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        threading.Thread(
+            target=_tail_sniper_output,
+            args=(_sniper_process,),
+            daemon=True,
+            name="sniper-tail",
+        ).start()
+        logger.info(f"Sniper started (pid={_sniper_process.pid})")
+    except Exception as e:
+        logger.error(f"Failed to start sniper: {e}")
+
+
+def _tail_sniper_output(proc: subprocess.Popen) -> None:
+    """Read sniper stdout line-by-line into the in-memory log buffer."""
+    try:
+        for raw in proc.stdout:  # type: ignore[union-attr]
+            line = raw.rstrip()
+            ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+            entry = {"ts": ts, "line": line}
+            _sniper_logs.append(entry)
+            # Mirror to uvicorn console so nothing is lost
+            logger.info(f"[sniper] {line}")
+    except (ValueError, OSError):
+        pass
+
+
+def _start_sniper_watchdog() -> None:
+    """Background thread that restarts the sniper if it dies."""
+    def watchdog():
+        while True:
+            time.sleep(30)
+            _ensure_sniper_running()
+    t = threading.Thread(target=watchdog, daemon=True, name="sniper-watchdog")
+    t.start()
+    logger.info("Sniper watchdog started")
 
 
 app = FastAPI(title="SGW Arbitrage API", version="1.0.0", lifespan=lifespan)
@@ -109,12 +175,27 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
     deal = next((d for d in deals if d["item_id"] == req.item_id), None)
 
     if deal is None:
-        raise HTTPException(status_code=404, detail="Deal not found")
+        # Item may be a favorite not yet in the deals table — fetch basic info from SGW
+        try:
+            sgw = _get_sgw_client()
+            item_info = sgw.get_item_info(req.item_id)
+            deal = {
+                "item_id": req.item_id,
+                "title": item_info.get("title", f"Item #{req.item_id}"),
+                "current_bid": float(item_info.get("currentPrice") or item_info.get("currentBid") or 0),
+                "end_time": item_info.get("endTime") or item_info.get("endDateTime"),
+                "sgw_url": f"https://shopgoodwill.com/item/{req.item_id}",
+                "image_url": None,
+                "ebay_median": None,
+                "profit": None,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"Deal not found and could not fetch from SGW: {e}")
 
-    if req.max_bid <= deal["current_bid"]:
+    if req.max_bid <= (deal.get("current_bid") or 0):
         raise HTTPException(
             status_code=400,
-            detail=f"Max bid must be greater than current bid of ${deal['current_bid']:.2f}",
+            detail=f"Max bid must be greater than current bid of ${deal.get('current_bid', 0):.2f}",
         )
 
     db.add_to_watchlist({
@@ -158,6 +239,23 @@ def _remove_sgw_favorite(item_id: int):
         logger.info(f"Removed item {item_id} from SGW favorites")
     except Exception as e:
         logger.error(f"Failed to remove SGW favorite {item_id}: {e}")
+
+
+def _sgw_to_utc(end_time_str: Optional[str]) -> Optional[str]:
+    """Convert SGW Pacific-time string to UTC ISO-8601 with Z suffix."""
+    if not end_time_str:
+        return None
+    if end_time_str.endswith("Z") or "+" in end_time_str:
+        return end_time_str  # already UTC
+    try:
+        fmt = "%Y-%m-%dT%H:%M:%S"
+        if "." in end_time_str:
+            fmt += ".%f"
+        dt = datetime.strptime(end_time_str, fmt)
+        dt = dt.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return end_time_str
 
 
 def _get_sgw_client() -> shopgoodwill.Shopgoodwill:
@@ -273,6 +371,13 @@ def sniper_status():
     }
 
 
+@app.get("/sniper/logs")
+def get_sniper_logs(n: int = Query(default=100, le=500)):
+    """Return the last n lines from the sniper's output."""
+    logs = list(_sniper_logs)
+    return {"logs": logs[-n:]}
+
+
 # ── Settings ─────────────────────────────────────────────────────────────────
 
 @app.get("/settings")
@@ -298,3 +403,89 @@ def update_setting(req: SettingsUpdateRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ── Favorites scan ────────────────────────────────────────────────────────────
+
+_favorites_running = False
+_favorites_lock = threading.Lock()
+
+
+@app.get("/favorites")
+def get_all_favorites():
+    """Return all SGW favorites with enrichment from the deals table where available."""
+    try:
+        sgw = _get_sgw_client()
+        raw_favorites = sgw.get_favorites()
+    except Exception as e:
+        logger.error(f"Failed to fetch SGW favorites: {e}")
+        raise HTTPException(status_code=502, detail=f"Could not reach SGW: {e}")
+
+    # Load any analyzed deals for these item IDs
+    all_deals = {d["item_id"]: d for d in db.get_deals(limit=1000, status="active")}
+
+    result = []
+    for item_id, fav in raw_favorites.items():
+        deal = all_deals.get(item_id)
+        entry = {
+            "item_id": item_id,
+            "title": fav.get("title") or fav.get("itemTitle") or f"Item #{item_id}",
+            "current_bid": float(fav.get("currentPrice") or fav.get("currentBid") or 0),
+            "end_time": _sgw_to_utc(fav.get("endTime") or fav.get("endDateTime")),
+            "image_url": (fav.get("imageURL") or fav.get("imageUrl") or "").replace("\\", "/") or None,
+            "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
+            "seller_id": fav.get("sellerId"),
+            # eBay analysis — only present if item has been scanned
+            "analyzed": deal is not None,
+            "ebay_median": deal["ebay_median"] if deal else None,
+            "ebay_low": deal["ebay_low"] if deal else None,
+            "ebay_high": deal["ebay_high"] if deal else None,
+            "ebay_sold_count": deal["ebay_sold_count"] if deal else None,
+            "profit": deal["profit"] if deal else None,
+            "margin": deal["margin"] if deal else None,
+            "shipping_est": deal["shipping_est"] if deal else None,
+        }
+        result.append(entry)
+
+    # Sort: analyzed first (by profit desc), then unanalyzed
+    result.sort(key=lambda x: (not x["analyzed"], -(x["profit"] or 0)))
+    return {"favorites": result, "count": len(result)}
+
+
+@app.post("/favorites/scan")
+def trigger_favorites_scan(background_tasks: BackgroundTasks):
+    global _favorites_running
+    if _favorites_running:
+        return {"message": "Favorites scan already running"}
+    background_tasks.add_task(_run_favorites_scan)
+    return {"message": "Favorites scan started"}
+
+
+@app.get("/favorites/status")
+def favorites_scan_status():
+    return {"running": _favorites_running}
+
+
+def _run_favorites_scan():
+    global _favorites_running
+    with _favorites_lock:
+        _favorites_running = True
+        try:
+            from scanner import Scanner
+            Scanner().scan_favorites()
+        except Exception as e:
+            logger.error(f"Favorites scan error: {e}")
+        finally:
+            _favorites_running = False
+
+
+# ── Categories ────────────────────────────────────────────────────────────────
+
+@app.get("/categories")
+def get_categories():
+    try:
+        sgw = _get_sgw_client()
+        return {"categories": sgw.get_categories()}
+    except Exception as e:
+        logger.error(f"Failed to fetch categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
