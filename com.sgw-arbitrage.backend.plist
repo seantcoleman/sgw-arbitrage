@@ -12,7 +12,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/seancoleman/Desktop/Coding/sgw-arbitrage/start-backend.sh</string>
+        <string>/Users/seancoleman/Coding/sgw-arbitrage/start-backend.sh</string>
     </array>
 
     <!-- Restart automatically if it crashes -->

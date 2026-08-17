@@ -159,6 +159,19 @@ def get_deals(
     return [dict(r) for r in rows]
 
 
+def count_deals(
+    min_profit: float = 0,
+    min_margin: float = 0,
+    status: str = "active",
+) -> int:
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*) FROM deals
+            WHERE profit >= ? AND margin >= ? AND status = ?
+        """, (min_profit, min_margin, status)).fetchone()
+    return row[0] if row else 0
+
+
 def mark_deals_stale(active_item_ids: List[int]) -> None:
     """Mark deals no longer in scan results as ended."""
     if not active_item_ids:

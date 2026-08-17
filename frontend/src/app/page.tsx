@@ -7,6 +7,7 @@ import { DealCard } from "@/components/DealCard";
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [totalDeals, setTotalDeals] = useState(0);
   const [loading, setLoading] = useState(true);
   const [minProfit, setMinProfit] = useState(0);
   const [minMargin, setMinMargin] = useState(0);
@@ -15,6 +16,7 @@ export default function DealsPage() {
   const [error, setError] = useState("");
   const [scanRunning, setScanRunning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
+  const [lastScanItems, setLastScanItems] = useState<number | null>(null);
   const firstLoad = useRef(true);
 
   const fetchDeals = async (silent = false) => {
@@ -23,6 +25,7 @@ export default function DealsPage() {
     try {
       const data = await getDeals({ min_profit: minProfit || 0, min_margin: minMargin || 0 });
       setDeals(data.deals);
+      setTotalDeals(data.count);
     } catch {
       setError("Cannot reach backend — make sure it's running on port 8000.");
     } finally {
@@ -46,8 +49,11 @@ export default function DealsPage() {
       const scan = await getScanStatus().catch(() => ({ running: false, recent_scans: [] }));
       const wasRunning = scanRunning;
       setScanRunning(scan.running);
-      const scans = (scan as { recent_scans?: { finished_at?: string }[] }).recent_scans;
-      if (scans?.length) setLastScanTime(scans[0].finished_at ?? null);
+      const scans = (scan as { recent_scans?: { finished_at?: string; items_scanned?: number }[] }).recent_scans;
+      if (scans?.length) {
+        setLastScanTime(scans[0].finished_at ?? null);
+        setLastScanItems(scans[0].items_scanned ?? null);
+      }
       if (wasRunning && !scan.running) fetchDeals(true);
     };
     poll();
@@ -114,7 +120,19 @@ export default function DealsPage() {
           {lastScanTime && (
             <span className="text-zinc-600"> · last scan {new Date(lastScanTime).toLocaleTimeString()}</span>
           )}
+          {lastScanItems !== null && (
+            <span className="text-zinc-600"> · {lastScanItems} items checked</span>
+          )}
         </p>
+        {lastScanItems !== null && lastScanItems >= 200 && (
+          <p className="text-xs text-zinc-600 mt-1">
+            Only the first {lastScanItems} SGW listings were scanned. Raise{" "}
+            <a href="/settings" className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200">
+              Max items per scan
+            </a>{" "}
+            in Settings to cover more — or use Browse to see all listings.
+          </p>
+        )}
       </div>
 
       {/* Scan running banner */}

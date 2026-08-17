@@ -179,46 +179,57 @@ class Shopgoodwill:
         ).json()
 
     def get_categories(self) -> List[Dict]:
-        """Fetch top-level SGW categories. Returns list of {id, name}."""
+        """Fetch SGW top-level browse categories with their correct scids values."""
         try:
             res = self.shopgoodwill_session.get(
-                f"{Shopgoodwill.API_ROOT}/Category/GetAllCategories"
+                f"{Shopgoodwill.API_ROOT}/Category/GetAllCategoryPageList"
             )
-            data = res.json()
-            categories = data if isinstance(data, list) else data.get("data", [])
-            return [
-                {"id": int(c.get("categoryId", c.get("id", 0))),
-                 "name": c.get("categoryName", c.get("name", ""))}
-                for c in categories if c.get("categoryId") or c.get("id")
-            ]
+            data = res.json().get("data", {})
+            categories = []
+            for section in data.get("categories", []):
+                for child in (section.get("childCategories") or []):
+                    name = (child.get("categoryName") or "").strip()
+                    mid  = child.get("mappedCatId")
+                    if name and mid:
+                        try:
+                            categories.append({"id": int(mid), "name": name})
+                        except (ValueError, TypeError):
+                            pass
+            if categories:
+                return sorted(categories, key=lambda c: c["name"])
         except Exception:
-            # Fallback: well-known SGW category IDs
-            return [
-                {"id": 1,  "name": "Antiques"},
-                {"id": 2,  "name": "Art"},
-                {"id": 3,  "name": "Books / Movies / Music"},
-                {"id": 4,  "name": "Business & Industrial"},
-                {"id": 5,  "name": "Cameras & Photo"},
-                {"id": 6,  "name": "Cell Phones & Accessories"},
-                {"id": 7,  "name": "Clothing, Shoes & Accessories"},
-                {"id": 8,  "name": "Coins & Currency"},
-                {"id": 9,  "name": "Collectibles"},
-                {"id": 10, "name": "Computers & Tablets"},
-                {"id": 11, "name": "Consumer Electronics"},
-                {"id": 12, "name": "Crafts"},
-                {"id": 13, "name": "Dolls & Bears"},
-                {"id": 14, "name": "DVDs & Movies"},
-                {"id": 15, "name": "Home & Garden"},
-                {"id": 16, "name": "Jewelry & Watches"},
-                {"id": 17, "name": "Musical Instruments"},
-                {"id": 18, "name": "Office Equipment"},
-                {"id": 19, "name": "Pottery & Glass"},
-                {"id": 20, "name": "Sporting Goods"},
-                {"id": 21, "name": "Stamps"},
-                {"id": 22, "name": "Toys & Hobbies"},
-                {"id": 23, "name": "Video Games & Consoles"},
-                {"id": 24, "name": "Everything Else"},
-            ]
+            pass
+        # Fallback: correct scids values discovered from GetAllCategoryPageList
+        return [
+            {"id": 1,   "name": "Antiques"},
+            {"id": 15,  "name": "Art"},
+            {"id": 336, "name": "Bath and Body"},
+            {"id": 99,  "name": "Books"},
+            {"id": 2208,"name": "Bulk"},
+            {"id": 170, "name": "Cameras and Camcorders"},
+            {"id": 10,  "name": "Clothing"},
+            {"id": 4,   "name": "Collectibles"},
+            {"id": 7,   "name": "Computers & Electronics"},
+            {"id": 8,   "name": "Craft & Hobbies"},
+            {"id": 195, "name": "For the Home"},
+            {"id": 110, "name": "Games"},
+            {"id": 14,  "name": "Glass"},
+            {"id": 6,   "name": "Jewelry & Gemstones"},
+            {"id": 113, "name": "Miscellaneous"},
+            {"id": 13,  "name": "Musical Instruments"},
+            {"id": 215, "name": "Office Supplies"},
+            {"id": 34,  "name": "Pet Supplies"},
+            {"id": 115, "name": "Religious Items"},
+            {"id": 364, "name": "Science and Education"},
+            {"id": 18,  "name": "Seasonal and Holiday"},
+            {"id": 12,  "name": "Sports"},
+            {"id": 20,  "name": "Table/Kitchenware"},
+            {"id": 114, "name": "Tools"},
+            {"id": 9,   "name": "Toys & Games"},
+            {"id": 23,  "name": "Transportation"},
+            {"id": 427, "name": "Travel/Luggage"},
+            {"id": 468, "name": "Wedding"},
+        ]
 
     def get_item_info(self, item_id: int) -> Dict:
         return self.shopgoodwill_session.get(
@@ -260,14 +271,20 @@ class Shopgoodwill:
         The API caps results at ~80 items across pages; page_size is always 40 on the server side.
         """
         search_text = urllib.parse.quote(query_json.get("searchText", "").replace('"', ""))
+        # Category IDs: pass as comma-separated `scids` param (the correct SGW filter param)
+        cat_ids: list = query_json.get("categoryId", [])
+        scids_param = ",".join(str(c) for c in cat_ids) if cat_ids else ""
+
         total_listings: List[Dict] = []
         page = 1
-        max_pages = 3  # safety cap; SGW caps at ~80 items (2 full pages)
+        max_pages = 10
+        item_count = None
 
         while page <= max_pages:
             url = (
                 f"{Shopgoodwill.API_ROOT}/Search/ItemListingData"
-                f"?pn=0&cl=0&cids=&scids=&p={page}&sc=1&sd=false&cid=0&sg=&st={search_text}"
+                f"?pn=0&cl=0&cids=&scids={scids_param}&p={page}&sc=1&sd=false"
+                f"&cid=0&sg=&st={search_text}"
             )
             query_res = self.shopgoodwill_session.get(url)
             data = query_res.json()
@@ -278,13 +295,28 @@ class Shopgoodwill:
             if not page_listings:
                 break
             total_listings += page_listings
-            # Stop if we've fetched all available items
-            item_count = search_results.get("itemCount") or 0
-            if len(total_listings) >= item_count or len(page_listings) < 40:
+            if item_count is None:
+                item_count = search_results.get("itemCount") or 0
+            if len(total_listings) >= item_count:
                 break
             page += 1
 
         return total_listings
+
+    def browse_category(self, scids: List[int], page: int = 1, page_size: int = 40) -> Dict:
+        """Fetch a page of raw SGW items for a category without any filtering. Returns {items, total}."""
+        scids_param = ",".join(str(c) for c in scids) if scids else ""
+        url = (
+            f"{Shopgoodwill.API_ROOT}/Search/ItemListingData"
+            f"?pn=0&cl=0&cids=&scids={scids_param}&p={page}&sc=1&sd=false"
+            f"&cid=0&sg=&st="
+        )
+        data = self.shopgoodwill_session.get(url).json()
+        sr = data.get("searchResults", {})
+        return {
+            "items": sr.get("items") or [],
+            "total": sr.get("itemCount") or 0,
+        }
 
     def get_item_shipping_estimate(self, item_id: int, zip_code: str) -> Optional[float]:
         resp = self.shopgoodwill_session.post(

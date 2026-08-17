@@ -28,6 +28,13 @@ USED_CONDITION_IDS = "1500|2000|2500|3000"
 _token: Optional[str] = None
 _token_expires_at: float = 0.0
 
+# In-memory cache: key=(search_term, days_back) → (result, expires_at)
+# 4-hour TTL — eBay prices don't change meaningfully in minutes
+_CACHE_TTL = 4 * 3600
+_cache: dict = {}
+_cache_hits = 0
+_cache_misses = 0
+
 
 class EbayPriceResult:
     def __init__(
@@ -95,10 +102,50 @@ def get_sold_prices(
 ) -> Optional[EbayPriceResult]:
     """
     Query eBay Browse API for current used-condition BIN listings matching search_term.
+    Results are cached for 4 hours to stay within eBay API rate limits.
     Returns None if fewer than min_comps results found after outlier filtering.
+    """
+    global _cache_hits, _cache_misses
 
-    Note: eBay deprecated findCompletedItems (Finding API) in June 2023.
-    This uses current BIN prices for used items as a market-rate reference.
+    cache_key = (search_term.lower().strip(), days_back)
+    now = time.time()
+
+    # Return cached result if still fresh
+    if cache_key in _cache:
+        result, expires_at = _cache[cache_key]
+        if now < expires_at:
+            _cache_hits += 1
+            return result
+
+    _cache_misses += 1
+    result = _fetch_sold_prices(search_term, days_back, max_results, min_comps)
+    _cache[cache_key] = (result, now + _CACHE_TTL)
+
+    # Evict stale entries occasionally (every 500 misses)
+    if _cache_misses % 500 == 0:
+        _cache.clear()
+
+    return result
+
+
+def get_cache_stats() -> dict:
+    total = _cache_hits + _cache_misses
+    return {
+        "hits": _cache_hits,
+        "misses": _cache_misses,
+        "hit_rate": round(_cache_hits / total, 3) if total else 0,
+        "cached_terms": len(_cache),
+    }
+
+
+def _fetch_sold_prices(
+    search_term: str,
+    days_back: int = 90,
+    max_results: int = 20,
+    min_comps: int = 5,
+) -> Optional[EbayPriceResult]:
+    """
+    Raw eBay Browse API call. Use get_sold_prices() for the cached version.
     """
     token = _get_token()
 

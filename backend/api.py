@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db
+import ebay
 import shopgoodwill
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):
     db.init_db()
     logger.info("Database initialized")
     settings = db.get_settings()
-    interval = int(settings.get("scan_interval_minutes", 15))
+    interval = 30  # fixed at 30 min to stay within eBay API limits
     _schedule_scan(interval)
     _scheduler.add_job(
         _check_bid_results,
@@ -153,7 +154,7 @@ def list_deals(
     min_profit: float = Query(0),
     min_margin: float = Query(0),
     status: str = Query("active"),
-    limit: int = Query(50, le=200),
+    limit: int = Query(200, le=500),
     offset: int = Query(0),
 ):
     deals = db.get_deals(
@@ -163,7 +164,8 @@ def list_deals(
         limit=limit,
         offset=offset,
     )
-    return {"deals": deals, "count": len(deals)}
+    total = db.count_deals(min_profit=min_profit, min_margin=min_margin / 100 if min_margin > 1 else min_margin, status=status)
+    return {"deals": deals, "count": total}
 
 
 # ── Watchlist ───────────────────────────────────────────────────────────────
@@ -504,8 +506,7 @@ class SettingsUpdateRequest(BaseModel):
 @app.put("/settings")
 def update_setting(req: SettingsUpdateRequest):
     db.update_setting(req.key, req.value)
-    if req.key == "scan_interval_minutes":
-        _schedule_scan(int(req.value))
+    # scan_interval_minutes is no longer configurable — locked at 30 min
     return {"success": True, "key": req.key, "value": req.value}
 
 
@@ -513,7 +514,7 @@ def update_setting(req: SettingsUpdateRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "ebay_cache": ebay.get_cache_stats()}
 
 
 # ── Favorites scan ────────────────────────────────────────────────────────────
@@ -599,4 +600,36 @@ def get_categories():
         return {"categories": sgw.get_categories()}
     except Exception as e:
         logger.error(f"Failed to fetch categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/browse")
+def browse_category(
+    category_ids: str = Query("", description="Comma-separated scids"),
+    page: int = Query(1, ge=1),
+):
+    """Browse raw SGW items by category without profit filtering. Paginated, 40 items per page."""
+    try:
+        sgw = _get_sgw_client()
+        scids = [int(x) for x in category_ids.split(",") if x.strip().isdigit()]
+        result = sgw.browse_category(scids, page=page)
+
+        # Enrich with end_time UTC conversion
+        items = []
+        for item in result["items"]:
+            end_raw = item.get("endTime") or item.get("endDateTime") or ""
+            items.append({
+                "itemId":        item.get("itemId"),
+                "title":         item.get("title", ""),
+                "currentPrice":  float(item.get("currentPrice") or 0),
+                "endTime":       _sgw_to_utc(end_raw) if end_raw else None,
+                "imageUrl":      (item.get("imageURL") or item.get("galleryURL") or "").replace("\\", "/"),
+                "categoryName":  item.get("categoryName", ""),
+                "sellerId":      item.get("sellerId"),
+                "sgwUrl":        f"https://shopgoodwill.com/item/{item.get('itemId')}",
+            })
+
+        return {"items": items, "total": result["total"], "page": page}
+    except Exception as e:
+        logger.error(f"Browse failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

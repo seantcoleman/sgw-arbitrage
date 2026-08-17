@@ -22,7 +22,7 @@ function Section({ title, description, children }: {
   );
 }
 
-function NumField({ label, description, value, onChange, onSave, suffix = "", min = 0, step = 1 }: {
+function NumField({ label, description, value, onChange, onSave, suffix = "", min = 0, step = 1, readOnly = false }: {
   label: string;
   description?: string;
   value: number;
@@ -31,6 +31,7 @@ function NumField({ label, description, value, onChange, onSave, suffix = "", mi
   suffix?: string;
   min?: number;
   step?: number;
+  readOnly?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-4 border-b border-zinc-800/60 last:border-0">
@@ -38,15 +39,16 @@ function NumField({ label, description, value, onChange, onSave, suffix = "", mi
         <div className="text-sm font-medium text-zinc-200">{label}</div>
         {description && <div className="text-xs text-zinc-600 mt-0.5">{description}</div>}
       </div>
-      <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden focus-within:border-zinc-500 transition-colors">
+      <div className={`flex items-center border rounded-lg overflow-hidden transition-colors ${readOnly ? "bg-zinc-800/50 border-zinc-700/50" : "bg-zinc-800 border-zinc-700 focus-within:border-zinc-500"}`}>
         <input
           type="number"
           value={value}
           min={min}
           step={step}
-          onChange={e => onChange(Number(e.target.value))}
-          onBlur={e => onSave(Number(e.target.value))}
-          className="w-20 bg-transparent px-3 py-2 text-sm text-zinc-100 text-right focus:outline-none"
+          readOnly={readOnly}
+          onChange={e => !readOnly && onChange(Number(e.target.value))}
+          onBlur={e => !readOnly && onSave(Number(e.target.value))}
+          className={`w-20 bg-transparent px-3 py-2 text-sm text-right focus:outline-none ${readOnly ? "text-zinc-400 cursor-default" : "text-zinc-100"}`}
         />
         {suffix && <span className="text-zinc-500 text-xs pr-3">{suffix}</span>}
       </div>
@@ -257,12 +259,26 @@ export default function SettingsPage() {
       {/* Scanner & sniper */}
       <Section title="Scanner & Sniper">
         <NumField
-          label="Scan interval" description="How often to auto-scan in the background"
-          value={settings.scan_interval_minutes ?? 15}
-          onChange={v => setSettings(prev => ({ ...prev, scan_interval_minutes: v }))}
-          onSave={v => save("scan_interval_minutes", v)}
-          suffix="min" min={5} step={5}
+          label="Max items per scan"
+          description="Hard-capped at 200 to stay within eBay API limits. ~30s scan time."
+          value={200}
+          onChange={() => {}}
+          onSave={() => {}}
+          suffix="items" min={200} step={200}
+          readOnly
         />
+        <div className="flex items-center justify-between py-4 border-b border-zinc-800/60">
+          <div>
+            <div className="text-sm font-medium text-zinc-200">Scan interval</div>
+            <div className="text-xs text-zinc-600 mt-0.5">
+              The backend auto-scans every 30 minutes — new deals appear automatically
+            </div>
+          </div>
+          <div className="flex items-center bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 gap-1.5">
+            <span className="text-sm text-zinc-400 font-medium">30</span>
+            <span className="text-xs text-zinc-600">min</span>
+          </div>
+        </div>
         <NumField
           label="Snipe timing" description="Place bid this many seconds before auction ends"
           value={settings.snipe_seconds_before ?? 30}

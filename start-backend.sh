@@ -3,7 +3,7 @@
 
 set -e
 
-cd /Users/seancoleman/Desktop/Coding/sgw-arbitrage/backend
+cd /Users/seancoleman/Coding/sgw-arbitrage/backend
 
 # Load credentials from .env (never commit .env — add keys there)
 if [ -f .env ]; then

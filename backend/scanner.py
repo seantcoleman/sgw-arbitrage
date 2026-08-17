@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
@@ -53,6 +54,7 @@ class Scanner:
         self.min_bid_floor = float(settings.get("min_bid_floor", 3))
         self.zip_code = str(settings.get("your_zip_code", "90210"))
         self.days_back = int(settings.get("ebay_days_back", 90))
+        self.max_items = min(int(settings.get("scan_max_items", 200)), 200)  # hard cap
         self.keywords = settings.get(
             "scan_keywords",
             ["sony headphones", "apple watch", "canon camera"],
@@ -79,17 +81,22 @@ class Scanner:
         active_item_ids = []
         errors = []
 
-        for keyword in self.keywords:
-            logger.info(f"Scanning keyword: '{keyword}'")
+        # If categories are set but no keywords, browse each category directly
+        scan_targets = self.keywords if self.keywords else (
+            [None] if self.category_ids else []
+        )
+
+        for keyword in scan_targets:
+            label = f"keyword: '{keyword}'" if keyword else f"category browse (ids={self.category_ids})"
+            logger.info(f"Scanning {label}")
             try:
                 results = self._scan_keyword(keyword)
                 total_scanned += results["scanned"]
                 total_deals += results["deals"]
                 active_item_ids.extend(results["item_ids"])
             except Exception as e:
-                logger.error(f"Error scanning '{keyword}': {e}")
-                errors.append(f"{keyword}: {e}")
-            time.sleep(1)  # Be polite to SGW servers
+                logger.error(f"Error scanning {label}: {e}")
+                errors.append(f"{label}: {e}")
 
         db.mark_deals_stale(active_item_ids)
         db.log_scan_finish(
@@ -102,28 +109,37 @@ class Scanner:
         logger.info(f"Scan complete. Scanned: {total_scanned}, Deals: {total_deals}")
         return {"scanned": total_scanned, "deals": total_deals, "errors": errors}
 
-    def _scan_keyword(self, keyword: str) -> dict:
-        query = {**SGW_SEARCH_TEMPLATE, "searchText": keyword}
+    def _scan_keyword(self, keyword: Optional[str]) -> dict:
+        query = {**SGW_SEARCH_TEMPLATE, "searchText": keyword or ""}
         if self.category_ids:
             query["categoryId"] = self.category_ids
+        label = f"'{keyword}'" if keyword else f"category {self.category_ids}"
         try:
             items = self.sgw.get_query_results(query, page_size=40)
         except Exception as e:
-            logger.error(f"SGW query failed for '{keyword}': {e}")
+            logger.error(f"SGW query failed for {label}: {e}")
             return {"scanned": 0, "deals": 0, "item_ids": []}
 
-        scanned = 0
-        deals = 0
-        item_ids = []
+        # Cap per the configured max items
+        items = items[:self.max_items]
 
-        for item in items:
-            scanned += 1
-            item_id = int(item.get("itemId", 0))
-            if not item_id:
-                continue
-            item_ids.append(item_id)
-            if self._process_item(item, keyword=keyword):
-                deals += 1
+        scanned = len(items)
+        deals = 0
+        item_ids = [int(item.get("itemId", 0)) for item in items if item.get("itemId")]
+
+        # Run eBay lookups in parallel (8 workers) to drastically cut scan time
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {
+                pool.submit(self._process_item, item, keyword or f"category:{self.category_ids}"): item
+                for item in items
+                if item.get("itemId")
+            }
+            for future in as_completed(futures):
+                try:
+                    if future.result():
+                        deals += 1
+                except Exception as e:
+                    logger.warning(f"Item processing error: {e}")
 
         return {"scanned": scanned, "deals": deals, "item_ids": item_ids}
 

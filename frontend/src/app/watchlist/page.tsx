@@ -35,7 +35,7 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
   scheduled:        { bg: "bg-blue-950/40",    text: "text-blue-300",    dot: "bg-blue-500 animate-pulse" },
   bid_placed:       { bg: "bg-amber-950/40",   text: "text-amber-300",   dot: "bg-amber-500 animate-pulse" },
   won:              { bg: "bg-emerald-950/40", text: "text-emerald-300", dot: "bg-emerald-400" },
-  awaiting_payment: { bg: "bg-yellow-950/40",  text: "text-yellow-300",  dot: "bg-yellow-400 animate-pulse" },
+  awaiting_payment: { bg: "bg-green-950/40",   text: "text-green-300",   dot: "bg-green-400 animate-pulse" },
   shipped:          { bg: "bg-sky-950/40",     text: "text-sky-300",     dot: "bg-sky-400" },
   lost:             { bg: "bg-zinc-800/40",    text: "text-zinc-500",    dot: "bg-zinc-600" },
   error:            { bg: "bg-red-950/40",     text: "text-red-400",     dot: "bg-red-500" },
@@ -182,7 +182,7 @@ export default function WatchlistPage() {
                   {item.sniper_status === "awaiting_payment" ? (
                     <div className="mt-1.5 text-xs space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-yellow-400 font-semibold">
+                        <span className="text-green-400 font-semibold">
                           Won · ${item.final_price?.toFixed(2) ?? "—"}
                         </span>
                         <span className="text-zinc-600">+ shipping/tax at checkout</span>
@@ -197,7 +197,7 @@ export default function WatchlistPage() {
                         href="https://shopgoodwill.com/shopgoodwill/open-orders"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-yellow-400 hover:text-yellow-300 font-medium"
+                        className="inline-flex items-center gap-1 text-green-400 hover:text-green-300 font-medium"
                       >
                         Pay on ShopGoodwill →
                       </a>
@@ -266,11 +266,23 @@ export default function WatchlistPage() {
                   )}
                 </div>
 
-                {/* Countdown */}
-                <div className="text-center flex-shrink-0">
-                  <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-0.5">Ends in</div>
-                  <div className={`text-base font-mono font-bold ${timeColor}`}>{timeLabel}</div>
-                </div>
+                {/* Countdown — only shown while auction is live */}
+                {(() => {
+                  const terminal = ["won", "awaiting_payment", "shipped", "lost"].includes(item.sniper_status);
+                  if (terminal) return null;
+                  return (
+                    <div className="text-center flex-shrink-0">
+                      {timeLabel === "Ended" ? (
+                        <div className="text-base font-semibold text-zinc-400">Ended</div>
+                      ) : (
+                        <>
+                          <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-0.5">Ends in</div>
+                          <div className={`text-base font-mono font-bold ${timeColor}`}>{timeLabel}</div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Status */}
                 <div className={`hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full flex-shrink-0 border border-transparent ${status.bg} ${status.text}`}>

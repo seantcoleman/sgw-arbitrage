@@ -43,6 +43,7 @@ export function Nav() {
 
   const links = [
     { href: "/", label: "Deals" },
+    { href: "/browse", label: "Browse" },
     { href: "/favorites", label: "Favorites" },
     { href: "/watchlist", label: "Watchlist" },
     { href: "/settings", label: "Settings" },
