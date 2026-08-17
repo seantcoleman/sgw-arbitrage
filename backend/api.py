@@ -533,12 +533,12 @@ def get_all_favorites():
         logger.error(f"Failed to fetch SGW favorites: {e}")
         raise HTTPException(status_code=502, detail=f"Could not reach SGW: {e}")
 
-    # Load any analyzed deals for these item IDs
-    all_deals = {d["item_id"]: d for d in db.get_deals(limit=1000, status="active")}
+    records = {d["item_id"]: d for d in db.get_deals_by_ids(list(raw_favorites.keys()))}
 
     result = []
     for item_id, fav in raw_favorites.items():
-        deal = all_deals.get(item_id)
+        record = records.get(item_id)
+        is_deal = bool(record and record.get("status") == "active" and record.get("profit") is not None)
         entry = {
             "item_id": item_id,
             "title": fav.get("title") or fav.get("itemTitle") or f"Item #{item_id}",
@@ -547,20 +547,20 @@ def get_all_favorites():
             "image_url": (fav.get("imageURL") or fav.get("imageUrl") or "").replace("\\", "/") or None,
             "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
             "seller_id": fav.get("sellerId"),
-            # eBay analysis — only present if item has been scanned
-            "analyzed": deal is not None,
-            "ebay_median": deal["ebay_median"] if deal else None,
-            "ebay_low": deal["ebay_low"] if deal else None,
-            "ebay_high": deal["ebay_high"] if deal else None,
-            "ebay_sold_count": deal["ebay_sold_count"] if deal else None,
-            "profit": deal["profit"] if deal else None,
-            "margin": deal["margin"] if deal else None,
-            "shipping_est": deal["shipping_est"] if deal else None,
+            "analyzed": record is not None,
+            "is_deal": is_deal,
+            "skip_reason": None if is_deal else (record.get("skip_reason") if record else None),
+            "ebay_median": record["ebay_median"] if record else None,
+            "ebay_low": record["ebay_low"] if record else None,
+            "ebay_high": record["ebay_high"] if record else None,
+            "ebay_sold_count": record["ebay_sold_count"] if record else None,
+            "profit": record["profit"] if record else None,
+            "margin": record["margin"] if record else None,
+            "shipping_est": record["shipping_est"] if record else None,
         }
         result.append(entry)
 
-    # Sort: analyzed first (by profit desc), then unanalyzed
-    result.sort(key=lambda x: (not x["analyzed"], -(x["profit"] or 0)))
+    result.sort(key=lambda x: (0 if x["is_deal"] else 1 if x["analyzed"] else 2, -(x["profit"] or 0)))
     return {"favorites": result, "count": len(result)}
 
 

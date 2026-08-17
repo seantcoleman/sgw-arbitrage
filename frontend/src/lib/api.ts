@@ -176,6 +176,8 @@ export interface FavoriteItem {
   sgw_url: string;
   seller_id: number | null;
   analyzed: boolean;
+  is_deal: boolean;
+  skip_reason: string | null;
   ebay_median: number | null;
   ebay_low: number | null;
   ebay_high: number | null;

@@ -116,6 +116,11 @@ def init_db():
             if col not in existing:
                 conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typedef}")
 
+        # Migrate deals table to add skip_reason column
+        deals_cols = {r[1] for r in conn.execute("PRAGMA table_info(deals)").fetchall()}
+        if "skip_reason" not in deals_cols:
+            conn.execute("ALTER TABLE deals ADD COLUMN skip_reason TEXT")
+
 
 # ── Deals ──────────────────────────────────────────────────────────────────
 
@@ -137,9 +142,44 @@ def upsert_deal(deal: Dict[str, Any]) -> None:
                 ebay_median  = excluded.ebay_median,
                 profit       = excluded.profit,
                 margin       = excluded.margin,
+                skip_reason  = NULL,
                 status       = 'active',
                 last_updated = datetime('now')
         """, deal)
+
+
+def upsert_skipped(item: Dict[str, Any]) -> None:
+    """Store analysis for items that were checked but didn't qualify as deals.
+
+    Never overwrite an existing active deal — a later skip (e.g. bid-floor
+    mismatch on a favorites re-scan) must not hide a previously found deal.
+    """
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT status FROM deals WHERE item_id = ?", (item["item_id"],)
+        ).fetchone()
+        if existing and existing["status"] == "active":
+            return
+        conn.execute("""
+            INSERT INTO deals (
+                item_id, title, sgw_url, current_bid, shipping_est, end_time,
+                seller_id, image_url, keyword, ebay_median, ebay_low, ebay_high,
+                ebay_sold_count, ebay_search, profit, margin, status, skip_reason, last_updated
+            ) VALUES (
+                :item_id, :title, :sgw_url, :current_bid, :shipping_est, :end_time,
+                :seller_id, :image_url, :keyword, :ebay_median, :ebay_low, :ebay_high,
+                :ebay_sold_count, :ebay_search, :profit, :margin, 'skipped', :skip_reason, datetime('now')
+            )
+            ON CONFLICT(item_id) DO UPDATE SET
+                current_bid  = excluded.current_bid,
+                end_time     = excluded.end_time,
+                ebay_median  = excluded.ebay_median,
+                profit       = excluded.profit,
+                margin       = excluded.margin,
+                skip_reason  = excluded.skip_reason,
+                status       = 'skipped',
+                last_updated = datetime('now')
+        """, item)
 
 
 def get_deals(
@@ -156,6 +196,19 @@ def get_deals(
             ORDER BY profit DESC
             LIMIT ? OFFSET ?
         """, (min_profit, min_margin, status, limit, offset)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_deals_by_ids(item_ids: List[int]) -> List[Dict]:
+    """Fetch deals/skipped records by item ID with no profit or status filter."""
+    if not item_ids:
+        return []
+    placeholders = ",".join("?" * len(item_ids))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM deals WHERE item_id IN ({placeholders})",
+            item_ids,
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

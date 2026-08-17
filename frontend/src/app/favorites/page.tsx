@@ -57,10 +57,17 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${urgencyDot}`} />
           {timeLabel}
         </div>
-        {/* Profit badge or "not analyzed" */}
-        {item.analyzed && item.profit != null ? (
+        {/* Status badge */}
+        {item.is_deal && item.profit != null ? (
           <div className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/30 backdrop-blur-md">
             +${item.profit.toFixed(0)} profit
+          </div>
+        ) : item.analyzed ? (
+          <div
+            className="absolute top-3 right-3 text-[11px] font-medium px-2.5 py-1 rounded-full border bg-zinc-800/80 text-zinc-400 border-zinc-700/50 backdrop-blur-md max-w-[160px] truncate"
+            title={item.skip_reason ?? "Checked — not a deal"}
+          >
+            {item.skip_reason ?? "Not a deal"}
           </div>
         ) : (
           <div className="absolute top-3 right-3 text-[11px] font-medium px-2.5 py-1 rounded-full border bg-zinc-800/80 text-zinc-500 border-zinc-700/50 backdrop-blur-md">
@@ -68,8 +75,8 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
           </div>
         )}
 
-        {/* Bottom overlay */}
-        {item.analyzed && item.profit != null && (
+        {/* Bottom overlay — only for confirmed deals */}
+        {item.is_deal && item.profit != null && (
           <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
             <div className="flex items-end justify-between">
               <div>
@@ -97,7 +104,7 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
         </a>
 
         {/* Price row */}
-        {item.analyzed && item.ebay_median != null ? (
+        {item.is_deal && item.ebay_median != null ? (
           <div className="flex items-center gap-2 text-xs">
             <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
@@ -113,11 +120,19 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
               <div className="text-[10px] text-zinc-600 mt-0.5">${item.ebay_low?.toFixed(0)}–${item.ebay_high?.toFixed(0)}</div>
             </div>
           </div>
+        ) : item.analyzed && item.skip_reason ? (
+          <div className="text-xs bg-zinc-800/50 rounded-xl px-3 py-2.5">
+            <div className="flex items-center gap-3">
+              <span className="text-zinc-500">Current bid:</span>
+              <span className="text-zinc-200 font-semibold">${item.current_bid.toFixed(2)}</span>
+            </div>
+            <p className="text-zinc-500 mt-1">{item.skip_reason}</p>
+          </div>
         ) : (
           <div className="flex items-center gap-3 text-xs bg-zinc-800/50 rounded-xl px-3 py-2.5">
             <span className="text-zinc-500">Current bid:</span>
             <span className="text-zinc-200 font-semibold">${item.current_bid.toFixed(2)}</span>
-            <span className="ml-auto text-zinc-600 italic">Run "Scan Favorites" to check eBay value</span>
+            <span className="ml-auto text-zinc-600 italic">Run "Check eBay Prices" to analyze</span>
           </div>
         )}
 
@@ -218,7 +233,7 @@ export default function FavoritesPage() {
   };
 
   const analyzed = favorites.filter(f => f.analyzed);
-  const profitable = analyzed.filter(f => (f.profit ?? 0) > 0);
+  const deals = analyzed.filter(f => f.is_deal);
 
   return (
     <div className="min-h-screen">
@@ -259,10 +274,10 @@ export default function FavoritesPage() {
             <span className="text-zinc-500 text-xs">Analyzed</span>
             <span className="text-white font-bold text-sm">{analyzed.length}</span>
           </div>
-          {profitable.length > 0 && (
+          {deals.length > 0 && (
             <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
-              <span className="text-zinc-500 text-xs">Profitable</span>
-              <span className="text-green-400 font-bold text-sm">{profitable.length}</span>
+              <span className="text-zinc-500 text-xs">Deals</span>
+              <span className="text-green-400 font-bold text-sm">{deals.length}</span>
             </div>
           )}
         </div>

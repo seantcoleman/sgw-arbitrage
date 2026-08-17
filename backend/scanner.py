@@ -193,7 +193,7 @@ class Scanner:
                         fav_data.get("imageURL")
                     ),
                 }
-                result = self._process_item(normalized, keyword="⭐ favorite")
+                result = self._process_item(normalized, keyword="⭐ favorite", save_skipped=True)
                 if result:
                     deals += 1
             except Exception as e:
@@ -203,7 +203,7 @@ class Scanner:
         logger.info(f"Favorites scan complete. Scanned: {scanned}, Deals: {deals}")
         return {"scanned": scanned, "deals": deals, "errors": errors}
 
-    def _process_item(self, item: dict, keyword: str) -> bool:
+    def _process_item(self, item: dict, keyword: str, save_skipped: bool = False) -> bool:
         """Run a single normalized item through the full arbitrage pipeline. Returns True if saved as a deal."""
         item_id = int(item.get("itemId", 0))
         if not item_id:
@@ -211,6 +211,31 @@ class Scanner:
 
         title = item.get("title", "")
         current_bid = float(item.get("currentPrice", 0) or 0)
+
+        def _save_skipped(reason: str, price_result=None):
+            if not save_skipped:
+                return
+            image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")
+            image_url = image_urls[0] if isinstance(image_urls, list) else image_urls
+            db.upsert_skipped({
+                "item_id": item_id,
+                "title": title,
+                "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
+                "current_bid": current_bid,
+                "shipping_est": None,
+                "end_time": self._to_utc(item.get("endTime")),
+                "seller_id": item.get("sellerId"),
+                "image_url": image_url.replace("\\", "/") if image_url else None,
+                "keyword": keyword,
+                "ebay_median": price_result.median if price_result else None,
+                "ebay_low": price_result.low if price_result else None,
+                "ebay_high": price_result.high if price_result else None,
+                "ebay_sold_count": price_result.sold_count if price_result else None,
+                "ebay_search": price_result.search_term if price_result else None,
+                "profit": None,
+                "margin": None,
+                "skip_reason": reason,
+            })
 
         passes, reason = item_filter.pre_filter(
             item,
@@ -220,10 +245,12 @@ class Scanner:
         )
         if not passes:
             logger.debug(f"Pre-filter rejected '{title}': {reason}")
+            _save_skipped(reason)
             return False
 
         clean_term = item_filter.clean_title_for_ebay(title)
         if not clean_term:
+            _save_skipped("title couldn't be cleaned for eBay search")
             return False
 
         shipping = self._get_shipping(item_id) or 12.0
@@ -236,9 +263,11 @@ class Scanner:
             )
         except Exception as e:
             logger.warning(f"eBay lookup failed for '{clean_term}': {e}")
+            _save_skipped(f"eBay error: {e}")
             return False
 
         if price_result is None:
+            _save_skipped(f"fewer than {self.min_sold_comps} eBay listings found")
             return False
 
         ebay_net = price_result.median * EBAY_FEE_RATE
@@ -247,6 +276,28 @@ class Scanner:
         margin = profit / total_cost if total_cost > 0 else 0
 
         if profit < self.min_profit or margin < self.min_margin:
+            if save_skipped:
+                image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")
+                image_url = image_urls[0] if isinstance(image_urls, list) else image_urls
+                db.upsert_skipped({
+                    "item_id": item_id,
+                    "title": title,
+                    "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
+                    "current_bid": current_bid,
+                    "shipping_est": shipping,
+                    "end_time": self._to_utc(item.get("endTime")),
+                    "seller_id": item.get("sellerId"),
+                    "image_url": image_url.replace("\\", "/") if image_url else None,
+                    "keyword": keyword,
+                    "ebay_median": price_result.median,
+                    "ebay_low": price_result.low,
+                    "ebay_high": price_result.high,
+                    "ebay_sold_count": price_result.sold_count,
+                    "ebay_search": price_result.search_term,
+                    "profit": round(profit, 2),
+                    "margin": round(margin, 4),
+                    "skip_reason": f"below threshold (est. ${profit:.0f} profit, {margin*100:.0f}% margin)",
+                })
             return False
 
         logger.info(
