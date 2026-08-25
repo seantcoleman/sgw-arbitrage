@@ -3,23 +3,15 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { repriceItem, WatchlistItem } from "@/lib/api";
-
-function parseEndTime(endTime: string): Date {
-  if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
-  const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
-  return new Date(endTime + (isDST ? "-07:00" : "-08:00"));
-}
-
-function countdown(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
-  if (!endTime) return { label: "—", urgency: "normal" };
-  const diff = parseEndTime(endTime).getTime() - Date.now();
-  if (diff < 0) return { label: "Ended", urgency: "urgent" };
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const urgency = h >= 2 ? "normal" : h >= 1 ? "soon" : "urgent";
-  if (h > 24) return { label: `${Math.floor(h / 24)}d ${h % 24}h`, urgency: "normal" };
-  return { label: `${h}h ${m}m`, urgency };
-}
+import {
+  CardImage,
+  CardTopBadges,
+  LISTING_CARD_SHELL,
+  StatPill,
+  StatusPill,
+  timeUntil,
+  UrgencyBadge,
+} from "@/components/listingCard";
 
 function trackingUrl(shipper: string | null, tracking: string): string {
   const s = (shipper ?? "").toLowerCase();
@@ -53,14 +45,14 @@ const STATUS_LABEL: Record<string, string> = {
   error: "Error",
 };
 
-const STATUS_STYLE: Record<string, string> = {
-  scheduled: "bg-blue-600 text-white border-blue-500",
-  bid_placed: "bg-amber-500 text-zinc-950 border-amber-400",
-  won: "bg-emerald-600 text-white border-emerald-500",
-  awaiting_payment: "bg-green-600 text-white border-green-500",
-  shipped: "bg-sky-600 text-white border-sky-500",
-  lost: "bg-zinc-700 text-zinc-200 border-zinc-600",
-  error: "bg-red-600 text-white border-red-500",
+const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "green" | "sky" | "neutral" | "red"> = {
+  scheduled: "blue",
+  bid_placed: "amber",
+  won: "emerald",
+  awaiting_payment: "green",
+  shipped: "sky",
+  lost: "neutral",
+  error: "red",
 };
 
 interface WatchlistCardProps {
@@ -74,10 +66,10 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
   const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
   const [rechecking, setRechecking] = useState(false);
 
-  const { label: timeLabel, urgency } = countdown(item.end_time);
+  const { label: timeLabel, urgency } = timeUntil(item.end_time);
   const terminal = ["won", "awaiting_payment", "shipped", "lost"].includes(item.sniper_status);
   const statusLabel = STATUS_LABEL[item.sniper_status] ?? item.sniper_status;
-  const statusCls = STATUS_STYLE[item.sniper_status] ?? STATUS_STYLE.scheduled;
+  const statusTone = STATUS_TONE[item.sniper_status] ?? "blue";
 
   const paidTotal =
     (item.final_price ?? 0) +
@@ -89,12 +81,6 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
     item.ebay_median != null && item.final_price != null
       ? item.ebay_median - paidTotal
       : null;
-
-  const urgencyCls = {
-    normal: "text-zinc-400 bg-black/50",
-    soon: "text-amber-300 bg-amber-950/70",
-    urgent: "text-red-300 bg-red-950/70",
-  }[urgency];
 
   const handleRecheck = async () => {
     const term = searchTerm.trim();
@@ -121,67 +107,52 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
   };
 
   return (
-    <div className="group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50">
-      <div className="relative h-48 bg-zinc-800 overflow-hidden">
-        {item.image_url ? (
-          <>
-            <img
-              src={item.image_url}
-              alt={item.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-transparent opacity-80" />
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span className="text-4xl opacity-20">📦</span>
-          </div>
-        )}
-
-        <div className="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
-          {!terminal ? (
-            <span className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-md border border-white/10 ${urgencyCls}`}>
-              {timeLabel === "Ended" ? "Ended" : `Ends ${timeLabel}`}
-            </span>
-          ) : (
-            <span />
-          )}
-          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${statusCls}`}>
-            {statusLabel}
-          </span>
-        </div>
+    <div className={LISTING_CARD_SHELL}>
+      <CardImage src={item.image_url} alt={item.title}>
+        <CardTopBadges
+          left={
+            !terminal ? (
+              <UrgencyBadge
+                label={timeLabel === "Ended" ? "Ended" : `Ends ${timeLabel}`}
+                urgency={urgency}
+              />
+            ) : undefined
+          }
+          right={
+            <StatusPill label={statusLabel} tone={statusTone} />
+          }
+        />
 
         <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
           <div className="flex items-end justify-between gap-2">
-            <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2">
-              {item.ebay_median != null ? (
-                <>
-                  <div className="text-[10px] text-zinc-300 uppercase tracking-widest font-semibold mb-0.5">eBay Est.</div>
-                  <div className="text-2xl font-black text-white leading-none">
-                    ${item.ebay_median.toFixed(0)}
-                  </div>
-                </>
-              ) : (
-                <div className="text-sm text-zinc-400">No eBay estimate</div>
-              )}
-            </div>
-            {item.sniper_status === "shipped" && shippedProfit != null && (
-              <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
-                <div className="text-[10px] text-zinc-400 mb-0.5">vs paid</div>
-                <div className={`text-sm font-semibold ${shippedProfit > 0 ? "text-green-400" : "text-red-400"}`}>
-                  {shippedProfit > 0 ? "+" : ""}${shippedProfit.toFixed(0)}
-                </div>
+            {item.ebay_median != null ? (
+              <StatPill label="eBay Est." value={`$${item.ebay_median.toFixed(0)}`} size="md" />
+            ) : (
+              <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-sm text-zinc-400">
+                No eBay estimate
               </div>
             )}
+            {item.sniper_status === "shipped" && shippedProfit != null && (
+              <StatPill
+                label="vs paid"
+                value={`${shippedProfit > 0 ? "+" : ""}$${shippedProfit.toFixed(0)}`}
+                align="right"
+                valueClassName={shippedProfit > 0 ? "text-green-400" : "text-red-400"}
+                size="sm"
+              />
+            )}
             {item.sniper_status !== "shipped" && item.profit != null && item.profit > 0 && (
-              <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
-                <div className="text-[10px] text-zinc-400 mb-0.5">Est. profit</div>
-                <div className="text-sm font-semibold text-green-400">+${item.profit.toFixed(0)}</div>
-              </div>
+              <StatPill
+                label="Est. profit"
+                value={`+$${item.profit.toFixed(0)}`}
+                align="right"
+                valueClassName="text-green-400"
+                size="sm"
+              />
             )}
           </div>
         </div>
-      </div>
+      </CardImage>
 
       <div className="p-4 flex flex-col gap-3 flex-1">
         <a

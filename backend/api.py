@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 import db
 import ebay
+import search_term
 import shopgoodwill
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -247,25 +248,33 @@ def reprice_item(item_id: int, req: RepriceRequest):
         raise HTTPException(status_code=400, detail="search_term is required")
 
     settings = db.get_settings()
-    min_comps = int(settings.get("min_sold_comps", 5))
     days_back = int(settings.get("ebay_days_back", 90))
     EBAY_FEE_RATE = 0.87
 
+    # Prefer existing deal row; fall back to watchlist / SGW for cost basis
+    records = db.get_deals_by_ids([item_id])
+    deal = records[0] if records else None
+    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
+
+    title = (deal or {}).get("title") or (watch or {}).get("title") or f"Item #{item_id}"
+
     try:
-        price_result = ebay.get_sold_prices(term, days_back=days_back, min_comps=min_comps)
+        resolved = search_term.resolve_ebay_search(
+            title,
+            days_back=days_back,
+            min_comps=1,
+            preferred_term=term,
+            learn=True,
+        )
+        price_result = resolved.price_result
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"eBay lookup failed: {e}")
 
     if price_result is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Fewer than {min_comps} eBay listings found for '{term}'",
+            detail=f"No matching eBay listings found for '{term}'",
         )
-
-    # Prefer existing deal row; fall back to watchlist / SGW for cost basis
-    records = db.get_deals_by_ids([item_id])
-    deal = records[0] if records else None
-    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
 
     current_bid = float(
         (deal or {}).get("current_bid")
@@ -282,7 +291,6 @@ def reprice_item(item_id: int, req: RepriceRequest):
     profit = round(ebay_net - total_cost, 2)
     margin = round(profit / total_cost, 4) if total_cost > 0 else 0.0
 
-    title = (deal or {}).get("title") or (watch or {}).get("title") or f"Item #{item_id}"
     image_url = (deal or {}).get("image_url") or (watch or {}).get("image_url")
     end_time = (deal or {}).get("end_time") or (watch or {}).get("end_time")
     sgw_url = (deal or {}).get("sgw_url") or (watch or {}).get("sgw_url") or f"https://shopgoodwill.com/item/{item_id}"

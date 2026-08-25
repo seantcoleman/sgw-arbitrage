@@ -2,34 +2,48 @@
 
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { addToWatchlist, FavoriteItem, getAllFavorites, getFavoritesScanStatus, triggerFavoritesScan } from "@/lib/api";
+import {
+  addToWatchlist,
+  FavoriteItem,
+  getAllFavorites,
+  getFavoritesScanStatus,
+  repriceItem,
+  triggerFavoritesScan,
+} from "@/lib/api";
+import {
+  CardImage,
+  CardTopBadges,
+  DealImageOverlay,
+  LISTING_CARD_SHELL,
+  PriceCompareRow,
+  RoiBadge,
+  StatPill,
+  StatusPill,
+  timeUntil,
+  UrgencyBadge,
+} from "@/components/listingCard";
 
-function parseEndTime(t: string): Date {
-  if (t.endsWith("Z") || t.includes("+") || t.includes("-0")) return new Date(t);
-  const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
-  return new Date(t + (isDST ? "-07:00" : "-08:00"));
+function ebaySearchUrl(term: string): string {
+  return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(term)}`;
 }
 
-function timeUntil(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
-  if (!endTime) return { label: "—", urgency: "normal" };
-  const diff = parseEndTime(endTime).getTime() - Date.now();
-  if (diff < 0) return { label: "Ended", urgency: "urgent" };
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (h > 48) return { label: `${Math.floor(h / 24)}d`, urgency: "normal" };
-  if (h > 24) return { label: `${Math.floor(h / 24)}d ${h % 24}h`, urgency: "normal" };
-  if (h >= 4) return { label: `${h}h ${m}m`, urgency: "soon" };
-  return { label: `${h}h ${m}m`, urgency: "urgent" };
-}
-
-function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: FavoriteItem, maxBid: number) => void }) {
+function FavCard({
+  item,
+  onSnipe,
+  onUpdated,
+}: {
+  item: FavoriteItem;
+  onSnipe: (item: FavoriteItem, maxBid: number) => void;
+  onUpdated: (itemId: number, update: Partial<FavoriteItem>) => void;
+}) {
   const [maxBid, setMaxBid] = useState("");
   const [sniping, setSniping] = useState(false);
+  const [showRecheck, setShowRecheck] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
+  const [rechecking, setRechecking] = useState(false);
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
   const totalCost = item.current_bid + (item.shipping_est ?? 12);
-
-  const urgencyColor = { normal: "text-zinc-400", soon: "text-amber-400", urgent: "text-red-400" }[urgency];
-  const urgencyDot = { normal: "bg-zinc-500", soon: "bg-amber-400", urgent: "bg-red-500 animate-pulse" }[urgency];
+  const hasEbay = item.ebay_median != null;
 
   const handleSnipe = () => {
     const bid = parseFloat(maxBid);
@@ -40,59 +54,79 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
     onSnipe(item, bid);
   };
 
-  return (
-    <div className="group bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50">
-      {/* Image */}
-      <div className="relative h-44 bg-zinc-800 overflow-hidden flex-shrink-0">
-        {item.image_url ? (
-          <>
-            <img src={item.image_url} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-transparent opacity-70" />
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center opacity-20 text-4xl">📦</div>
-        )}
-        {/* Time badge */}
-        <div className={`absolute top-3 left-3 flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 ${urgencyColor}`}>
-          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${urgencyDot}`} />
-          {timeLabel}
-        </div>
-        {/* Status badge */}
-        {item.is_deal && item.profit != null ? (
-          <div className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/30 backdrop-blur-md">
-            +${item.profit.toFixed(0)} profit
-          </div>
-        ) : item.analyzed ? (
-          <div
-            className="absolute top-3 right-3 text-[11px] font-medium px-2.5 py-1 rounded-full border bg-zinc-800/80 text-zinc-400 border-zinc-700/50 backdrop-blur-md max-w-[160px] truncate"
-            title={item.skip_reason ?? "Checked — not a deal"}
-          >
-            {item.skip_reason ?? "Not a deal"}
-          </div>
-        ) : (
-          <div className="absolute top-3 right-3 text-[11px] font-medium px-2.5 py-1 rounded-full border bg-zinc-800/80 text-zinc-500 border-zinc-700/50 backdrop-blur-md">
-            Not analyzed
-          </div>
-        )}
+  const handleRecheck = async () => {
+    const term = searchTerm.trim();
+    if (!term) {
+      toast.error("Enter a search term");
+      return;
+    }
+    setRechecking(true);
+    try {
+      const result = await repriceItem(item.item_id, term);
+      onUpdated(item.item_id, {
+        analyzed: true,
+        is_deal: true,
+        skip_reason: null,
+        ebay_search: result.ebay_search,
+        ebay_median: result.ebay_median,
+        ebay_low: result.ebay_low,
+        ebay_high: result.ebay_high,
+        ebay_sold_count: result.ebay_sold_count,
+        profit: result.profit,
+        margin: result.margin,
+      });
+      setSearchTerm(result.ebay_search);
+      setShowRecheck(false);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · ${result.profit >= 0 ? "+" : ""}$${result.profit.toFixed(0)}`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Recheck failed");
+    } finally {
+      setRechecking(false);
+    }
+  };
 
-        {/* Bottom overlay — only for confirmed deals */}
-        {item.is_deal && item.profit != null && (
-          <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold mb-0.5">Est. Profit</div>
-                <div className="text-2xl font-black text-white leading-none drop-shadow-lg">+${item.profit.toFixed(0)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] text-zinc-500 mb-0.5">{item.ebay_sold_count} comps</div>
-                <div className="text-sm font-semibold text-green-400">${item.ebay_median?.toFixed(0)} eBay</div>
-              </div>
+  const rightBadge =
+    item.is_deal && item.margin != null ? (
+      <RoiBadge margin={item.margin} profit={item.profit} />
+    ) : item.profit != null && item.profit > 0 ? (
+      <RoiBadge margin={item.margin} profit={item.profit} />
+    ) : item.analyzed ? (
+      <StatusPill
+        label={item.skip_reason ?? "Not a deal"}
+        tone="muted"
+        title={item.skip_reason ?? "Checked — not a deal"}
+      />
+    ) : (
+      <StatusPill label="Not analyzed" tone="muted" />
+    );
+
+  return (
+    <div className={LISTING_CARD_SHELL}>
+      <CardImage src={item.image_url} alt={item.title} heightClass="h-44">
+        <CardTopBadges
+          left={<UrgencyBadge label={timeLabel} urgency={urgency} />}
+          right={rightBadge}
+        />
+        {hasEbay && item.profit != null ? (
+          <DealImageOverlay
+            profit={item.profit}
+            ebayMedian={item.ebay_median!}
+            comps={item.ebay_sold_count}
+            size="md"
+          />
+        ) : hasEbay ? (
+          <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
+            <div className="flex items-end justify-between gap-2">
+              <StatPill
+                label={item.ebay_sold_count != null ? `${item.ebay_sold_count} comps` : "eBay Est."}
+                value={`$${item.ebay_median!.toFixed(0)}`}
+                size="md"
+              />
             </div>
           </div>
-        )}
-      </div>
+        ) : null}
+      </CardImage>
 
-      {/* Body */}
       <div className="p-4 flex flex-col gap-3 flex-1">
         <a
           href={item.sgw_url}
@@ -103,52 +137,95 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
           {item.title}
         </a>
 
-        {/* Price row */}
-        {item.is_deal && item.ebay_median != null ? (
+        {hasEbay ? (
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-xs">
-              <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
-                <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
-                <div className="font-bold text-white text-[14px]">${totalCost.toFixed(2)}</div>
-                <div className="text-[10px] text-zinc-600 mt-0.5">${item.current_bid.toFixed(2)} bid</div>
-              </div>
-              <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
-                <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
-                <div className="font-bold text-white text-[14px]">${item.ebay_median.toFixed(2)}</div>
-                <div className="text-[10px] text-zinc-600 mt-0.5">${item.ebay_low?.toFixed(0)}–${item.ebay_high?.toFixed(0)}</div>
-              </div>
-            </div>
-            {item.ebay_search && (
-              <a
-                href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(item.ebay_search)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-zinc-500 hover:text-sky-400 underline underline-offset-2 truncate block"
-              >
-                Searched: {item.ebay_search}
-              </a>
+            <PriceCompareRow
+              youPay={`$${totalCost.toFixed(2)}`}
+              youPayDetail={`$${item.current_bid.toFixed(2)} bid`}
+              ebayValue={`$${item.ebay_median!.toFixed(2)}`}
+              ebayDetail={
+                item.ebay_low != null && item.ebay_high != null
+                  ? `$${item.ebay_low.toFixed(0)}–$${item.ebay_high.toFixed(0)}`
+                  : item.ebay_sold_count != null
+                  ? `${item.ebay_sold_count} comps`
+                  : undefined
+              }
+            />
+            {!item.is_deal && item.skip_reason && (
+              <p className="text-[11px] text-zinc-500">{item.skip_reason}</p>
             )}
           </div>
-        ) : item.analyzed && item.skip_reason ? (
+        ) : item.analyzed ? (
           <div className="text-xs bg-zinc-800/50 rounded-xl px-3 py-2.5">
             <div className="flex items-center gap-3">
               <span className="text-zinc-500">Current bid:</span>
               <span className="text-zinc-200 font-semibold">${item.current_bid.toFixed(2)}</span>
             </div>
-            <p className="text-zinc-500 mt-1">{item.skip_reason}</p>
+            {item.skip_reason && <p className="text-zinc-500 mt-1">{item.skip_reason}</p>}
           </div>
         ) : (
           <div className="flex items-center gap-3 text-xs bg-zinc-800/50 rounded-xl px-3 py-2.5">
             <span className="text-zinc-500">Current bid:</span>
             <span className="text-zinc-200 font-semibold">${item.current_bid.toFixed(2)}</span>
-            <span className="ml-auto text-zinc-600 italic">Run "Check eBay Prices" to analyze</span>
+            <span className="ml-auto text-zinc-600 italic">Run &quot;Check eBay Prices&quot; to analyze</span>
           </div>
         )}
 
-        {/* Snipe */}
+        <div className="text-[11px]">
+          {showRecheck ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleRecheck()}
+                placeholder="Better eBay search term…"
+                className="flex-1 bg-zinc-800 border border-zinc-700 focus:border-zinc-500 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleRecheck}
+                disabled={rechecking}
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+              >
+                {rechecking ? "…" : "Recheck"}
+              </button>
+              <button type="button" onClick={() => setShowRecheck(false)} className="text-zinc-600 hover:text-zinc-400 text-xs px-1">
+                ✕
+              </button>
+            </div>
+          ) : item.analyzed ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              {item.ebay_search ? (
+                <>
+                  <span className="text-zinc-600">Searched:</span>
+                  <a
+                    href={ebaySearchUrl(item.ebay_search)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-zinc-400 hover:text-sky-400 underline underline-offset-2 truncate max-w-[160px]"
+                    title={item.ebay_search}
+                  >
+                    {item.ebay_search}
+                  </a>
+                </>
+              ) : (
+                <span className="text-zinc-600">No eBay estimate yet</span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm(item.ebay_search ?? item.title);
+                  setShowRecheck(true);
+                }}
+                className="text-zinc-600 hover:text-zinc-300 transition-colors"
+              >
+                Wrong item?
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         <div className="mt-auto">
           {sniping ? (
             <div className="flex gap-2">
@@ -244,6 +321,10 @@ export default function FavoritesPage() {
     }
   };
 
+  const handleUpdated = (itemId: number, update: Partial<FavoriteItem>) => {
+    setFavorites(prev => prev.map(f => (f.item_id === itemId ? { ...f, ...update } : f)));
+  };
+
   const analyzed = favorites.filter(f => f.analyzed);
   const deals = analyzed.filter(f => f.is_deal);
 
@@ -323,7 +404,7 @@ export default function FavoritesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {favorites.map(item => (
-            <FavCard key={item.item_id} item={item} onSnipe={handleSnipe} />
+            <FavCard key={item.item_id} item={item} onSnipe={handleSnipe} onUpdated={handleUpdated} />
           ))}
         </div>
       )}

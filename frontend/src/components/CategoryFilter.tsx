@@ -8,6 +8,7 @@ interface CategoryFilterProps {
   onToggle: (id: number) => void;
   onClear: () => void;
   loading?: boolean;
+  compact?: boolean;
 }
 
 export function CategoryFilter({
@@ -16,18 +17,19 @@ export function CategoryFilter({
   onToggle,
   onClear,
   loading = false,
+  compact = false,
 }: CategoryFilterProps) {
   if (loading) {
-    return <p className="text-sm text-zinc-600">Loading categories…</p>;
+    return <p className="text-xs text-zinc-600">Loading categories…</p>;
   }
 
   if (categories.length === 0) {
-    return <p className="text-sm text-zinc-600">Could not load categories from SGW.</p>;
+    return <p className="text-xs text-zinc-600">Could not load categories from SGW.</p>;
   }
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-3">
+      <div className={`flex flex-wrap ${compact ? "gap-1" : "gap-2 mb-3"}`}>
         {categories.map(cat => {
           const selected = selectedIds.includes(cat.id);
           return (
@@ -35,7 +37,11 @@ export function CategoryFilter({
               key={cat.id}
               type="button"
               onClick={() => onToggle(cat.id)}
-              className={`text-xs px-3 py-1.5 rounded-xl border font-medium transition-all ${
+              className={`font-medium transition-all border ${
+                compact
+                  ? "text-[11px] px-2 py-0.5 rounded-md"
+                  : "text-xs px-3 py-1.5 rounded-xl"
+              } ${
                 selected
                   ? "bg-green-900/40 border-green-700 text-green-300"
                   : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
@@ -46,7 +52,7 @@ export function CategoryFilter({
           );
         })}
       </div>
-      {selectedIds.length > 0 && (
+      {!compact && selectedIds.length > 0 && (
         <button
           type="button"
           onClick={onClear}

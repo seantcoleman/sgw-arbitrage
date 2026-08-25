@@ -90,8 +90,8 @@ def init_db():
 
             INSERT OR IGNORE INTO settings (key, value) VALUES
                 ('scan_keywords', '["sony headphones", "apple watch", "canon camera", "nintendo switch"]'),
-                ('min_profit_usd', '15'),
-                ('min_margin_pct', '25'),
+                ('min_profit_usd', '20'),
+                ('min_margin_pct', '30'),
                 ('min_sold_comps', '5'),
                 ('max_bid_cap', '300'),
                 ('min_bid_floor', '3'),
@@ -131,6 +131,82 @@ def init_db():
         deals_cols = {r[1] for r in conn.execute("PRAGMA table_info(deals)").fetchall()}
         if "skip_reason" not in deals_cols:
             conn.execute("ALTER TABLE deals ADD COLUMN skip_reason TEXT")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS search_term_cache (
+                cache_key    TEXT PRIMARY KEY,
+                search_term  TEXT NOT NULL,
+                source       TEXT DEFAULT 'auto',
+                hit_count    INTEGER DEFAULT 1,
+                last_used    TEXT DEFAULT (datetime('now')),
+                created_at   TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        # Seed cache from existing deal/watchlist search terms (once-ish; upsert is cheap)
+        rows = conn.execute("""
+            SELECT title, ebay_search FROM deals
+            WHERE ebay_search IS NOT NULL AND trim(ebay_search) != '' AND title IS NOT NULL
+            UNION
+            SELECT title, ebay_search FROM watchlist
+            WHERE ebay_search IS NOT NULL AND trim(ebay_search) != '' AND title IS NOT NULL
+        """).fetchall()
+        for row in rows:
+            title, term = row["title"], row["ebay_search"]
+            if not title or not term:
+                continue
+            tkey = "title:" + " ".join(title.lower().split())
+            conn.execute("""
+                INSERT INTO search_term_cache (cache_key, search_term, source, hit_count, last_used, created_at)
+                VALUES (?, ?, 'seed', 1, datetime('now'), datetime('now'))
+                ON CONFLICT(cache_key) DO NOTHING
+            """, (tkey, term))
+            # product fingerprint: brand+model-ish short terms only
+            words = term.split()
+            if 1 <= len(words) <= 3:
+                pkey = "product:" + term.lower().strip()
+                conn.execute("""
+                    INSERT INTO search_term_cache (cache_key, search_term, source, hit_count, last_used, created_at)
+                    VALUES (?, ?, 'seed', 1, datetime('now'), datetime('now'))
+                    ON CONFLICT(cache_key) DO NOTHING
+                """, (pkey, term))
+
+
+# ── Search term cache ──────────────────────────────────────────────────────
+
+def upsert_search_term_cache(cache_key: str, search_term: str, source: str = "auto") -> None:
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO search_term_cache (cache_key, search_term, source, hit_count, last_used, created_at)
+            VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
+            ON CONFLICT(cache_key) DO UPDATE SET
+                search_term = excluded.search_term,
+                source      = CASE
+                    WHEN excluded.source = 'manual' THEN 'manual'
+                    WHEN search_term_cache.source = 'manual' THEN search_term_cache.source
+                    ELSE excluded.source
+                END,
+                hit_count   = search_term_cache.hit_count + 1,
+                last_used   = datetime('now')
+        """, (cache_key, search_term, source))
+
+
+def get_search_term_cache(cache_key: str) -> Optional[Dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM search_term_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def touch_search_term_cache(cache_key: str) -> None:
+    with get_conn() as conn:
+        conn.execute("""
+            UPDATE search_term_cache
+            SET hit_count = hit_count + 1, last_used = datetime('now')
+            WHERE cache_key = ?
+        """, (cache_key,))
 
 
 # ── Deals ──────────────────────────────────────────────────────────────────
@@ -187,14 +263,22 @@ def upsert_skipped(item: Dict[str, Any]) -> None:
                 :ebay_sold_count, :ebay_search, :profit, :margin, 'skipped', :skip_reason, datetime('now')
             )
             ON CONFLICT(item_id) DO UPDATE SET
-                current_bid  = excluded.current_bid,
-                end_time     = excluded.end_time,
-                ebay_median  = excluded.ebay_median,
-                profit       = excluded.profit,
-                margin       = excluded.margin,
-                skip_reason  = excluded.skip_reason,
-                status       = 'skipped',
-                last_updated = datetime('now')
+                title            = excluded.title,
+                current_bid      = excluded.current_bid,
+                shipping_est     = excluded.shipping_est,
+                end_time         = excluded.end_time,
+                image_url        = excluded.image_url,
+                keyword          = excluded.keyword,
+                ebay_median      = excluded.ebay_median,
+                ebay_low         = excluded.ebay_low,
+                ebay_high        = excluded.ebay_high,
+                ebay_sold_count  = excluded.ebay_sold_count,
+                ebay_search      = excluded.ebay_search,
+                profit           = excluded.profit,
+                margin           = excluded.margin,
+                skip_reason      = excluded.skip_reason,
+                status           = 'skipped',
+                last_updated     = datetime('now')
         """, item)
 
 

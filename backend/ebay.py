@@ -158,12 +158,14 @@ def get_sold_prices(
     """
     Query eBay Browse API for current used-condition BIN listings matching search_term.
     Results are cached for 4 hours to stay within eBay API rate limits.
-    Returns None if fewer than min_comps results found after outlier filtering.
+    Returns None only when no title-matched listings are found.
+    Callers should compare sold_count to min_comps for deal thresholds;
+    partial comps are still returned so UIs can show estimates + skip reasons.
     """
     global _cache_hits, _cache_misses
 
-    # Bust cache when matching logic changes
-    cache_key = (search_term.lower().strip(), days_back, "v2-title-match")
+    # Bust cache when matching / partial-comps logic changes
+    cache_key = (search_term.lower().strip(), days_back, "v3-partial-comps")
     now = time.time()
 
     if cache_key in _cache:
@@ -248,11 +250,12 @@ def _fetch_sold_prices(
         if rough_median * 0.4 <= p <= rough_median * 2.5
     ]
 
+    # Prefer the filtered band when it still meets min_comps; otherwise keep
+    # whatever title-matched prices we have so callers can show partial comps
+    # and skip reasons instead of discarding the lookup entirely.
     if len(prices_filtered) < min_comps:
-        if len(prices) >= min_comps:
+        if len(prices) >= min_comps or not prices_filtered:
             prices_filtered = prices
-        else:
-            return None
 
     return EbayPriceResult(
         search_term=search_term,

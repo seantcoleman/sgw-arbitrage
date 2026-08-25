@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 import db
 import ebay
 import filter as item_filter
+import search_term
 import shopgoodwill
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,8 @@ SGW_SEARCH_TEMPLATE = {
 class Scanner:
     def __init__(self):
         settings = db.get_settings()
-        self.min_profit = float(settings.get("min_profit_usd", 15))
-        self.min_margin = float(settings.get("min_margin_pct", 25)) / 100
+        self.min_profit = float(settings.get("min_profit_usd", 20))
+        self.min_margin = float(settings.get("min_margin_pct", 30)) / 100
         self.min_sold_comps = int(settings.get("min_sold_comps", 5))
         self.max_bid_cap = float(settings.get("max_bid_cap", 300))
         self.min_bid_floor = float(settings.get("min_bid_floor", 3))
@@ -233,7 +234,9 @@ class Scanner:
         title = item.get("title", "")
         current_bid = float(item.get("currentPrice", 0) or 0)
 
-        def _save_skipped(reason: str, price_result=None):
+        shipping = None
+
+        def _save_skipped(reason: str, price_result=None, search_term=None, profit=None, margin=None):
             if not save_skipped:
                 return
             image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")
@@ -243,7 +246,7 @@ class Scanner:
                 "title": title,
                 "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
                 "current_bid": current_bid,
-                "shipping_est": None,
+                "shipping_est": shipping,
                 "end_time": self._to_utc(item.get("endTime")),
                 "seller_id": item.get("sellerId"),
                 "image_url": image_url.replace("\\", "/") if image_url else None,
@@ -252,9 +255,9 @@ class Scanner:
                 "ebay_low": price_result.low if price_result else None,
                 "ebay_high": price_result.high if price_result else None,
                 "ebay_sold_count": price_result.sold_count if price_result else None,
-                "ebay_search": price_result.search_term if price_result else None,
-                "profit": None,
-                "margin": None,
+                "ebay_search": (price_result.search_term if price_result else None) or search_term,
+                "profit": round(profit, 2) if profit is not None else None,
+                "margin": round(margin, 4) if margin is not None else None,
                 "skip_reason": reason,
             })
 
@@ -269,26 +272,41 @@ class Scanner:
             _save_skipped(reason)
             return False
 
-        clean_term = item_filter.clean_title_for_ebay(title)
-        if not clean_term:
-            _save_skipped("title couldn't be cleaned for eBay search")
-            return False
-
+        clean_term = None
         shipping = self._get_shipping(item_id) or 12.0
 
         try:
-            price_result = ebay.get_sold_prices(
-                clean_term,
+            resolved = search_term.resolve_ebay_search(
+                title,
                 days_back=self.days_back,
                 min_comps=self.min_sold_comps,
+                learn=True,
             )
         except Exception as e:
-            logger.warning(f"eBay lookup failed for '{clean_term}': {e}")
+            logger.warning(f"eBay search resolve failed for '{title}': {e}")
             _save_skipped(f"eBay error: {e}")
             return False
 
+        clean_term = resolved.term or None
+        price_result = resolved.price_result
+
+        if not resolved.term:
+            _save_skipped("title couldn't be cleaned for eBay search")
+            return False
+
         if price_result is None:
-            _save_skipped(f"fewer than {self.min_sold_comps} eBay listings found")
+            _save_skipped(
+                "no eBay listings found",
+                search_term=clean_term,
+            )
+            return False
+
+        if price_result.sold_count < self.min_sold_comps:
+            _save_skipped(
+                f"fewer than {self.min_sold_comps} eBay listings found ({price_result.sold_count} matched)",
+                price_result=price_result,
+                search_term=clean_term,
+            )
             return False
 
         ebay_net = price_result.median * EBAY_FEE_RATE
@@ -297,28 +315,12 @@ class Scanner:
         margin = profit / total_cost if total_cost > 0 else 0
 
         if profit < self.min_profit or margin < self.min_margin:
-            if save_skipped:
-                image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")
-                image_url = image_urls[0] if isinstance(image_urls, list) else image_urls
-                db.upsert_skipped({
-                    "item_id": item_id,
-                    "title": title,
-                    "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
-                    "current_bid": current_bid,
-                    "shipping_est": shipping,
-                    "end_time": self._to_utc(item.get("endTime")),
-                    "seller_id": item.get("sellerId"),
-                    "image_url": image_url.replace("\\", "/") if image_url else None,
-                    "keyword": keyword,
-                    "ebay_median": price_result.median,
-                    "ebay_low": price_result.low,
-                    "ebay_high": price_result.high,
-                    "ebay_sold_count": price_result.sold_count,
-                    "ebay_search": price_result.search_term,
-                    "profit": round(profit, 2),
-                    "margin": round(margin, 4),
-                    "skip_reason": f"below threshold (est. ${profit:.0f} profit, {margin*100:.0f}% margin)",
-                })
+            _save_skipped(
+                f"below threshold (est. ${profit:.0f} profit, {margin*100:.0f}% margin)",
+                price_result=price_result,
+                profit=profit,
+                margin=margin,
+            )
             return False
 
         logger.info(

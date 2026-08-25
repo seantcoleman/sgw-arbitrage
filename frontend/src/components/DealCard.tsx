@@ -3,6 +3,16 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { Category, Deal, repriceItem } from "@/lib/api";
+import {
+  CardImage,
+  CardTopBadges,
+  DealImageOverlay,
+  LISTING_CARD_SHELL,
+  PriceCompareRow,
+  RoiBadge,
+  timeUntil,
+  UrgencyBadge,
+} from "@/components/listingCard";
 
 interface DealCardProps {
   deal: Deal;
@@ -32,31 +42,6 @@ export function formatDealKeyword(keyword: string, categories: Category[] = []):
     .join(", ");
 }
 
-function parseEndTime(endTime: string): Date {
-  if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
-  // SGW times are America/Los_Angeles — approximate with current offset
-  const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
-  return new Date(endTime + (isDST ? "-07:00" : "-08:00"));
-}
-
-function timeUntil(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
-  if (!endTime) return { label: "Unknown", urgency: "normal" };
-  const diff = parseEndTime(endTime).getTime() - Date.now();
-  if (diff < 0) return { label: "Ended", urgency: "urgent" };
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (h > 48) return { label: `${Math.floor(h / 24)}d left`, urgency: "normal" };
-  if (h > 24) return { label: `${Math.floor(h / 24)}d ${h % 24}h`, urgency: "normal" };
-  if (h >= 4) return { label: `${h}h ${m}m`, urgency: "soon" };
-  return { label: `${h}h ${m}m`, urgency: "urgent" };
-}
-
-function formatRoi(margin: number): string {
-  const pct = margin * 100;
-  if (pct >= 1000) return `${(margin).toFixed(0)}x ROI`;
-  return `${Math.round(pct)}% ROI`;
-}
-
 function ebaySearchUrl(term: string): string {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(term)}`;
 }
@@ -77,26 +62,6 @@ export function DealCard({
 
   const { label: timeLabel, urgency } = timeUntil(deal.end_time);
   const totalCost = deal.current_bid + (deal.shipping_est ?? 0);
-  const roiLabel = formatRoi(deal.margin);
-
-  const roiBadgeCls =
-    deal.margin >= 3
-      ? "bg-green-600 text-white border-green-500"
-      : deal.margin >= 1
-      ? "bg-emerald-600 text-white border-emerald-500"
-      : "bg-amber-500 text-zinc-950 border-amber-400";
-
-  const urgencyCls = {
-    normal: "text-zinc-400 bg-black/50",
-    soon: "text-amber-300 bg-amber-950/70",
-    urgent: "text-red-300 bg-red-950/70",
-  }[urgency];
-
-  const urgencyDot = {
-    normal: "bg-zinc-500",
-    soon: "bg-amber-400",
-    urgent: "bg-red-500 animate-pulse",
-  }[urgency];
 
   const handleRecheck = async () => {
     const term = searchTerm.trim();
@@ -127,51 +92,18 @@ export function DealCard({
   };
 
   return (
-    <div className="group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50">
-      {/* Image */}
-      <div className="relative h-48 bg-zinc-800 overflow-hidden">
-        {deal.image_url ? (
-          <>
-            <img
-              src={deal.image_url}
-              alt={deal.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-transparent opacity-80" />
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span className="text-4xl opacity-20">📦</span>
-          </div>
-        )}
-
-        {/* Top badges */}
-        <div className="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
-          <span className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-md border border-white/10 ${urgencyCls}`}>
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${urgencyDot}`} />
-            {timeLabel}
-          </span>
-          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border backdrop-blur-md ${roiBadgeCls}`}>
-            {roiLabel}
-          </span>
-        </div>
-
-        {/* Profit overlaid at bottom of image */}
-        <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
-          <div className="flex items-end justify-between gap-2">
-            <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2">
-              <div className="text-[10px] text-zinc-300 uppercase tracking-widest font-semibold mb-0.5">Est. Profit</div>
-              <div className="text-3xl font-black text-white leading-none">
-                +${deal.profit.toFixed(0)}
-              </div>
-            </div>
-            <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
-              <div className="text-[10px] text-zinc-400 mb-0.5">{deal.ebay_sold_count} comps</div>
-              <div className="text-sm font-semibold text-green-400">${deal.ebay_median.toFixed(0)} eBay</div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className={LISTING_CARD_SHELL}>
+      <CardImage src={deal.image_url} alt={deal.title}>
+        <CardTopBadges
+          left={<UrgencyBadge label={timeLabel} urgency={urgency} />}
+          right={<RoiBadge margin={deal.margin} />}
+        />
+        <DealImageOverlay
+          profit={deal.profit}
+          ebayMedian={deal.ebay_median}
+          comps={deal.ebay_sold_count}
+        />
+      </CardImage>
 
       {/* Body */}
       <div className="p-4 flex flex-col gap-3 flex-1">
@@ -190,28 +122,12 @@ export function DealCard({
           </span>
         </div>
 
-        {/* Price row */}
-        <div className="flex items-center gap-2 text-xs">
-          <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
-            <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
-            <div className="font-bold text-white text-[15px]">${totalCost.toFixed(2)}</div>
-            <div className="text-[10px] text-zinc-600 mt-0.5">
-              ${deal.current_bid.toFixed(2)} + ${(deal.shipping_est ?? 0).toFixed(2)} ship
-            </div>
-          </div>
-
-          <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
-
-          <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
-            <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
-            <div className="font-bold text-white text-[15px]">${deal.ebay_median.toFixed(2)}</div>
-            <div className="text-[10px] text-zinc-600 mt-0.5">
-              ${deal.ebay_low.toFixed(0)}–${deal.ebay_high.toFixed(0)} range
-            </div>
-          </div>
-        </div>
+        <PriceCompareRow
+          youPay={`$${totalCost.toFixed(2)}`}
+          youPayDetail={`$${deal.current_bid.toFixed(2)} + $${(deal.shipping_est ?? 0).toFixed(2)} ship`}
+          ebayValue={`$${deal.ebay_median.toFixed(2)}`}
+          ebayDetail={`$${deal.ebay_low.toFixed(0)}–$${deal.ebay_high.toFixed(0)} range`}
+        />
 
         {/* Search term + wrong item */}
         <div className="text-[11px]">
