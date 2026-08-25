@@ -1,6 +1,8 @@
 "use client";
 
-import { Deal } from "@/lib/api";
+import { useState } from "react";
+import toast from "react-hot-toast";
+import { Deal, repriceItem } from "@/lib/api";
 
 interface DealCardProps {
   deal: Deal;
@@ -9,6 +11,7 @@ interface DealCardProps {
   onMaxBidChange: (v: string) => void;
   onWatchClick: () => void;
   onConfirmWatch: () => void;
+  onRepriced?: (itemId: number, update: Partial<Deal>) => void;
 }
 
 function parseEndTime(endTime: string): Date {
@@ -36,6 +39,10 @@ function formatRoi(margin: number): string {
   return `${Math.round(pct)}% ROI`;
 }
 
+function ebaySearchUrl(term: string): string {
+  return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(term)}`;
+}
+
 export function DealCard({
   deal,
   isWatching,
@@ -43,7 +50,12 @@ export function DealCard({
   onMaxBidChange,
   onWatchClick,
   onConfirmWatch,
+  onRepriced,
 }: DealCardProps) {
+  const [showRecheck, setShowRecheck] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(deal.ebay_search ?? "");
+  const [rechecking, setRechecking] = useState(false);
+
   const { label: timeLabel, urgency } = timeUntil(deal.end_time);
   const totalCost = deal.current_bid + (deal.shipping_est ?? 0);
   const roiLabel = formatRoi(deal.margin);
@@ -66,6 +78,34 @@ export function DealCard({
     soon: "bg-amber-400",
     urgent: "bg-red-500 animate-pulse",
   }[urgency];
+
+  const handleRecheck = async () => {
+    const term = searchTerm.trim();
+    if (!term) {
+      toast.error("Enter a search term");
+      return;
+    }
+    setRechecking(true);
+    try {
+      const result = await repriceItem(deal.item_id, term);
+      onRepriced?.(deal.item_id, {
+        ebay_search: result.ebay_search,
+        ebay_median: result.ebay_median,
+        ebay_low: result.ebay_low,
+        ebay_high: result.ebay_high,
+        ebay_sold_count: result.ebay_sold_count,
+        profit: result.profit,
+        margin: result.margin,
+      });
+      setSearchTerm(result.ebay_search);
+      setShowRecheck(false);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · +$${result.profit.toFixed(0)}`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Recheck failed");
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   return (
     <div className="group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50">
@@ -152,6 +192,60 @@ export function DealCard({
               ${deal.ebay_low.toFixed(0)}–${deal.ebay_high.toFixed(0)} range
             </div>
           </div>
+        </div>
+
+        {/* Search term + wrong item */}
+        <div className="text-[11px]">
+          {deal.ebay_search && !showRecheck && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-zinc-600">Searched:</span>
+              <a
+                href={ebaySearchUrl(deal.ebay_search)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-zinc-400 hover:text-sky-400 underline underline-offset-2 truncate max-w-[160px]"
+                title={deal.ebay_search}
+              >
+                {deal.ebay_search}
+              </a>
+              <button
+                type="button"
+                onClick={() => { setSearchTerm(deal.ebay_search); setShowRecheck(true); }}
+                className="text-zinc-600 hover:text-zinc-300 transition-colors"
+              >
+                Wrong item?
+              </button>
+            </div>
+          )}
+          {(!deal.ebay_search || showRecheck) && (
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleRecheck()}
+                placeholder="Better eBay search term…"
+                className="flex-1 bg-zinc-800 border border-zinc-700 focus:border-zinc-500 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleRecheck}
+                disabled={rechecking}
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
+              >
+                {rechecking ? "…" : "Recheck"}
+              </button>
+              {showRecheck && (
+                <button
+                  type="button"
+                  onClick={() => setShowRecheck(false)}
+                  className="text-zinc-600 hover:text-zinc-400 text-xs px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Snipe section */}

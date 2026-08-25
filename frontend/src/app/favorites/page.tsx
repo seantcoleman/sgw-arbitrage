@@ -105,20 +105,32 @@ function FavCard({ item, onSnipe }: { item: FavoriteItem; onSnipe: (item: Favori
 
         {/* Price row */}
         {item.is_deal && item.ebay_median != null ? (
-          <div className="flex items-center gap-2 text-xs">
-            <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
-              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
-              <div className="font-bold text-white text-[14px]">${totalCost.toFixed(2)}</div>
-              <div className="text-[10px] text-zinc-600 mt-0.5">${item.current_bid.toFixed(2)} bid</div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-xs">
+              <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
+                <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
+                <div className="font-bold text-white text-[14px]">${totalCost.toFixed(2)}</div>
+                <div className="text-[10px] text-zinc-600 mt-0.5">${item.current_bid.toFixed(2)} bid</div>
+              </div>
+              <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+              <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
+                <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
+                <div className="font-bold text-white text-[14px]">${item.ebay_median.toFixed(2)}</div>
+                <div className="text-[10px] text-zinc-600 mt-0.5">${item.ebay_low?.toFixed(0)}–${item.ebay_high?.toFixed(0)}</div>
+              </div>
             </div>
-            <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-            <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2">
-              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
-              <div className="font-bold text-white text-[14px]">${item.ebay_median.toFixed(2)}</div>
-              <div className="text-[10px] text-zinc-600 mt-0.5">${item.ebay_low?.toFixed(0)}–${item.ebay_high?.toFixed(0)}</div>
-            </div>
+            {item.ebay_search && (
+              <a
+                href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(item.ebay_search)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-zinc-500 hover:text-sky-400 underline underline-offset-2 truncate block"
+              >
+                Searched: {item.ebay_search}
+              </a>
+            )}
           </div>
         ) : item.analyzed && item.skip_reason ? (
           <div className="text-xs bg-zinc-800/50 rounded-xl px-3 py-2.5">

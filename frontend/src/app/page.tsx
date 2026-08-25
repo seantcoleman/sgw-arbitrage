@@ -265,6 +265,9 @@ export default function DealsPage() {
               onMaxBidChange={v => setMaxBidInput(prev => ({ ...prev, [deal.item_id]: v }))}
               onWatchClick={() => setWatchingId(watchingId === deal.item_id ? null : deal.item_id)}
               onConfirmWatch={() => handleWatch(deal)}
+              onRepriced={(itemId, update) => {
+                setDeals(prev => prev.map(d => d.item_id === itemId ? { ...d, ...update } : d));
+              }}
             />
           ))}
         </div>

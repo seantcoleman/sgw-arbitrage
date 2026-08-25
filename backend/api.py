@@ -199,6 +199,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
                 "image_url": None,
                 "ebay_median": None,
                 "profit": None,
+                "ebay_search": None,
             }
         except Exception as e:
             raise HTTPException(status_code=404, detail=f"Deal not found and could not fetch from SGW: {e}")
@@ -219,6 +220,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         "image_url": deal["image_url"],
         "ebay_median": deal["ebay_median"],
         "profit": deal["profit"],
+        "ebay_search": deal.get("ebay_search"),
     })
 
     background_tasks.add_task(_add_sgw_favorite, req.item_id, req.max_bid)
@@ -231,6 +233,88 @@ def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks):
     db.remove_from_watchlist(item_id)
     background_tasks.add_task(_remove_sgw_favorite, item_id)
     return {"success": True}
+
+
+class RepriceRequest(BaseModel):
+    search_term: str
+
+
+@app.post("/items/{item_id}/reprice")
+def reprice_item(item_id: int, req: RepriceRequest):
+    """Re-run eBay lookup with a user-supplied search term and update deal/watchlist pricing."""
+    term = (req.search_term or "").strip()
+    if not term:
+        raise HTTPException(status_code=400, detail="search_term is required")
+
+    settings = db.get_settings()
+    min_comps = int(settings.get("min_sold_comps", 5))
+    days_back = int(settings.get("ebay_days_back", 90))
+    EBAY_FEE_RATE = 0.87
+
+    try:
+        price_result = ebay.get_sold_prices(term, days_back=days_back, min_comps=min_comps)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"eBay lookup failed: {e}")
+
+    if price_result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fewer than {min_comps} eBay listings found for '{term}'",
+        )
+
+    # Prefer existing deal row; fall back to watchlist / SGW for cost basis
+    records = db.get_deals_by_ids([item_id])
+    deal = records[0] if records else None
+    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
+
+    current_bid = float(
+        (deal or {}).get("current_bid")
+        or (watch or {}).get("current_bid")
+        or (watch or {}).get("final_price")
+        or 0
+    )
+    shipping = float((deal or {}).get("shipping_est") or 12.0)
+
+    # For shipped items, profit vs actual total paid is more useful on the watchlist UI;
+    # still store estimate using bid+shipping for the deals table consistency.
+    ebay_net = price_result.median * EBAY_FEE_RATE
+    total_cost = current_bid + shipping
+    profit = round(ebay_net - total_cost, 2)
+    margin = round(profit / total_cost, 4) if total_cost > 0 else 0.0
+
+    title = (deal or {}).get("title") or (watch or {}).get("title") or f"Item #{item_id}"
+    image_url = (deal or {}).get("image_url") or (watch or {}).get("image_url")
+    end_time = (deal or {}).get("end_time") or (watch or {}).get("end_time")
+    sgw_url = (deal or {}).get("sgw_url") or (watch or {}).get("sgw_url") or f"https://shopgoodwill.com/item/{item_id}"
+
+    db.upsert_deal({
+        "item_id": item_id,
+        "title": title,
+        "sgw_url": sgw_url,
+        "current_bid": current_bid,
+        "shipping_est": shipping,
+        "end_time": end_time,
+        "seller_id": (deal or {}).get("seller_id"),
+        "image_url": image_url,
+        "keyword": (deal or {}).get("keyword") or "manual reprice",
+        **price_result.to_dict(),
+        "profit": profit,
+        "margin": margin,
+    })
+
+    if watch:
+        db.update_watchlist_pricing(item_id, price_result.median, profit, price_result.search_term)
+
+    return {
+        "item_id": item_id,
+        "ebay_search": price_result.search_term,
+        "ebay_median": round(price_result.median, 2),
+        "ebay_low": round(price_result.low, 2),
+        "ebay_high": round(price_result.high, 2),
+        "ebay_sold_count": price_result.sold_count,
+        "profit": profit,
+        "margin": margin,
+    }
 
 
 def _add_sgw_favorite(item_id: int, max_bid: float):
@@ -554,6 +638,7 @@ def get_all_favorites():
             "ebay_low": record["ebay_low"] if record else None,
             "ebay_high": record["ebay_high"] if record else None,
             "ebay_sold_count": record["ebay_sold_count"] if record else None,
+            "ebay_search": record.get("ebay_search") if record else None,
             "profit": record["profit"] if record else None,
             "margin": record["margin"] if record else None,
             "shipping_est": record["shipping_est"] if record else None,

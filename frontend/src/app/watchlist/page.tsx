@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, SniperLogEntry, WatchlistItem } from "@/lib/api";
+import { getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
 function parseEndTime(endTime: string): Date {
   if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
@@ -20,6 +20,28 @@ function countdown(endTime: string | null): { label: string; urgency: "normal" |
   const urgency = h >= 2 ? "normal" : h >= 1 ? "soon" : "urgent";
   if (h > 24) return { label: `${Math.floor(h / 24)}d ${h % 24}h`, urgency: "normal" };
   return { label: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`, urgency };
+}
+
+function trackingUrl(shipper: string | null, tracking: string): string {
+  const s = (shipper ?? "").toLowerCase();
+  const t = encodeURIComponent(tracking);
+  if (s.includes("fedex") || s.includes("federal express")) {
+    return `https://www.fedex.com/fedextrack/?trknbr=${t}`;
+  }
+  if (s.includes("ups") || s.includes("united parcel")) {
+    return `https://www.ups.com/track?tracknum=${t}`;
+  }
+  if (s.includes("usps") || s.includes("postal") || s.includes("post office")) {
+    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${t}`;
+  }
+  if (s.includes("dhl")) {
+    return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${t}`;
+  }
+  return `https://www.google.com/search?q=${encodeURIComponent((shipper ?? "") + " tracking " + tracking)}`;
+}
+
+function ebaySearchUrl(term: string): string {
+  return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(term)}`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -48,6 +70,9 @@ export default function WatchlistPage() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<SniperLogEntry[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [recheckId, setRecheckId] = useState<number | null>(null);
+  const [recheckTerm, setRecheckTerm] = useState("");
+  const [rechecking, setRechecking] = useState(false);
   const logBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,6 +109,29 @@ export default function WatchlistPage() {
     await removeFromWatchlist(item_id);
     setWatchlist(prev => prev.filter(i => i.item_id !== item_id));
     toast("Removed from sniper queue");
+  };
+
+  const handleRecheck = async (item_id: number) => {
+    const term = recheckTerm.trim();
+    if (!term) {
+      toast.error("Enter a search term");
+      return;
+    }
+    setRechecking(true);
+    try {
+      const result = await repriceItem(item_id, term);
+      setWatchlist(prev => prev.map(i =>
+        i.item_id === item_id
+          ? { ...i, ebay_median: result.ebay_median, ebay_search: result.ebay_search, profit: result.profit }
+          : i
+      ));
+      setRecheckId(null);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Recheck failed");
+    } finally {
+      setRechecking(false);
+    }
   };
 
   const activeItems = watchlist.filter(i => i.sniper_status === "scheduled" || i.sniper_status === "bid_placed");
@@ -231,7 +279,7 @@ export default function WatchlistPage() {
                       </div>
                       {item.tracking_number && (
                         <a
-                          href={`https://www.google.com/search?q=${encodeURIComponent((item.shipper_name ?? "") + " tracking " + item.tracking_number)}`}
+                          href={trackingUrl(item.shipper_name, item.tracking_number)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-medium"
@@ -261,6 +309,60 @@ export default function WatchlistPage() {
                           <span className="text-zinc-700">·</span>
                           <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
                         </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* eBay search term + override */}
+                  {(item.ebay_search || item.ebay_median != null) && (
+                    <div className="mt-1.5 text-[11px]">
+                      {recheckId === item.item_id ? (
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={recheckTerm}
+                            onChange={e => setRecheckTerm(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && handleRecheck(item.item_id)}
+                            placeholder="Better eBay search term…"
+                            className="flex-1 max-w-xs bg-zinc-800 border border-zinc-700 focus:border-zinc-500 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRecheck(item.item_id)}
+                            disabled={rechecking}
+                            className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-2.5 py-1 rounded-lg font-semibold"
+                          >
+                            {rechecking ? "…" : "Recheck"}
+                          </button>
+                          <button type="button" onClick={() => setRecheckId(null)} className="text-zinc-600 hover:text-zinc-400">✕</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {item.ebay_search && (
+                            <>
+                              <span className="text-zinc-600">Searched:</span>
+                              <a
+                                href={ebaySearchUrl(item.ebay_search)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-zinc-400 hover:text-sky-400 underline underline-offset-2 truncate max-w-[180px]"
+                              >
+                                {item.ebay_search}
+                              </a>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRecheckId(item.item_id);
+                              setRecheckTerm(item.ebay_search ?? "");
+                            }}
+                            className="text-zinc-600 hover:text-zinc-300 transition-colors"
+                          >
+                            Wrong item?
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}

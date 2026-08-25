@@ -71,6 +71,22 @@ export const getBrowseItems = (category_ids: number[], page = 1) => {
   return apiFetch<{ items: BrowseItem[]; total: number; page: number }>(`/browse?${qs}`);
 };
 
+// Reprice with custom eBay search term
+export const repriceItem = (item_id: number, search_term: string) =>
+  apiFetch<{
+    item_id: number;
+    ebay_search: string;
+    ebay_median: number;
+    ebay_low: number;
+    ebay_high: number;
+    ebay_sold_count: number;
+    profit: number;
+    margin: number;
+  }>(`/items/${item_id}/reprice`, {
+    method: "POST",
+    body: JSON.stringify({ search_term }),
+  });
+
 // Types
 export interface Deal {
   item_id: number;
@@ -101,6 +117,7 @@ export interface WatchlistItem {
   sgw_url: string | null;
   image_url: string | null;
   ebay_median: number | null;
+  ebay_search: string | null;
   profit: number | null;
   sniper_status: string;
   final_price: number | null;
@@ -182,6 +199,7 @@ export interface FavoriteItem {
   ebay_low: number | null;
   ebay_high: number | null;
   ebay_sold_count: number | null;
+  ebay_search: string | null;
   profit: number | null;
   margin: number | null;
   shipping_est: number | null;

@@ -112,9 +112,20 @@ def init_db():
             ("tracking_number","TEXT"),
             ("shipper_name",   "TEXT"),
             ("due_date",       "TEXT"),
+            ("ebay_search",    "TEXT"),
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typedef}")
+
+        # Backfill ebay_search onto watchlist from deals where missing
+        conn.execute("""
+            UPDATE watchlist
+            SET ebay_search = (
+                SELECT d.ebay_search FROM deals d WHERE d.item_id = watchlist.item_id
+            )
+            WHERE ebay_search IS NULL
+              AND EXISTS (SELECT 1 FROM deals d WHERE d.item_id = watchlist.item_id AND d.ebay_search IS NOT NULL)
+        """)
 
         # Migrate deals table to add skip_reason column
         deals_cols = {r[1] for r in conn.execute("PRAGMA table_info(deals)").fetchall()}
@@ -137,14 +148,19 @@ def upsert_deal(deal: Dict[str, Any]) -> None:
                 :ebay_sold_count, :ebay_search, :profit, :margin, 'active', datetime('now')
             )
             ON CONFLICT(item_id) DO UPDATE SET
-                current_bid  = excluded.current_bid,
-                end_time     = excluded.end_time,
-                ebay_median  = excluded.ebay_median,
-                profit       = excluded.profit,
-                margin       = excluded.margin,
-                skip_reason  = NULL,
-                status       = 'active',
-                last_updated = datetime('now')
+                current_bid     = excluded.current_bid,
+                end_time        = excluded.end_time,
+                shipping_est    = excluded.shipping_est,
+                ebay_median     = excluded.ebay_median,
+                ebay_low        = excluded.ebay_low,
+                ebay_high       = excluded.ebay_high,
+                ebay_sold_count = excluded.ebay_sold_count,
+                ebay_search     = excluded.ebay_search,
+                profit          = excluded.profit,
+                margin          = excluded.margin,
+                skip_reason     = NULL,
+                status          = 'active',
+                last_updated    = datetime('now')
         """, deal)
 
 
@@ -244,12 +260,26 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
         conn.execute("""
             INSERT OR REPLACE INTO watchlist (
                 item_id, title, max_bid, current_bid, end_time,
-                sgw_url, image_url, ebay_median, profit
+                sgw_url, image_url, ebay_median, profit, ebay_search
             ) VALUES (
                 :item_id, :title, :max_bid, :current_bid, :end_time,
-                :sgw_url, :image_url, :ebay_median, :profit
+                :sgw_url, :image_url, :ebay_median, :profit, :ebay_search
             )
         """, item)
+
+
+def update_watchlist_pricing(
+    item_id: int,
+    ebay_median: float,
+    profit: float,
+    ebay_search: str,
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE watchlist SET ebay_median = ?, profit = ?, ebay_search = ?
+               WHERE item_id = ?""",
+            (ebay_median, profit, ebay_search, item_id),
+        )
 
 
 def get_watchlist() -> List[Dict]:
