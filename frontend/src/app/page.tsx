@@ -57,6 +57,47 @@ function ScanNumField({
   );
 }
 
+function ScanAccordion({
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+  last = false,
+}: {
+  id?: string;
+  title: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div className={last ? "" : "border-b border-zinc-800"}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors"
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">{title}</div>
+          {!open && <div className="text-xs text-zinc-600 mt-0.5 truncate">{summary}</div>}
+        </div>
+        <svg
+          className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+}
+
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [totalDeals, setTotalDeals] = useState(0);
@@ -75,6 +116,8 @@ export default function DealsPage() {
   const [newKeyword, setNewKeyword] = useState("");
   const [showScanFilters, setShowScanFilters] = useState(false);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [scanSection, setScanSection] = useState<"keywords" | "categories" | "thresholds" | "bidRange">("categories");
+  const [sortBy, setSortBy] = useState<"ending" | "profit">("ending");
   const [scanMinProfit, setScanMinProfit] = useState(15);
   const [scanMinMargin, setScanMinMargin] = useState(25);
   const [minSoldComps, setMinSoldComps] = useState(5);
@@ -237,31 +280,32 @@ export default function DealsPage() {
   const bestDeal = deals.length ? deals.reduce((best, d) => d.profit > best.profit ? d : best) : null;
   const scanFilterCount = keywords.length + selectedCatIds.length;
 
+  const parseDealEnd = (endTime: string | null): number => {
+    if (!endTime) return Number.POSITIVE_INFINITY;
+    if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) {
+      return new Date(endTime).getTime();
+    }
+    const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
+    return new Date(endTime + (isDST ? "-07:00" : "-08:00")).getTime();
+  };
+
+  const sortedDeals = [...deals].sort((a, b) => {
+    if (sortBy === "profit") return b.profit - a.profit;
+    return parseDealEnd(a.end_time) - parseDealEnd(b.end_time);
+  });
+
   return (
     <div className="min-h-screen">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-3xl font-black text-white tracking-tight">Deals</h1>
-          <button
-            onClick={handleScanNow}
-            disabled={scanRunning}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-green-900/30"
-          >
-            {scanRunning ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Scanning…
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Scan Now
-              </>
-            )}
-          </button>
+          {scanRunning && (
+            <span className="flex items-center gap-2 text-sm text-amber-400 font-medium">
+              <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+              Scanning…
+            </span>
+          )}
         </div>
         <p className="text-zinc-500 text-sm">
           ShopGoodwill listings with eBay arbitrage potential
@@ -274,11 +318,12 @@ export default function DealsPage() {
         </p>
         {lastScanItems !== null && lastScanItems >= 200 && (
           <p className="text-xs text-zinc-600 mt-1">
-            Only the first {lastScanItems} SGW listings were scanned. Raise{" "}
+            Only the first {lastScanItems} SGW listings were scanned. Tighten keywords/categories under Scan filters,
+            or raise Max items per scan in{" "}
             <a href="/settings" className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200">
-              Max items per scan
-            </a>{" "}
-            in Settings to cover more — or use Browse to see all listings.
+              Settings
+            </a>
+            .
           </p>
         )}
       </div>
@@ -336,49 +381,73 @@ export default function DealsPage() {
                   </span>
                 )}
               </button>
+
               <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-                <span className="text-zinc-500 text-xs pl-3">$</span>
+                <button
+                  type="button"
+                  onClick={() => setSortBy("ending")}
+                  className={`text-xs px-3 py-2 font-medium transition-colors ${
+                    sortBy === "ending" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  Ending soon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortBy("profit")}
+                  className={`text-xs px-3 py-2 font-medium transition-colors ${
+                    sortBy === "profit" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  Highest profit
+                </button>
+              </div>
+
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden" title="Filters which deals are shown on this page — does not change the scanner">
+                <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wide pl-3 pr-1">Show ≥</span>
+                <span className="text-zinc-500 text-xs">$</span>
                 <input
                   type="number"
                   value={minProfit || ""}
                   onChange={e => setMinProfit(Number(e.target.value))}
-                  placeholder="Min profit"
-                  className="w-24 bg-transparent py-2 px-2 text-sm text-zinc-100 focus:outline-none placeholder:text-zinc-700"
+                  placeholder="0"
+                  className="w-16 bg-transparent py-2 px-1.5 text-sm text-zinc-100 focus:outline-none placeholder:text-zinc-700"
                   min={0}
                   step={5}
                 />
               </div>
-              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden" title="Filters which deals are shown on this page — does not change the scanner">
+                <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wide pl-3 pr-1">Show ≥</span>
                 <input
                   type="number"
                   value={minMargin || ""}
                   onChange={e => setMinMargin(Number(e.target.value))}
-                  placeholder="Min ROI %"
-                  className="w-24 bg-transparent py-2 px-3 text-sm text-zinc-100 focus:outline-none placeholder:text-zinc-700"
+                  placeholder="0"
+                  className="w-14 bg-transparent py-2 px-1.5 text-sm text-zinc-100 focus:outline-none placeholder:text-zinc-700"
                   min={0}
                   max={100}
                   step={10}
                 />
-                <span className="text-zinc-500 text-xs pr-3">%</span>
+                <span className="text-zinc-500 text-xs pr-3">ROI%</span>
               </div>
               {(minProfit > 0 || minMargin > 0) && (
                 <button
                   onClick={() => { setMinProfit(0); setMinMargin(0); }}
                   className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
-                  Clear
+                  Clear view
                 </button>
               )}
             </div>
           </div>
 
           {showScanFilters && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-4 space-y-5">
-              <div className="flex items-start justify-between gap-3">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+              <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800">
                 <div>
                   <p className="text-sm font-semibold text-zinc-200">Scan filters</p>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Controls what the next scan looks for and which items qualify as deals.
+                    Used by the scanner on the next run — not the Show ≥ view filters above.
                   </p>
                 </div>
                 <button
@@ -390,8 +459,13 @@ export default function DealsPage() {
                 </button>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Keywords</p>
+              <ScanAccordion
+                id="keywords"
+                title="Keywords"
+                summary={keywords.length ? `${keywords.length} keyword${keywords.length === 1 ? "" : "s"}` : "None"}
+                open={scanSection === "keywords"}
+                onToggle={() => setScanSection("keywords")}
+              >
                 <p className="text-xs text-zinc-600 mb-3">
                   Each keyword is searched on ShopGoodwill. Be specific — &apos;sony wh-1000xm4&apos; beats &apos;headphones&apos;.
                 </p>
@@ -429,10 +503,15 @@ export default function DealsPage() {
                     Add
                   </button>
                 </div>
-              </div>
+              </ScanAccordion>
 
-              <div className="border-t border-zinc-800 pt-5">
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Categories</p>
+              <ScanAccordion
+                id="categories"
+                title="Categories"
+                summary={selectedCatIds.length ? `${selectedCatIds.length} selected` : "All"}
+                open={scanSection === "categories"}
+                onToggle={() => setScanSection("categories")}
+              >
                 <p className="text-xs text-zinc-600 mb-3">
                   {selectedCatIds.length === 0
                     ? "Scanning all categories when no filter is set."
@@ -445,10 +524,15 @@ export default function DealsPage() {
                   onClear={clearCategories}
                   loading={categoriesLoading}
                 />
-              </div>
+              </ScanAccordion>
 
-              <div className="border-t border-zinc-800 pt-5">
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">Deal thresholds</p>
+              <ScanAccordion
+                id="thresholds"
+                title="Deal thresholds"
+                summary={`$${scanMinProfit} · ${scanMinMargin}% · ${minSoldComps} comps`}
+                open={scanSection === "thresholds"}
+                onToggle={() => setScanSection("thresholds")}
+              >
                 <p className="text-xs text-zinc-600 mb-3">Items must meet both criteria to surface as a deal.</p>
                 <div className="space-y-0">
                   <ScanNumField
@@ -478,10 +562,16 @@ export default function DealsPage() {
                     min={1}
                   />
                 </div>
-              </div>
+              </ScanAccordion>
 
-              <div className="border-t border-zinc-800 pt-5">
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">Bid range</p>
+              <ScanAccordion
+                id="bidRange"
+                title="Bid range"
+                summary={`$${minBidFloor}–$${maxBidCap}`}
+                open={scanSection === "bidRange"}
+                onToggle={() => setScanSection("bidRange")}
+                last
+              >
                 <p className="text-xs text-zinc-600 mb-3">Items outside this price range are skipped before any eBay lookup.</p>
                 <div className="space-y-0">
                   <ScanNumField
@@ -500,7 +590,7 @@ export default function DealsPage() {
                     step={25}
                   />
                 </div>
-              </div>
+              </ScanAccordion>
             </div>
           )}
         </div>
@@ -563,10 +653,11 @@ export default function DealsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {deals.map(deal => (
+          {sortedDeals.map(deal => (
             <DealCard
               key={deal.item_id}
               deal={deal}
+              categories={categories}
               isWatching={watchingId === deal.item_id}
               maxBid={maxBidInput[deal.item_id] ?? ""}
               onMaxBidChange={v => setMaxBidInput(prev => ({ ...prev, [deal.item_id]: v }))}

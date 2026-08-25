@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { Deal, repriceItem } from "@/lib/api";
+import { Category, Deal, repriceItem } from "@/lib/api";
 
 interface DealCardProps {
   deal: Deal;
@@ -12,6 +12,24 @@ interface DealCardProps {
   onWatchClick: () => void;
   onConfirmWatch: () => void;
   onRepriced?: (itemId: number, update: Partial<Deal>) => void;
+  categories?: Category[];
+}
+
+/** Turn raw scanner tags like category:[13] into readable labels. */
+export function formatDealKeyword(keyword: string, categories: Category[] = []): string {
+  if (!keyword) return "";
+  const match =
+    keyword.match(/^category:\[([^\]]*)\]$/i) ||
+    keyword.match(/^category:([\d,\s]+)$/i);
+  if (!match) return keyword;
+  const ids = match[1]
+    .split(",")
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isFinite(n) && n > 0);
+  if (!ids.length) return "Category browse";
+  return ids
+    .map(id => categories.find(c => c.id === id)?.name ?? `Category ${id}`)
+    .join(", ");
 }
 
 function parseEndTime(endTime: string): Date {
@@ -51,6 +69,7 @@ export function DealCard({
   onWatchClick,
   onConfirmWatch,
   onRepriced,
+  categories = [],
 }: DealCardProps) {
   const [showRecheck, setShowRecheck] = useState(false);
   const [searchTerm, setSearchTerm] = useState(deal.ebay_search ?? "");
@@ -167,7 +186,7 @@ export function DealCard({
             {deal.title}
           </a>
           <span className="inline-block mt-1.5 text-[10px] font-medium text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-700">
-            {deal.keyword}
+            {formatDealKeyword(deal.keyword, categories)}
           </span>
         </div>
 

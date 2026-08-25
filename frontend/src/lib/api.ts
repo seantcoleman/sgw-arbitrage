@@ -62,15 +62,6 @@ export const getAllFavorites = () => apiFetch<{ favorites: FavoriteItem[]; count
 // Categories
 export const getCategories = () => apiFetch<{ categories: Category[] }>("/categories");
 
-// Browse
-export const getBrowseItems = (category_ids: number[], page = 1) => {
-  const qs = new URLSearchParams({
-    category_ids: category_ids.join(","),
-    page: String(page),
-  }).toString();
-  return apiFetch<{ items: BrowseItem[]; total: number; page: number }>(`/browse?${qs}`);
-};
-
 // Reprice with custom eBay search term
 export const repriceItem = (item_id: number, search_term: string) =>
   apiFetch<{
@@ -171,17 +162,6 @@ export interface Settings {
 export interface Category {
   id: number;
   name: string;
-}
-
-export interface BrowseItem {
-  itemId: number;
-  title: string;
-  currentPrice: number;
-  endTime: string | null;
-  imageUrl: string;
-  categoryName: string;
-  sellerId: number | null;
-  sgwUrl: string;
 }
 
 export interface FavoriteItem {

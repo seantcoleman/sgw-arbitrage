@@ -60,6 +60,7 @@ class Scanner:
             ["sony headphones", "apple watch", "canon camera"],
         )
         self.category_ids = settings.get("scan_category_ids", [])
+        self._category_names: dict = {}
 
         auth_info = {
             "username": os.getenv("SGW_USERNAME", ""),
@@ -130,7 +131,7 @@ class Scanner:
         # Run eBay lookups in parallel (8 workers) to drastically cut scan time
         with ThreadPoolExecutor(max_workers=8) as pool:
             futures = {
-                pool.submit(self._process_item, item, keyword or f"category:{self.category_ids}"): item
+                pool.submit(self._process_item, item, keyword): item
                 for item in items
                 if item.get("itemId")
             }
@@ -203,12 +204,32 @@ class Scanner:
         logger.info(f"Favorites scan complete. Scanned: {scanned}, Deals: {deals}")
         return {"scanned": scanned, "deals": deals, "errors": errors}
 
-    def _process_item(self, item: dict, keyword: str, save_skipped: bool = False) -> bool:
+    def _source_label(self, item: dict, keyword: Optional[str]) -> str:
+        """Human-readable source tag for a deal (search keyword or category name)."""
+        if keyword:
+            return keyword
+        name = (item.get("categoryName") or "").strip()
+        if name:
+            return name
+        if not self._category_names:
+            try:
+                for cat in self.sgw.get_categories():
+                    self._category_names[int(cat["id"])] = cat["name"]
+            except Exception as e:
+                logger.warning(f"Could not load category names: {e}")
+        names = [
+            self._category_names.get(int(cid), f"Category {cid}")
+            for cid in (self.category_ids or [])
+        ]
+        return ", ".join(names) if names else "Category browse"
+
+    def _process_item(self, item: dict, keyword: Optional[str] = None, save_skipped: bool = False) -> bool:
         """Run a single normalized item through the full arbitrage pipeline. Returns True if saved as a deal."""
         item_id = int(item.get("itemId", 0))
         if not item_id:
             return False
 
+        keyword = self._source_label(item, keyword)
         title = item.get("title", "")
         current_bid = float(item.get("currentPrice", 0) or 0)
 
