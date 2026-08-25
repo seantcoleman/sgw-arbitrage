@@ -11,9 +11,10 @@ Register / manage at: https://developer.ebay.com/
 
 import base64
 import os
+import re
 import statistics
 import time
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -25,10 +26,18 @@ TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 # Used / pre-owned condition IDs (eBay Browse API)
 USED_CONDITION_IDS = "1500|2000|2500|3000"
 
+# Stopwords ignored when matching search tokens to listing titles
+_STOPWORDS = {
+    "a", "an", "the", "and", "or", "of", "for", "with", "by", "in", "on",
+    "to", "from", "set", "lot", "new", "used", "black", "white", "red",
+    "blue", "green", "brown", "silver", "gold", "size", "full", "right",
+    "left", "hand", "handed", "guitar", "acoustic", "electric", "vintage",
+}
+
 _token: Optional[str] = None
 _token_expires_at: float = 0.0
 
-# In-memory cache: key=(search_term, days_back) → (result, expires_at)
+# In-memory cache: key=(search_term, days_back, version) → (result, expires_at)
 # 4-hour TTL — eBay prices don't change meaningfully in minutes
 _CACHE_TTL = 4 * 3600
 _cache: dict = {}
@@ -94,6 +103,52 @@ def _get_token() -> str:
     return _token
 
 
+def _extract_tokens(search_term: str) -> tuple:
+    """
+    Split search term into (model_tokens, other_tokens).
+
+    Model tokens contain digits (e.g. SA41BKCH, WH-1000XM4) and must appear
+    in a listing title for it to count as a comparable.
+    """
+    raw = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-/\.]*", search_term)
+    models: List[str] = []
+    others: List[str] = []
+    for t in raw:
+        lower = t.lower().strip(".-/")
+        if not lower or lower in _STOPWORDS:
+            continue
+        if any(c.isdigit() for c in lower) and len(lower) >= 3:
+            models.append(lower)
+        elif len(lower) >= 3:
+            others.append(lower)
+    return models, others
+
+
+def _title_matches(title: str, model_tokens: List[str], other_tokens: List[str]) -> bool:
+    """
+    Strict title match:
+    - If model tokens exist (e.g. sa41bkch), ALL of them must appear in the title.
+    - Otherwise require most other significant tokens (brand etc.).
+    """
+    t = title.lower()
+    # Normalize separators so SA-41BKCH matches SA41BKCH
+    t_compact = re.sub(r"[\s\-/\.]+", "", t)
+
+    if model_tokens:
+        for m in model_tokens:
+            m_compact = re.sub(r"[\s\-/\.]+", "", m)
+            if m not in t and m_compact not in t_compact:
+                return False
+        return True
+
+    if not other_tokens:
+        return True
+    # Require at least ceil(2/3) of brand/product words
+    hits = sum(1 for w in other_tokens if w in t)
+    need = max(1, (len(other_tokens) * 2 + 2) // 3)
+    return hits >= need
+
+
 def get_sold_prices(
     search_term: str,
     days_back: int = 90,
@@ -107,10 +162,10 @@ def get_sold_prices(
     """
     global _cache_hits, _cache_misses
 
-    cache_key = (search_term.lower().strip(), days_back)
+    # Bust cache when matching logic changes
+    cache_key = (search_term.lower().strip(), days_back, "v2-title-match")
     now = time.time()
 
-    # Return cached result if still fresh
     if cache_key in _cache:
         result, expires_at = _cache[cache_key]
         if now < expires_at:
@@ -121,7 +176,6 @@ def get_sold_prices(
     result = _fetch_sold_prices(search_term, days_back, max_results, min_comps)
     _cache[cache_key] = (result, now + _CACHE_TTL)
 
-    # Evict stale entries occasionally (every 500 misses)
     if _cache_misses % 500 == 0:
         _cache.clear()
 
@@ -146,8 +200,13 @@ def _fetch_sold_prices(
 ) -> Optional[EbayPriceResult]:
     """
     Raw eBay Browse API call. Use get_sold_prices() for the cached version.
+
+    Matching is stricter than eBay's default relevance: model numbers in the
+    search term must appear in listing titles so unrelated high-priced brand
+    siblings don't inflate the median.
     """
     token = _get_token()
+    model_tokens, other_tokens = _extract_tokens(search_term)
 
     try:
         resp = requests.get(
@@ -157,7 +216,6 @@ def _fetch_sold_prices(
                 "q": search_term,
                 "filter": f"conditionIds:{{{USED_CONDITION_IDS}}},buyingOptions:{{FIXED_PRICE}}",
                 "limit": str(max(max_results, 40)),
-                # Default sort = relevance; do NOT sort by price (accessories dominate low end)
             },
             timeout=10,
         )
@@ -170,6 +228,9 @@ def _fetch_sold_prices(
 
     prices = []
     for item in items:
+        title = item.get("title") or ""
+        if not _title_matches(title, model_tokens, other_tokens):
+            continue
         price_info = item.get("price", {})
         if price_info and price_info.get("currency") == "USD":
             try:
@@ -180,16 +241,18 @@ def _fetch_sold_prices(
     if not prices:
         return None
 
-    # Remove outliers: keep items within 0.25x to 4x of the rough median
-    # This filters accessories (too cheap) and overpriced anomalies
+    # Tighter band once title matching has already dropped brand siblings
     rough_median = statistics.median(prices)
     prices_filtered = [
         p for p in prices
-        if rough_median * 0.25 <= p <= rough_median * 4.0
+        if rough_median * 0.4 <= p <= rough_median * 2.5
     ]
 
     if len(prices_filtered) < min_comps:
-        return None
+        if len(prices) >= min_comps:
+            prices_filtered = prices
+        else:
+            return None
 
     return EbayPriceResult(
         search_term=search_term,

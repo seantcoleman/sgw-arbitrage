@@ -62,10 +62,10 @@ export function DealCard({
 
   const roiBadgeCls =
     deal.margin >= 3
-      ? "bg-green-500/10 text-green-400 border-green-500/30"
+      ? "bg-green-600 text-white border-green-500"
       : deal.margin >= 1
-      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-      : "bg-amber-500/10 text-amber-400 border-amber-500/30";
+      ? "bg-emerald-600 text-white border-emerald-500"
+      : "bg-amber-500 text-zinc-950 border-amber-400";
 
   const urgencyCls = {
     normal: "text-zinc-400 bg-black/50",
@@ -138,16 +138,16 @@ export function DealCard({
         </div>
 
         {/* Profit overlaid at bottom of image */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
-          <div className="flex items-end justify-between">
-            <div>
-              <div className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold mb-0.5">Est. Profit</div>
-              <div className="text-3xl font-black text-white leading-none drop-shadow-lg">
+        <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
+          <div className="flex items-end justify-between gap-2">
+            <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2">
+              <div className="text-[10px] text-zinc-300 uppercase tracking-widest font-semibold mb-0.5">Est. Profit</div>
+              <div className="text-3xl font-black text-white leading-none">
                 +${deal.profit.toFixed(0)}
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] text-zinc-500 mb-0.5">{deal.ebay_sold_count} comps</div>
+            <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
+              <div className="text-[10px] text-zinc-400 mb-0.5">{deal.ebay_sold_count} comps</div>
               <div className="text-sm font-semibold text-green-400">${deal.ebay_median.toFixed(0)} eBay</div>
             </div>
           </div>

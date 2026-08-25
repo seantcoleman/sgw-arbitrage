@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { WatchlistCard } from "@/components/WatchlistCard";
 import { getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
 function parseEndTime(endTime: string): Date {
@@ -73,6 +74,10 @@ export default function WatchlistPage() {
   const [recheckId, setRecheckId] = useState<number | null>(null);
   const [recheckTerm, setRecheckTerm] = useState("");
   const [rechecking, setRechecking] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
+    if (typeof window === "undefined") return "list";
+    return (localStorage.getItem("watchlist-view") as "list" | "cards") || "list";
+  });
   const logBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,24 +141,58 @@ export default function WatchlistPage() {
 
   const activeItems = watchlist.filter(i => i.sniper_status === "scheduled" || i.sniper_status === "bid_placed");
 
+  const setView = (mode: "list" | "cards") => {
+    setViewMode(mode);
+    localStorage.setItem("watchlist-view", mode);
+  };
+
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-6 gap-4">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">Watchlist</h1>
           <p className="text-zinc-500 text-sm mt-1">
             {watchlist.length} item{watchlist.length !== 1 ? "s" : ""} — sniper bids 30s before each auction ends
           </p>
         </div>
-        {/* Sniper status indicator — no manual button needed */}
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-          sniperRunning
-            ? "bg-green-950/40 border-green-800/50 text-green-400"
-            : "bg-red-950/40 border-red-800/50 text-red-400"
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
-          Sniper {sniperRunning ? "active" : "offline"}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View toggle */}
+          <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-0.5">
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                viewMode === "list" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+              title="List view"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("cards")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                viewMode === "cards" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+              title="Card view"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+          </div>
+          {/* Sniper status indicator */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+            sniperRunning
+              ? "bg-green-950/40 border-green-800/50 text-green-400"
+              : "bg-red-950/40 border-red-800/50 text-red-400"
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+            Sniper {sniperRunning ? "active" : "offline"}
+          </div>
         </div>
       </div>
 
@@ -197,6 +236,19 @@ export default function WatchlistPage() {
             Go to Deals or Favorites and click "+ Add to Sniper" on any auction you want to bid on.
           </p>
         </div>
+      ) : viewMode === "cards" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {watchlist.map(item => (
+            <WatchlistCard
+              key={item.item_id}
+              item={item}
+              onRemove={handleRemove}
+              onRepriced={(itemId, update) => {
+                setWatchlist(prev => prev.map(i => i.item_id === itemId ? { ...i, ...update } : i));
+              }}
+            />
+          ))}
+        </div>
       ) : (
         <div className="space-y-3">
           {watchlist.map(item => {
@@ -234,6 +286,14 @@ export default function WatchlistPage() {
                           Won · ${item.final_price?.toFixed(2) ?? "—"}
                         </span>
                         <span className="text-zinc-600">+ shipping/tax at checkout</span>
+                        {item.ebay_median != null && (
+                          <>
+                            <span className="text-zinc-700">·</span>
+                            <span className="text-zinc-400">
+                              eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                            </span>
+                          </>
+                        )}
                         {item.due_date && (
                           <>
                             <span className="text-zinc-700">·</span>
@@ -265,6 +325,14 @@ export default function WatchlistPage() {
                             </span>
                           </span>
                         )}
+                        {item.ebay_median != null && (
+                          <>
+                            <span className="text-zinc-700">·</span>
+                            <span className="text-zinc-400">
+                              eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                            </span>
+                          </>
+                        )}
                         {item.ebay_median != null && item.final_price != null && (() => {
                           const profit = item.ebay_median - (item.final_price ?? 0) - (item.final_shipping ?? 0) - (item.handling_price ?? 0) - (item.tax ?? 0);
                           return (
@@ -289,22 +357,43 @@ export default function WatchlistPage() {
                       )}
                     </div>
                   ) : item.sniper_status === "won" && item.final_price != null ? (
-                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                    <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
                       <span className="text-emerald-400 font-semibold">
                         Won · ${item.final_price.toFixed(2)}
                       </span>
+                      {item.ebay_median != null && (
+                        <span className="text-zinc-400">
+                          eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                        </span>
+                      )}
                       <span className="text-zinc-600 text-[10px]">Syncing order details…</span>
                     </div>
                   ) : item.sniper_status === "lost" ? (
-                    <div className="mt-1.5 text-xs text-zinc-600">
-                      Outbid — max was ${item.max_bid.toFixed(2)}
+                    <div className="mt-1.5 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
+                      <span>Outbid — max was ${item.max_bid.toFixed(2)}</span>
+                      {item.ebay_median != null && (
+                        <>
+                          <span className="text-zinc-700">·</span>
+                          <span className="text-zinc-400">
+                            eBay est. <span className="text-zinc-300 font-medium">${item.ebay_median.toFixed(0)}</span>
+                          </span>
+                        </>
+                      )}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                    <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
                       <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
                       <span className="text-zinc-700">·</span>
                       <span className="text-zinc-500">Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span></span>
-                      {item.profit && (
+                      {item.ebay_median != null && (
+                        <>
+                          <span className="text-zinc-700">·</span>
+                          <span className="text-zinc-400">
+                            eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                          </span>
+                        </>
+                      )}
+                      {item.profit != null && item.profit > 0 && (
                         <>
                           <span className="text-zinc-700">·</span>
                           <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
