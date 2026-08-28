@@ -381,6 +381,24 @@ def backfill_watchlist_from_deals() -> int:
         return cur.rowcount
 
 
+def sync_ebay_search_to_titles() -> int:
+    """Force ebay_search to equal the listing title everywhere (fixes truncated stubs)."""
+    with get_conn() as conn:
+        deals = conn.execute("""
+            UPDATE deals
+            SET ebay_search = TRIM(title)
+            WHERE title IS NOT NULL AND TRIM(title) != ''
+              AND IFNULL(ebay_search, '') != TRIM(title)
+        """)
+        watch = conn.execute("""
+            UPDATE watchlist
+            SET ebay_search = TRIM(title)
+            WHERE title IS NOT NULL AND TRIM(title) != ''
+              AND IFNULL(ebay_search, '') != TRIM(title)
+        """)
+        return (deals.rowcount or 0) + (watch.rowcount or 0)
+
+
 def update_watchlist_pricing(
     item_id: int,
     ebay_median: float,

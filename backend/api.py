@@ -63,6 +63,9 @@ async def lifespan(app: FastAPI):
     n = db.backfill_watchlist_from_deals()
     if n:
         logger.info(f"Backfilled image/eBay fields on {n} watchlist row(s) from deals")
+    synced = db.sync_ebay_search_to_titles()
+    if synced:
+        logger.info(f"Synced ebay_search to full title on {synced} row(s)")
     settings = db.get_settings()
     interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
@@ -336,14 +339,16 @@ def reprice_item(item_id: int, req: RepriceRequest):
         **price_result.to_dict(),
         "profit": profit,
         "margin": margin,
+        # Always show/store the exact term we searched (prefer listing title).
+        "ebay_search": title.strip(),
     })
 
     if watch:
-        db.update_watchlist_pricing(item_id, price_result.median, profit, price_result.search_term)
+        db.update_watchlist_pricing(item_id, price_result.median, profit, title.strip())
 
     return {
         "item_id": item_id,
-        "ebay_search": price_result.search_term,
+        "ebay_search": title.strip(),
         "ebay_median": round(price_result.median, 2),
         "ebay_low": round(price_result.low, 2),
         "ebay_high": round(price_result.high, 2),

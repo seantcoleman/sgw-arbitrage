@@ -255,7 +255,7 @@ class Scanner:
                 "ebay_low": price_result.low if price_result else None,
                 "ebay_high": price_result.high if price_result else None,
                 "ebay_sold_count": price_result.sold_count if price_result else None,
-                "ebay_search": (price_result.search_term if price_result else None) or search_term,
+                "ebay_search": search_term or title,
                 "profit": round(profit, 2) if profit is not None else None,
                 "margin": round(margin, 4) if margin is not None else None,
                 "skip_reason": reason,
@@ -289,6 +289,8 @@ class Scanner:
 
         clean_term = resolved.term or None
         price_result = resolved.price_result
+        # Always persist the listing title as the search term (no truncation).
+        display_term = title.strip()
 
         if not resolved.term:
             _save_skipped("title couldn't be cleaned for eBay search")
@@ -297,7 +299,7 @@ class Scanner:
         if price_result is None:
             _save_skipped(
                 "no eBay listings found",
-                search_term=clean_term,
+                search_term=display_term,
             )
             return False
 
@@ -305,7 +307,7 @@ class Scanner:
             _save_skipped(
                 f"fewer than {self.min_sold_comps} eBay listings found ({price_result.sold_count} matched)",
                 price_result=price_result,
-                search_term=clean_term,
+                search_term=display_term,
             )
             return False
 
@@ -318,6 +320,7 @@ class Scanner:
             _save_skipped(
                 f"below threshold (est. ${profit:.0f} profit, {margin*100:.0f}% margin)",
                 price_result=price_result,
+                search_term=display_term,
                 profit=profit,
                 margin=margin,
             )
@@ -333,7 +336,7 @@ class Scanner:
         if image_url:
             image_url = image_url.replace("\\", "/")
 
-        db.upsert_deal({
+        payload = {
             "item_id": item_id,
             "title": title,
             "sgw_url": f"https://shopgoodwill.com/item/{item_id}",
@@ -346,7 +349,9 @@ class Scanner:
             **price_result.to_dict(),
             "profit": round(profit, 2),
             "margin": round(margin, 4),
-        })
+        }
+        payload["ebay_search"] = display_term
+        db.upsert_deal(payload)
         return True
 
     def _get_shipping(self, item_id: int) -> Optional[float]:
