@@ -665,7 +665,10 @@ def get_all_favorites():
     result = []
     for item_id, fav in raw_favorites.items():
         record = records.get(item_id)
-        is_deal = bool(record and record.get("status") == "active" and record.get("profit") is not None)
+        # Favorites often aren't in the keyword scan, so mark_deals_stale marks them
+        # "ended" even while the auction is still live — don't require status=active.
+        has_profit = record is not None and record.get("profit") is not None
+        is_deal = bool(has_profit and record.get("status") != "skipped")
         entry = {
             "item_id": item_id,
             "title": fav.get("title") or fav.get("itemTitle") or f"Item #{item_id}",
@@ -688,7 +691,8 @@ def get_all_favorites():
         }
         result.append(entry)
 
-    result.sort(key=lambda x: (0 if x["is_deal"] else 1 if x["analyzed"] else 2, -(x["profit"] or 0)))
+    # Soonest ending first; missing end times last
+    result.sort(key=lambda x: (x["end_time"] is None, x["end_time"] or ""))
     return {"favorites": result, "count": len(result)}
 
 

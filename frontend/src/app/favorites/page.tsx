@@ -342,6 +342,12 @@ export default function FavoritesPage() {
 
   const analyzed = favorites.filter(f => f.analyzed);
   const deals = analyzed.filter(f => f.is_deal);
+  const sortedFavorites = [...favorites].sort((a, b) => {
+    if (!a.end_time && !b.end_time) return 0;
+    if (!a.end_time) return 1;
+    if (!b.end_time) return -1;
+    return new Date(a.end_time).getTime() - new Date(b.end_time).getTime();
+  });
 
   return (
     <div className="min-h-screen">
@@ -418,7 +424,7 @@ export default function FavoritesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {favorites.map(item => (
+          {sortedFavorites.map(item => (
             <FavCard
               key={item.item_id}
               item={item}
