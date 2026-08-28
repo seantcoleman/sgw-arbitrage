@@ -298,11 +298,11 @@ export default function DealsPage() {
       {!loading && (
         <div className="mb-6 space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            {deals.length > 0 && (
+            {sortedDeals.length > 0 && (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
                   <span className="text-zinc-500 text-xs">Deals</span>
-                  <span className="text-white font-bold text-sm">{deals.length}</span>
+                  <span className="text-white font-bold text-sm">{sortedDeals.length}</span>
                 </div>
                 <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
                   <span className="text-zinc-500 text-xs">Potential</span>
