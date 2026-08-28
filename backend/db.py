@@ -5,7 +5,7 @@ SQLite database layer using plain sqlite3 — no ORM dependency.
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -335,6 +335,25 @@ def mark_deals_stale(active_item_ids: List[int]) -> None:
             UPDATE deals SET status = 'ended'
             WHERE status = 'active' AND item_id NOT IN ({placeholders})
         """, active_item_ids)
+
+
+def expire_past_deals() -> int:
+    """Mark active deals whose end_time is in the past as ended."""
+    with get_conn() as conn:
+        # end_time is stored as ISO UTC (often with Z). Compare lexicographically
+        # against current UTC ISO so we don't need SQLite datetime parsing quirks.
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cur = conn.execute(
+            """
+            UPDATE deals
+            SET status = 'ended'
+            WHERE status = 'active'
+              AND end_time IS NOT NULL
+              AND REPLACE(REPLACE(end_time, ' ', 'T'), '+00:00', 'Z') <= ?
+            """,
+            (now,),
+        )
+        return cur.rowcount
 
 
 # ── Watchlist ───────────────────────────────────────────────────────────────

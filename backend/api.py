@@ -170,6 +170,11 @@ def list_deals(
     limit: int = Query(200, le=500),
     offset: int = Query(0),
 ):
+    # Hide auctions that have already ended even if a scan hasn't run yet
+    if status == "active":
+        expired = db.expire_past_deals()
+        if expired:
+            logger.info(f"Expired {expired} past-due deal(s)")
     deals = db.get_deals(
         min_profit=min_profit,
         min_margin=min_margin / 100 if min_margin > 1 else min_margin,

@@ -230,8 +230,6 @@ export default function DealsPage() {
     }
   };
 
-  const totalProfit = deals.reduce((s, d) => s + d.profit, 0);
-  const bestDeal = deals.length ? deals.reduce((best, d) => d.profit > best.profit ? d : best) : null;
   const scanFilterCount = keywords.length + selectedCatIds.length;
   const filterBadgeCount = scanFilterCount;
 
@@ -244,10 +242,15 @@ export default function DealsPage() {
     return new Date(endTime + (isDST ? "-07:00" : "-08:00")).getTime();
   };
 
-  const sortedDeals = [...deals].sort((a, b) => {
-    if (sortBy === "profit") return b.profit - a.profit;
-    return parseDealEnd(a.end_time) - parseDealEnd(b.end_time);
-  });
+  const sortedDeals = [...deals]
+    .filter(d => parseDealEnd(d.end_time) > Date.now())
+    .sort((a, b) => {
+      if (sortBy === "profit") return b.profit - a.profit;
+      return parseDealEnd(a.end_time) - parseDealEnd(b.end_time);
+    });
+
+  const totalProfit = sortedDeals.reduce((s, d) => s + d.profit, 0);
+  const bestDeal = sortedDeals.length ? sortedDeals.reduce((best, d) => d.profit > best.profit ? d : best) : null;
 
   return (
     <div className="min-h-screen">
@@ -488,7 +491,7 @@ export default function DealsPage() {
             </div>
           ))}
         </div>
-      ) : deals.length === 0 ? (
+      ) : sortedDeals.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-40 text-center">
           <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
             <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
