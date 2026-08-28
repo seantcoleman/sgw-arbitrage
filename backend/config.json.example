@@ -5,7 +5,11 @@
   },
   "bid_sniper": {
     "bid_snipe_time_delta": "30 seconds",
-    "refresh_seconds": 300,
+    "refresh_seconds": 60,
+    "mid_end_window_seconds": 3600,
+    "mid_refresh_seconds": 30,
+    "near_end_window_seconds": 600,
+    "near_end_refresh_seconds": 5,
     "favorites_max_cache_seconds": 60,
     "alert_time_deltas": ["5 minutes", "1 minute"]
   },

@@ -134,15 +134,29 @@ def remember_search_term(title: str, search_term: str, source: str = "auto") -> 
 
 def _lookup_cache(title: str) -> tuple[Optional[str], Optional[str]]:
     row = db.get_search_term_cache(title_cache_key(title))
-    if row:
+    if row and _cache_term_usable(title, row):
         db.touch_search_term_cache(row["cache_key"])
         return row["search_term"], "cache_title"
 
     fingerprint = item_filter.product_fingerprint(title)
     if fingerprint:
         row = db.get_search_term_cache(f"product:{fingerprint}")
-        if row:
+        if row and _cache_term_usable(title, row):
             db.touch_search_term_cache(row["cache_key"])
             return row["search_term"], "cache_product"
 
     return None, None
+
+
+def _cache_term_usable(title: str, row: dict) -> bool:
+    """Ignore short auto/seed cache entries for descriptive (no-model) titles."""
+    term = (row.get("search_term") or "").strip()
+    if not term:
+        return False
+    source = (row.get("source") or "").lower()
+    if source == "manual":
+        return True
+    if item_filter.title_has_model(title):
+        return True
+    # Descriptive titles need a reasonably specific cached phrase
+    return len(term.split()) >= 4

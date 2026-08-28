@@ -17,6 +17,7 @@ import {
 interface DealCardProps {
   deal: Deal;
   isWatching: boolean;
+  isOnWatchlist: boolean;
   maxBid: string;
   onMaxBidChange: (v: string) => void;
   onWatchClick: () => void;
@@ -49,6 +50,7 @@ function ebaySearchUrl(term: string): string {
 export function DealCard({
   deal,
   isWatching,
+  isOnWatchlist,
   maxBid,
   onMaxBidChange,
   onWatchClick,
@@ -185,7 +187,11 @@ export function DealCard({
 
         {/* Snipe section */}
         <div className="mt-auto">
-          {isWatching ? (
+          {isOnWatchlist ? (
+            <div className="w-full bg-zinc-800/50 border border-zinc-800 text-zinc-500 text-sm py-2.5 rounded-xl font-semibold text-center cursor-default">
+              On Sniper
+            </div>
+          ) : isWatching ? (
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm font-medium">$</span>

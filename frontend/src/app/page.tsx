@@ -10,6 +10,7 @@ import {
   getDeals,
   getScanStatus,
   getSettings,
+  getWatchlist,
   triggerScan,
   updateSetting,
 } from "@/lib/api";
@@ -57,6 +58,7 @@ export default function DealsPage() {
   const [totalDeals, setTotalDeals] = useState(0);
   const [loading, setLoading] = useState(true);
   const [watchingId, setWatchingId] = useState<number | null>(null);
+  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
   const [maxBidInput, setMaxBidInput] = useState<Record<number, string>>({});
   const [error, setError] = useState("");
   const [scanRunning, setScanRunning] = useState(false);
@@ -124,6 +126,9 @@ export default function DealsPage() {
   useEffect(() => {
     loadScanSettings();
     fetchDeals();
+    getWatchlist()
+      .then(data => setWatchedIds(new Set(data.watchlist.map(w => w.item_id))))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -208,6 +213,7 @@ export default function DealsPage() {
     try {
       await addToWatchlist(deal.item_id, maxBid);
       setWatchingId(null);
+      setWatchedIds(prev => new Set(prev).add(deal.item_id));
       toast.success(`Queued! Sniper will bid up to $${maxBid.toFixed(2)}`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error adding to watchlist");
@@ -519,6 +525,7 @@ export default function DealsPage() {
               deal={deal}
               categories={categories}
               isWatching={watchingId === deal.item_id}
+              isOnWatchlist={watchedIds.has(deal.item_id)}
               maxBid={maxBidInput[deal.item_id] ?? ""}
               onMaxBidChange={v => setMaxBidInput(prev => ({ ...prev, [deal.item_id]: v }))}
               onWatchClick={() => setWatchingId(watchingId === deal.item_id ? null : deal.item_id)}

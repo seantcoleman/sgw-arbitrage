@@ -7,12 +7,12 @@ Stage 1 — Pre-filter (instant, no API calls):
   - Minimum photo count
 
 Stage 2 — Title cleaning (GPT-4o-mini when OPENAI_API_KEY is set):
-  - Extracts brand + model from messy SGW titles
-  - Returns clean eBay search term
+  - Brand + model when a model token exists
+  - Longer descriptive phrases when it does not
   - Regex heuristic fallback when GPT is unavailable
 
-Stage 3 — eBay confidence check (handled in scanner.py):
-  - Requires min_comps sold listings
+Stage 3 — eBay confidence check (handled in scanner / search_term):
+  - Requires min_comps matched listings
 """
 
 import os
@@ -33,7 +33,7 @@ JUNK_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Filler words that should never appear in an eBay search term
+# Filler stripped for all titles (brand+model and descriptive)
 _SEARCH_NOISE = {
     "used", "lot", "set", "bundle", "vintage", "antique", "rare", "nice", "great",
     "works", "working", "tested", "clean", "good", "fair", "poor", "estate", "thrift",
@@ -46,15 +46,21 @@ _SEARCH_NOISE = {
     "portable", "digital", "electric", "electronic", "wireless", "bluetooth",
     "made", "malaysia", "china", "japan", "store", "pickup", "only", "ship",
     "shipping", "free", "fast", "read", "description", "desc", "see", "photos",
+    # Category fluff safe to drop once a model token exists (Pass 1 returns early)
     "sampling", "keyboard", "keyboards", "piano", "synthesizer", "synth",
     "instrument", "instruments", "gear", "music", "audio",
+}
+
+# Extra filler only for descriptive (no-model) titles
+_DESCRIPTIVE_NOISE = {
+    "inspired", "style", "styled", "design", "decorative", "decor", "beautiful",
+    "stunning", "gorgeous", "lovely", "unique", "custom", "handmade",
 }
 
 # Model-ish tokens: letters + digits, optional hyphen (SK-5, CTK-533, WH-1000XM4)
 _MODEL_RE = re.compile(r"^[A-Za-z]{1,8}-?\d[\w\-]{0,12}$")
 # Pure size / capacity numbers that often follow a product line (Roadie 60)
 _SIZE_RE = re.compile(r"^\d{1,4}$")
-# Trailing junk GPT sometimes leaves on
 _DANGLING_TAIL = re.compile(
     r"\b(with|and|for|or|the|a|an|of|to|from|plus|w/?)\s*$",
     re.IGNORECASE,
@@ -74,25 +80,20 @@ def pre_filter(
     title = item.get("title", "")
     current_bid = float(item.get("currentPrice", item.get("current_bid", 0)) or 0)
 
-    # Photo count — old API used numOfPhotos; new Azure Search API uses imageURL presence
     photo_count = int(item.get("numOfPhotos", item.get("photo_count", 0)) or 0)
     if photo_count == 0:
-        # Fall back to checking if an image URL is present
         has_image = bool(item.get("imageURL") or item.get("galleryURL") or item.get("imageUrls"))
         photo_count = 1 if has_image else 0
 
-    # Junk word check
     if JUNK_PATTERN.search(title):
         matched = JUNK_PATTERN.search(title).group()
         return False, f"junk word: '{matched}'"
 
-    # Bid range
     if current_bid < min_bid:
         return False, f"bid too low: ${current_bid:.2f}"
     if current_bid > max_bid:
         return False, f"bid too high: ${current_bid:.2f}"
 
-    # Photo count
     if photo_count < min_photos:
         return False, f"too few photos: {photo_count}"
 
@@ -100,13 +101,6 @@ def pre_filter(
 
 
 def clean_title_for_ebay(sgw_title: str) -> Optional[str]:
-    """
-    Extract a clean brand + model eBay search term from a messy SGW title.
-
-    Prefers GPT when OPENAI_API_KEY is set; always post-processes / falls back
-    to a deterministic brand+model heuristic so we never search truncated
-    title fragments like "Casio SK-5 Sampling Keyboard with".
-    """
     primary, _confidence = propose_search_term(sgw_title)
     return primary
 
@@ -115,9 +109,9 @@ def propose_search_term(sgw_title: str) -> Tuple[Optional[str], float]:
     """
     Return (term, confidence 0..1).
 
-    High confidence (~0.9): clear brand + model token.
-    Medium (~0.6): product line + size, or short descriptive query.
-    Low (~0.3): weak fallback / GPT-only without model.
+    High (~0.9): clear brand + model.
+    Medium (~0.6): descriptive multi-word product phrase.
+    Low (~0.35): weak / GPT-only fallback.
     """
     if not sgw_title or not sgw_title.strip():
         return None, 0.0
@@ -131,7 +125,6 @@ def propose_search_term(sgw_title: str) -> Tuple[Optional[str], float]:
         normalized = _normalize_search_term(gpt_term)
         if normalized and _looks_like_product_query(normalized):
             gpt_conf = _confidence_for_term(normalized)
-            # Prefer GPT when it looks as strong or stronger than heuristic
             if not heuristic or gpt_conf >= heuristic_conf:
                 return normalized, gpt_conf
 
@@ -147,26 +140,30 @@ def propose_search_term(sgw_title: str) -> Tuple[Optional[str], float]:
 
 def product_fingerprint(sgw_title: str) -> Optional[str]:
     """Stable brand+model key for cache lookups, e.g. 'casio sk-5'."""
-    term, conf = propose_search_term(sgw_title)
-    if not term or conf < 0.5:
-        # Still try pure regex fingerprint even if GPT polluted the primary term
-        term = _clean_with_regex(sgw_title)
+    term = _clean_with_regex(sgw_title)
     if not term:
         return None
-    if not any(_is_model_token(w) for w in term.split()) and not any(c.isdigit() for c in term):
+    if not any(_is_model_token(w) for w in term.split()):
         return None
     return term.lower().strip()
+
+
+def title_has_model(sgw_title: str) -> bool:
+    return product_fingerprint(sgw_title) is not None
 
 
 def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) -> List[str]:
     """
     Ordered unique search-term variants to try against eBay.
 
-    Order: preferred → primary extraction → hyphen/spacing alts → progressive shorten.
+    With a model token: short brand+model first.
+    Without a model: longest descriptive phrase first, then progressive shorten.
     """
     primary, _ = propose_search_term(sgw_title)
+    heuristic = _clean_with_regex(sgw_title)
+
     seeds: List[str] = []
-    for t in (preferred, primary, _clean_with_regex(sgw_title)):
+    for t in (preferred, primary, heuristic):
         n = _normalize_search_term(t)
         if n:
             seeds.append(n)
@@ -184,14 +181,25 @@ def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) 
         seen.add(key)
         out.append(n)
 
-    for seed in seeds:
-        add(seed)
-        for alt in _spelling_variants(seed):
-            add(alt)
-        # Progressive shorten (drop trailing words) — keep at least brand+model when possible
-        words = seed.split()
-        for length in range(len(words) - 1, 1, -1):
-            add(" ".join(words[:length]))
+    base = max(seeds, key=lambda s: len(s.split())) if seeds else None
+    has_model = bool(base and any(_is_model_token(w) for w in base.split())) or title_has_model(sgw_title)
+
+    if has_model:
+        for seed in seeds:
+            add(seed)
+            for alt in _spelling_variants(seed):
+                add(alt)
+        if base:
+            words = base.split()
+            for length in range(min(len(words), 3), 1, -1):
+                add(" ".join(words[:length]))
+    else:
+        if base:
+            words = base.split()
+            for length in range(len(words), 2, -1):
+                add(" ".join(words[:length]))
+        for seed in seeds:
+            add(seed)
 
     return out
 
@@ -200,18 +208,18 @@ def _confidence_for_term(term: Optional[str]) -> float:
     if not term:
         return 0.0
     words = term.split()
-    if _DANGLING_TAIL.search(term) or len(words) > 5:
+    if _DANGLING_TAIL.search(term):
         return 0.25
     has_model = any(_is_model_token(w) for w in words)
     if has_model and len(words) <= 3:
         return 0.9
     if has_model:
         return 0.75
-    if len(words) <= 2:
-        return 0.55
+    if 4 <= len(words) <= 8:
+        return 0.6
     if len(words) <= 3:
-        return 0.45
-    return 0.3
+        return 0.4
+    return 0.35
 
 
 def _spelling_variants(term: str) -> List[str]:
@@ -224,7 +232,6 @@ def _spelling_variants(term: str) -> List[str]:
             alt[i] = w.replace("-", "")
             variants.append(" ".join(alt))
         elif _is_model_token(w) and any(c.isdigit() for c in w) and any(c.isalpha() for c in w):
-            # Insert hyphen before first digit run: SK5 → SK-5, CTK533 → CTK-533
             m = re.match(r"^([A-Za-z]+)(\d.*)$", w)
             if m and "-" not in w:
                 alt = words.copy()
@@ -235,14 +242,13 @@ def _spelling_variants(term: str) -> List[str]:
 
 def _looks_like_product_query(term: str) -> bool:
     words = term.split()
-    if not words or len(words) > 5:
+    if not words or len(words) > 8:
         return False
     if _DANGLING_TAIL.search(term):
         return False
     if any(_is_model_token(w) for w in words):
         return True
-    # Brand-only / descriptive short queries are ok if short
-    return 1 <= len(words) <= 3
+    return 1 <= len(words) <= 8
 
 
 def _normalize_search_term(term: Optional[str]) -> Optional[str]:
@@ -262,7 +268,6 @@ def _is_model_token(tok: str) -> bool:
         return False
     if _MODEL_RE.match(raw):
         return True
-    # Alphanumeric model without hyphen (SA41BKCH, DX7, CTK533)
     return any(c.isdigit() for c in raw) and any(c.isalpha() for c in raw) and 2 <= len(raw) <= 16
 
 
@@ -271,15 +276,16 @@ def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
     import httpx
 
     prompt = (
-        "You are an eBay search expert. Extract the brand and model from this messy "
-        "auction title so it can be searched on eBay.\n\n"
+        "You are an eBay search expert. Turn this auction title into a good eBay search.\n\n"
         f"Title: {title}\n\n"
         "Rules:\n"
         "- Return ONLY the search term, nothing else\n"
-        "- Prefer brand + model number when present (e.g. \"Casio SK-5\", \"Yamaha DX7\")\n"
-        "- Do NOT include accessories (manual, box, stand, adapter, case)\n"
+        "- If there is a brand + model number, return just those (e.g. \"Casio SK-5\", \"Yamaha DX7\")\n"
+        "- If there is NO model number (furniture, art, decor), keep the distinctive product "
+        "words (region/style, motif, material, object) — about 5–8 words "
+        "(e.g. \"Chinese Qing Dynasty dragon armchair marble\")\n"
+        "- Remove accessories (manual, box, stand, adapter, case) and filler (inspired, style, vintage)\n"
         "- Do NOT end with filler words (with, and, for, of)\n"
-        "- Keep it under 4 words\n"
         "- If you can't identify a product, return SKIP\n\n"
         "Search term:"
     )
@@ -291,7 +297,7 @@ def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
             json={
                 "model": "gpt-4o-mini",
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 24,
+                "max_tokens": 40,
                 "temperature": 0,
             },
             timeout=8,
@@ -305,12 +311,10 @@ def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
 
 def _clean_with_regex(title: str) -> Optional[str]:
     """
-    Deterministic brand + model extraction.
+    Deterministic search-term extraction.
 
-    Examples:
-      "Casio SK-5 Sampling Keyboard with Manual and Original Box" → "Casio SK-5"
-      "Vintage Yamaha DX7 Digital FM Synthesizer Keyboard" → "Yamaha DX7"
-      "YETI Roadie 60 Wheeled Cooler White..." → "YETI Roadie 60"
+    With model: brand + model (Casio SK-5, Yamaha DX7, YETI Roadie 60).
+    Without model: longer descriptive phrase keeping product nouns.
     """
     text = re.sub(r"[/\\|]+", " ", title)
     text = re.sub(r"[^\w\s\-.]", " ", text)
@@ -322,7 +326,7 @@ def _clean_with_regex(title: str) -> Optional[str]:
     if not tokens:
         return None
 
-    # Pass 1: brand + alphanumeric model (Casio SK-5, Yamaha DX7)
+    # Pass 1: brand + alphanumeric model
     for i, tok in enumerate(tokens):
         if not _is_model_token(tok):
             continue
@@ -337,7 +341,6 @@ def _clean_with_regex(title: str) -> Optional[str]:
     for i, tok in enumerate(tokens):
         if not _SIZE_RE.match(tok):
             continue
-        # product word immediately before the number
         if i == 0:
             continue
         product = tokens[i - 1]
@@ -352,16 +355,16 @@ def _clean_with_regex(title: str) -> Optional[str]:
         parts.extend([product, tok])
         return _normalize_search_term(" ".join(parts))
 
-    # Pass 3: up to 3 significant words
+    # Pass 3: descriptive — keep up to 7 product words
     kept: List[str] = []
     for tok in tokens:
         low = tok.lower()
-        if not tok or low in _SEARCH_NOISE:
+        if not tok or low in _SEARCH_NOISE or low in _DESCRIPTIVE_NOISE:
             continue
         if tok.isdigit() and not kept:
             continue
         kept.append(tok)
-        if len(kept) >= 3:
+        if len(kept) >= 7:
             break
     return _normalize_search_term(" ".join(kept)) if kept else None
 

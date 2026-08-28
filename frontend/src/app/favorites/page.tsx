@@ -7,6 +7,7 @@ import {
   FavoriteItem,
   getAllFavorites,
   getFavoritesScanStatus,
+  getWatchlist,
   repriceItem,
   triggerFavoritesScan,
 } from "@/lib/api";
@@ -29,11 +30,13 @@ function ebaySearchUrl(term: string): string {
 
 function FavCard({
   item,
+  isOnWatchlist,
   onSnipe,
   onUpdated,
 }: {
   item: FavoriteItem;
-  onSnipe: (item: FavoriteItem, maxBid: number) => void;
+  isOnWatchlist: boolean;
+  onSnipe: (item: FavoriteItem, maxBid: number) => Promise<boolean>;
   onUpdated: (itemId: number, update: Partial<FavoriteItem>) => void;
 }) {
   const [maxBid, setMaxBid] = useState("");
@@ -45,13 +48,14 @@ function FavCard({
   const totalCost = item.current_bid + (item.shipping_est ?? 12);
   const hasEbay = item.ebay_median != null;
 
-  const handleSnipe = () => {
+  const handleSnipe = async () => {
     const bid = parseFloat(maxBid);
     if (!bid || bid <= item.current_bid) {
       toast.error(`Max bid must be > $${item.current_bid.toFixed(2)}`);
       return;
     }
-    onSnipe(item, bid);
+    const ok = await onSnipe(item, bid);
+    if (ok) setSniping(false);
   };
 
   const handleRecheck = async () => {
@@ -227,7 +231,11 @@ function FavCard({
         </div>
 
         <div className="mt-auto">
-          {sniping ? (
+          {isOnWatchlist ? (
+            <div className="w-full bg-zinc-800/50 border border-zinc-800 text-zinc-500 text-sm py-2.5 rounded-xl font-semibold text-center cursor-default">
+              On Sniper
+            </div>
+          ) : sniping ? (
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
@@ -268,6 +276,7 @@ export default function FavoritesPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
   const firstLoad = useRef(true);
 
   const fetchFavorites = async (silent = false) => {
@@ -287,6 +296,9 @@ export default function FavoritesPage() {
     if (firstLoad.current) {
       firstLoad.current = false;
       fetchFavorites();
+      getWatchlist()
+        .then(data => setWatchedIds(new Set(data.watchlist.map(w => w.item_id))))
+        .catch(() => {});
     }
   }, []);
 
@@ -312,12 +324,15 @@ export default function FavoritesPage() {
     }
   };
 
-  const handleSnipe = async (item: FavoriteItem, maxBid: number) => {
+  const handleSnipe = async (item: FavoriteItem, maxBid: number): Promise<boolean> => {
     try {
       await addToWatchlist(item.item_id, maxBid);
+      setWatchedIds(prev => new Set(prev).add(item.item_id));
       toast.success(`Queued! Sniper will bid up to $${maxBid.toFixed(2)}`);
+      return true;
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error adding to watchlist");
+      return false;
     }
   };
 
@@ -404,7 +419,13 @@ export default function FavoritesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {favorites.map(item => (
-            <FavCard key={item.item_id} item={item} onSnipe={handleSnipe} onUpdated={handleUpdated} />
+            <FavCard
+              key={item.item_id}
+              item={item}
+              isOnWatchlist={watchedIds.has(item.item_id)}
+              onSnipe={handleSnipe}
+              onUpdated={handleUpdated}
+            />
           ))}
         </div>
       )}

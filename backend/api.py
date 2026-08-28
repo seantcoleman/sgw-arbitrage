@@ -529,7 +529,14 @@ def _build_sniper_config() -> dict:
         "auth_info": auth_info,
         "bid_sniper": {
             "bid_snipe_time_delta": f"{snipe_secs} seconds",
-            "refresh_seconds": 300,
+            # Idle poll when nothing ends soon
+            "refresh_seconds": 60,
+            # Within 1 hour of an ending: poll more often
+            "mid_end_window_seconds": 3600,
+            "mid_refresh_seconds": 30,
+            # Within 10 minutes: poll aggressively + keep favorites cache fresh
+            "near_end_window_seconds": 600,
+            "near_end_refresh_seconds": 5,
             "favorites_max_cache_seconds": 60,
             "alert_time_deltas": ["5 minutes", "1 minute"],
         },

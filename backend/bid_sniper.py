@@ -111,9 +111,10 @@ class BidSniper:
         self.scheduled_tasks = set()
 
     def update_favorites_cache(self, max_cache_time: int) -> None:
-        if (
+        age = (
             datetime.datetime.now(datetime.timezone.utc) - self.favorites_cache["last_updated"]
-        ).seconds > max_cache_time:
+        ).total_seconds()
+        if age > max_cache_time:
             try:
                 self.favorites_cache = {
                     "favorites": self.shopgoodwill_client.get_favorites(),
@@ -122,6 +123,33 @@ class BidSniper:
             except BaseException as be:
                 if self.outage_start_time is not None:
                     self.logger.error(f"{type(be).__name__} updating favorites cache - {be}")
+
+    def _parse_end_time(self, end_time_str: str) -> datetime.datetime:
+        date_format = self.date_format
+        if "." in end_time_str:
+            date_format += ".%f"
+        return (
+            datetime.datetime.strptime(end_time_str, date_format)
+            .replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+            .astimezone(datetime.timezone.utc)
+        )
+
+    def _soonest_seconds_remaining(self, now: datetime.datetime) -> Optional[float]:
+        soonest: Optional[float] = None
+        for favorite_info in self.favorites_cache["favorites"].values():
+            end_raw = favorite_info.get("endTime")
+            if not end_raw:
+                continue
+            try:
+                end_time = self._parse_end_time(end_raw)
+            except Exception:
+                continue
+            delta = (end_time - now).total_seconds()
+            if delta <= 0:
+                continue
+            if soonest is None or delta < soonest:
+                soonest = delta
+        return soonest
 
     def task_err_handler(self, finished_task: asyncio.Task) -> None:
         coro_exception = finished_task.exception()
@@ -263,73 +291,107 @@ class BidSniper:
         self.event_loop.run_forever()
 
     async def main_loop(self) -> None:
-        refresh_seconds = self.config["bid_sniper"].get("refresh_seconds", 300)
-        favorites_cache_max_seconds = self.config["bid_sniper"].get("favorites_max_cache_seconds", 60)
+        refresh_seconds = int(self.config["bid_sniper"].get("refresh_seconds", 60))
+        near_end_refresh = int(self.config["bid_sniper"].get("near_end_refresh_seconds", 5))
+        near_end_window = int(self.config["bid_sniper"].get("near_end_window_seconds", 600))
+        mid_refresh = int(self.config["bid_sniper"].get("mid_refresh_seconds", 30))
+        mid_end_window = int(self.config["bid_sniper"].get("mid_end_window_seconds", 3600))
+        favorites_cache_max_seconds = int(
+            self.config["bid_sniper"].get("favorites_max_cache_seconds", 60)
+        )
         min_scheduling_timedelta = sorted(self.alert_time_deltas + [self.bid_time_delta])[::-1][0]
 
         while True:
             now = datetime.datetime.now(datetime.timezone.utc)
-            self.update_favorites_cache(favorites_cache_max_seconds)
+            soonest = self._soonest_seconds_remaining(now)
+            cache_ttl = (
+                5
+                if soonest is not None and soonest <= near_end_window
+                else favorites_cache_max_seconds
+            )
+            self.update_favorites_cache(cache_ttl)
 
             for item_id, favorite_info in self.favorites_cache["favorites"].items():
                 if item_id in self.scheduled_tasks:
                     continue
 
-                end_time = favorite_info["endTime"]
-                date_format = self.date_format
-                if "." in end_time:
-                    date_format += ".%f"
+                end_raw = favorite_info.get("endTime")
+                if not end_raw:
+                    continue
+                try:
+                    end_time = self._parse_end_time(end_raw)
+                except Exception as e:
+                    self.logger.error(f"Could not parse endTime for item {item_id}: {e}")
+                    continue
 
-                end_time = (
-                    datetime.datetime.strptime(end_time, date_format)
-                    .replace(tzinfo=ZoneInfo("America/Los_Angeles"))
-                    .astimezone(ZoneInfo("Etc/UTC"))
-                )
+                # Only schedule when we're within the look-ahead horizon
+                look_ahead = datetime.timedelta(seconds=max(refresh_seconds * 3, near_end_window * 2))
+                if (end_time - min_scheduling_timedelta) > now + look_ahead:
+                    continue
 
-                if (end_time - min_scheduling_timedelta) <= now + datetime.timedelta(
-                    seconds=refresh_seconds * 3
-                ):
-                    # Skip items that already ended
-                    if end_time <= now:
-                        self.scheduled_tasks.add(item_id)
+                if end_time <= now:
+                    self.scheduled_tasks.add(item_id)
+                    continue
+
+                for alert_time_delta in self.alert_time_deltas:
+                    execution_datetime = end_time - alert_time_delta
+                    if execution_datetime < now:
                         continue
-
-                    for alert_time_delta in self.alert_time_deltas:
-                        execution_datetime = end_time - alert_time_delta
-                        if execution_datetime < now:
-                            continue
-                        self.event_loop.create_task(
-                            self.schedule_task(
-                                self.place_bid(item_id),
-                                execution_datetime,
-                                [self.task_err_handler],
-                            )
-                        ).add_done_callback(self.task_err_handler)
-
-                    bid_execution_datetime = end_time - self.bid_time_delta
-                    if bid_execution_datetime < now:
-                        self.logger.warning(
-                            f"Skipping bid for '{favorite_info['title']}' — "
-                            f"bid window already passed ({int((now - bid_execution_datetime).total_seconds())}s ago)"
-                        )
-                        self.scheduled_tasks.add(item_id)
-                        continue
-
                     self.event_loop.create_task(
                         self.schedule_task(
                             self.place_bid(item_id),
-                            bid_execution_datetime,
+                            execution_datetime,
                             [self.task_err_handler],
                         )
                     ).add_done_callback(self.task_err_handler)
 
-                    self.logger.debug(f"Scheduled events for item {favorite_info['title']}")
+                bid_execution_datetime = end_time - self.bid_time_delta
+                if bid_execution_datetime < now:
+                    # Ideal snipe moment missed, but auction still live — bid now
+                    secs_left = int((end_time - now).total_seconds())
+                    late_by = int((now - bid_execution_datetime).total_seconds())
+                    self.logger.warning(
+                        f"Snipe window missed for '{favorite_info['title']}' "
+                        f"({late_by}s late) — bidding immediately ({secs_left}s left)"
+                    )
+                    self.event_loop.create_task(
+                        self.place_bid(item_id)
+                    ).add_done_callback(self.task_err_handler)
                     self.scheduled_tasks.add(item_id)
+                    continue
 
+                self.event_loop.create_task(
+                    self.schedule_task(
+                        self.place_bid(item_id),
+                        bid_execution_datetime,
+                        [self.task_err_handler],
+                    )
+                ).add_done_callback(self.task_err_handler)
+
+                self.logger.info(
+                    f"Scheduled snipe for '{favorite_info['title']}' at "
+                    f"{bid_execution_datetime.isoformat()}"
+                )
+                self.scheduled_tasks.add(item_id)
+
+            # Ensure favorites that lack notes still get the default note template
+            for item_id, favorite_info in list(self.favorites_cache["favorites"].items()):
                 if self.default_note and not favorite_info.get("notes", ""):
-                    self.shopgoodwill_client.add_favorite(item_id, note=self.default_note)
+                    try:
+                        self.shopgoodwill_client.add_favorite(item_id, note=self.default_note)
+                    except Exception as e:
+                        self.logger.error(f"Failed to set default note on {item_id}: {e}")
 
-            await asyncio.sleep(refresh_seconds)
+            now = datetime.datetime.now(datetime.timezone.utc)
+            soonest = self._soonest_seconds_remaining(now)
+            if soonest is not None and soonest <= near_end_window:
+                sleep_secs = near_end_refresh
+            elif soonest is not None and soonest <= mid_end_window:
+                sleep_secs = mid_refresh
+            else:
+                sleep_secs = refresh_seconds
+
+            await asyncio.sleep(sleep_secs)
 
 
 def parse_args():
