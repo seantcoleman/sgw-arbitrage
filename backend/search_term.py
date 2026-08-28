@@ -102,11 +102,10 @@ def resolve_ebay_search(
 
         if best is None or result.sold_count > best.sold_count:
             best = result
-            best_term = result.search_term or term
+            best_term = term
 
-        if best.sold_count >= min_comps:
+        if result.sold_count >= min_comps:
             best = result
-            # Keep the exact query string we searched — never a truncated stub.
             best_term = term
             break
 
