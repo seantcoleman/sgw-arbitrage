@@ -48,9 +48,22 @@ def resolve_ebay_search(
     Pick the best eBay search term for a title and fetch comps.
 
     preferred_term: force that term first (manual reprice / Wrong item?).
+    Default search is the full listing title — short auto-extracted terms
+    were dropping brands like "Nintendo Switch".
     """
-    cached_term, cache_source = _lookup_cache(title)
-    seed_preferred = preferred_term or cached_term
+    # Only honor manual / explicit preferred terms. Ignore auto cache that
+    # learned truncated queries.
+    seed_preferred = preferred_term
+    if not seed_preferred:
+        cached_term, cache_source = _lookup_cache(title)
+        if cache_source == "manual" or (cached_term and cache_source):
+            # Only reuse cache when it looks like a full title (not a stub)
+            full = item_filter._normalize_full_title(title) or ""
+            if cached_term and (
+                cache_source == "manual"
+                or len(cached_term.split()) >= max(4, len(full.split()) - 3)
+            ):
+                seed_preferred = cached_term
 
     primary, confidence = item_filter.propose_search_term(title)
     candidates = item_filter.generate_search_candidates(title, preferred=seed_preferred)
@@ -66,11 +79,11 @@ def resolve_ebay_search(
     if preferred_term:
         source = "manual"
         confidence = max(confidence, 0.95)
-    elif cache_source:
-        source = cache_source
+    elif seed_preferred:
+        source = "cache_title"
         confidence = max(confidence, 0.85)
     else:
-        source = "heuristic"
+        source = "full_title"
 
     best: Optional[ebay.EbayPriceResult] = None
     best_term = candidates[0]

@@ -128,32 +128,15 @@ def propose_search_term(sgw_title: str) -> Tuple[Optional[str], float]:
     """
     Return (term, confidence 0..1).
 
-    High (~0.9): clear brand + model.
-    Medium (~0.6): descriptive multi-word product phrase.
-    Low (~0.35): weak / GPT-only fallback.
+    Prefer the full listing title (lightly normalized). Aggressive brand/model
+    extraction was dropping key words like "Nintendo Switch".
     """
     if not sgw_title or not sgw_title.strip():
         return None, 0.0
 
-    openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    gpt_term = _clean_with_gpt(sgw_title, openai_key) if openai_key else None
-    heuristic = _clean_with_regex(sgw_title)
-    heuristic_conf = _confidence_for_term(heuristic) if heuristic else 0.0
-
-    if gpt_term:
-        normalized = _normalize_search_term(gpt_term)
-        if normalized and _looks_like_product_query(normalized):
-            gpt_conf = _confidence_for_term(normalized)
-            if not heuristic or gpt_conf >= heuristic_conf:
-                return normalized, gpt_conf
-
-    if heuristic:
-        return heuristic, heuristic_conf
-
-    if gpt_term:
-        normalized = _normalize_search_term(gpt_term)
-        return normalized, 0.35 if normalized else 0.0
-
+    full = _normalize_full_title(sgw_title)
+    if full:
+        return full, 0.8
     return None, 0.0
 
 
@@ -175,23 +158,16 @@ def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) 
     """
     Ordered unique search-term variants to try against eBay.
 
-    With a model token: short brand+model first.
-    Without a model: longest descriptive phrase first, then progressive shorten.
+    Default: the full title only. Manual "Wrong item?" terms go first when set.
     """
-    primary, _ = propose_search_term(sgw_title)
-    heuristic = _clean_with_regex(sgw_title)
-
-    seeds: List[str] = []
-    for t in (preferred, primary, heuristic):
-        n = _normalize_search_term(t)
-        if n:
-            seeds.append(n)
-
     out: List[str] = []
     seen = set()
 
-    def add(term: Optional[str]):
-        n = _normalize_search_term(term)
+    def add(term: Optional[str], *, full: bool = False):
+        if full:
+            n = _normalize_full_title(term)
+        else:
+            n = _normalize_search_term(term) or _normalize_full_title(term)
         if not n:
             return
         key = n.lower()
@@ -200,27 +176,19 @@ def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) 
         seen.add(key)
         out.append(n)
 
-    base = max(seeds, key=lambda s: len(s.split())) if seeds else None
-    has_model = bool(base and any(_is_model_token(w) for w in base.split())) or title_has_model(sgw_title)
-
-    if has_model:
-        for seed in seeds:
-            add(seed)
-            for alt in _spelling_variants(seed):
-                add(alt)
-        if base:
-            words = base.split()
-            for length in range(min(len(words), 3), 1, -1):
-                add(" ".join(words[:length]))
-    else:
-        if base:
-            words = base.split()
-            for length in range(len(words), 2, -1):
-                add(" ".join(words[:length]))
-        for seed in seeds:
-            add(seed)
-
+    add(preferred, full=False)
+    add(sgw_title, full=True)
     return out
+
+
+def _normalize_full_title(title: Optional[str]) -> Optional[str]:
+    """Keep the listing title intact — only normalize whitespace/punctuation."""
+    if not title:
+        return None
+    cleaned = re.sub(r"[\"'`]", "", title.strip())
+    cleaned = re.sub(r"[/\\|]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -/,")
+    return cleaned or None
 
 
 def _confidence_for_term(term: Optional[str]) -> float:
