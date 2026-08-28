@@ -6,6 +6,8 @@ backend/*.db
 backend/*.db-shm
 backend/*.db-wal
 backend/.env
+frontend/.env.local
+frontend/.env*.local
 backend/config.json
 
 # Node
