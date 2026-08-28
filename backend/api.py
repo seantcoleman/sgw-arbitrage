@@ -60,6 +60,9 @@ def _schedule_scan(interval_minutes: int) -> None:
 async def lifespan(app: FastAPI):
     db.init_db()
     logger.info("Database initialized")
+    n = db.backfill_watchlist_from_deals()
+    if n:
+        logger.info(f"Backfilled image/eBay fields on {n} watchlist row(s) from deals")
     settings = db.get_settings()
     interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
@@ -187,10 +190,29 @@ def get_watchlist():
     return {"watchlist": db.get_watchlist()}
 
 
+def _sgw_item_image_url(item_info: dict) -> Optional[str]:
+    """Pull a usable image URL from an SGW itemDetail payload."""
+    image_list = item_info.get("imageList") or []
+    if image_list and isinstance(image_list, list):
+        first = image_list[0] if image_list else {}
+        if isinstance(first, dict):
+            url = first.get("imageUrl") or first.get("imageURL")
+            if url:
+                return str(url).replace("\\", "/")
+    for key in ("imageURL", "imageUrl", "galleryURL", "imageUrls"):
+        val = item_info.get(key)
+        if isinstance(val, list) and val:
+            return str(val[0]).replace("\\", "/")
+        if isinstance(val, str) and val:
+            return val.replace("\\", "/")
+    return None
+
+
 @app.post("/watchlist")
 def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks):
-    deals = db.get_deals(limit=1000, status="active")
-    deal = next((d for d in deals if d["item_id"] == req.item_id), None)
+    # Prefer any deal row (active/ended/skipped) so ended auctions keep image + eBay comps
+    matches = db.get_deals_by_ids([req.item_id])
+    deal = matches[0] if matches else None
 
     if deal is None:
         # Item may be a favorite not yet in the deals table — fetch basic info from SGW
@@ -203,7 +225,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
                 "current_bid": float(item_info.get("currentPrice") or item_info.get("currentBid") or 0),
                 "end_time": item_info.get("endTime") or item_info.get("endDateTime"),
                 "sgw_url": f"https://shopgoodwill.com/item/{req.item_id}",
-                "image_url": None,
+                "image_url": _sgw_item_image_url(item_info),
                 "ebay_median": None,
                 "profit": None,
                 "ebay_search": None,

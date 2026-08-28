@@ -352,6 +352,35 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
         """, item)
 
 
+def backfill_watchlist_from_deals() -> int:
+    """Copy image/eBay fields from deals onto watchlist rows that are missing them."""
+    with get_conn() as conn:
+        cur = conn.execute("""
+            UPDATE watchlist
+            SET
+                image_url = COALESCE(
+                    watchlist.image_url,
+                    (SELECT d.image_url FROM deals d WHERE d.item_id = watchlist.item_id)
+                ),
+                ebay_median = COALESCE(
+                    watchlist.ebay_median,
+                    (SELECT d.ebay_median FROM deals d WHERE d.item_id = watchlist.item_id)
+                ),
+                profit = COALESCE(
+                    watchlist.profit,
+                    (SELECT d.profit FROM deals d WHERE d.item_id = watchlist.item_id)
+                ),
+                ebay_search = COALESCE(
+                    watchlist.ebay_search,
+                    (SELECT d.ebay_search FROM deals d WHERE d.item_id = watchlist.item_id)
+                )
+            WHERE
+                (image_url IS NULL OR ebay_median IS NULL OR profit IS NULL OR ebay_search IS NULL)
+                AND EXISTS (SELECT 1 FROM deals d WHERE d.item_id = watchlist.item_id)
+        """)
+        return cur.rowcount
+
+
 def update_watchlist_pricing(
     item_id: int,
     ebay_median: float,
