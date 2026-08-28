@@ -149,13 +149,26 @@ def _lookup_cache(title: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _cache_term_usable(title: str, row: dict) -> bool:
-    """Ignore short auto/seed cache entries for descriptive (no-model) titles."""
+    """Ignore short/stale auto cache entries that conflict with a better heuristic."""
     term = (row.get("search_term") or "").strip()
     if not term:
         return False
     source = (row.get("source") or "").lower()
     if source == "manual":
         return True
+
+    heuristic = item_filter._clean_with_regex(title)
+    if heuristic:
+        h_tokens = {w.lower() for w in heuristic.split()}
+        t_tokens = {w.lower() for w in term.split()}
+        # Cached term must share a model-ish or product token with the heuristic
+        h_models = {w for w in h_tokens if item_filter._is_model_token(w)}
+        if h_models and not (h_models & t_tokens):
+            return False
+        # Reject cache that's much shorter / weaker than heuristic brand+model
+        if len(h_tokens) >= 3 and len(t_tokens) <= 2 and not (h_models & t_tokens):
+            return False
+
     if item_filter.title_has_model(title):
         return True
     # Descriptive titles need a reasonably specific cached phrase

@@ -61,6 +61,25 @@ _DESCRIPTIVE_NOISE = {
 _MODEL_RE = re.compile(r"^[A-Za-z]{1,8}-?\d[\w\-]{0,12}$")
 # Pure size / capacity numbers that often follow a product line (Roadie 60)
 _SIZE_RE = re.compile(r"^\d{1,4}$")
+# Spec units that look like models but aren't (2-Channel, 4-Track, 35mm, 60L)
+_FALSE_MODEL_RE = re.compile(
+    r"^\d+[-.]?(channels?|tracks?|keys?|mm|cm|in|inch|inches|ft|oz|lbs?|"
+    r"gb|tb|mhz|khz|hz|watts?|volts?|pack|pcs?|bits?|ways?|quarts?|qt|l|ml)$",
+    re.IGNORECASE,
+)
+# camelCase gadget names without digits (iRig, eBike)
+_CAMEL_PRODUCT_RE = re.compile(r"^[a-z]{1,3}[A-Z][A-Za-z0-9\-]{1,16}$")
+_PRODUCT_SUFFIXES = {
+    "pro", "duo", "max", "plus", "mini", "air", "lite", "se", "xl", "ultra",
+}
+# Words that sit next to a model but aren't the brand
+_BRAND_SKIP = {
+    "console", "recorder", "camera", "microphone", "mic", "pedal", "amp",
+    "amplifier", "mixer", "interface", "controller", "machine", "system",
+    "model", "series", "edition", "version", "type", "cooler", "pack",
+    "backpack", "bag", "drum", "guitar", "bass", "violin", "flute",
+    "program", "body",
+}
 _DANGLING_TAIL = re.compile(
     r"\b(with|and|for|or|the|a|an|of|to|from|plus|w/?)\s*$",
     re.IGNORECASE,
@@ -266,7 +285,11 @@ def _is_model_token(tok: str) -> bool:
     raw = tok.strip(".-")
     if not raw or raw.lower() in _SEARCH_NOISE:
         return False
+    if _FALSE_MODEL_RE.match(raw):
+        return False
     if _MODEL_RE.match(raw):
+        return True
+    if _CAMEL_PRODUCT_RE.match(raw):
         return True
     return any(c.isdigit() for c in raw) and any(c.isalpha() for c in raw) and 2 <= len(raw) <= 16
 
@@ -326,15 +349,19 @@ def _clean_with_regex(title: str) -> Optional[str]:
     if not tokens:
         return None
 
-    # Pass 1: brand + alphanumeric model
+    # Pass 1: brand + alphanumeric / camelCase model (+ Pro/Duo-style suffixes)
     for i, tok in enumerate(tokens):
         if not _is_model_token(tok):
             continue
         brand = _prior_brand(tokens, i)
         parts: List[str] = []
         if brand:
-            parts.append(brand)
+            parts.extend(brand.split())
         parts.append(tok)
+        k = i + 1
+        while k < len(tokens) and tokens[k].lower() in _PRODUCT_SUFFIXES and len(parts) < 6:
+            parts.append(tokens[k])
+            k += 1
         return _normalize_search_term(" ".join(parts))
 
     # Pass 2: brand + product line + size number (YETI Roadie 60)
@@ -350,8 +377,10 @@ def _clean_with_regex(title: str) -> Optional[str]:
             continue
         brand = _prior_brand(tokens, i - 1)
         parts = []
-        if brand and brand.lower() != product.lower():
-            parts.append(brand)
+        if brand:
+            for b in brand.split():
+                if b.lower() != product.lower():
+                    parts.append(b)
         parts.extend([product, tok])
         return _normalize_search_term(" ".join(parts))
 
@@ -370,14 +399,31 @@ def _clean_with_regex(title: str) -> Optional[str]:
 
 
 def _prior_brand(tokens: List[str], model_idx: int) -> Optional[str]:
-    """Nearest prior alphabetic non-noise word — treated as brand."""
+    """
+    Brand / product-line word(s) before the model.
+
+    Takes up to two prior alpha tokens so names like
+    "IK Multimedia", "Tascam Portastudio", "Nintendo Switch" survive.
+    """
     for j in range(model_idx - 1, -1, -1):
         cand = tokens[j]
         low = cand.lower()
-        if not cand or low in _SEARCH_NOISE:
+        if not cand or low in _SEARCH_NOISE or low in _BRAND_SKIP:
             continue
         if any(c.isdigit() for c in cand):
             continue
-        if cand.isalpha() and len(cand) >= 2:
-            return cand
+        if not (cand.isalpha() and len(cand) >= 2):
+            continue
+        parts = [cand]
+        if j > 0:
+            prev = tokens[j - 1]
+            prev_low = prev.lower()
+            if (
+                prev.isalpha()
+                and len(prev) >= 2
+                and prev_low not in _SEARCH_NOISE
+                and prev_low not in _BRAND_SKIP
+            ):
+                parts.insert(0, prev)
+        return " ".join(parts)
     return None
