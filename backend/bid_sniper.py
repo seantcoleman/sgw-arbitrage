@@ -8,7 +8,8 @@ Usage:
 
 To set a max bid for an item, add it to your SGW favorites,
 then set the note to: {"max_bid": 45.00}
-The sniper will place a bid for that amount 30s before auction end.
+The sniper will place a bid for that amount shortly before auction end
+(controlled by bid_snipe_time_delta in the config).
 """
 
 import argparse
@@ -109,6 +110,8 @@ class BidSniper:
             "favorites": dict(),
         }
         self.scheduled_tasks = set()
+        # Once we've attempted a real bid for an item, never bid again this session
+        self.bids_placed: set[int] = set()
 
     def update_favorites_cache(self, max_cache_time: int) -> None:
         age = (
@@ -171,7 +174,19 @@ class BidSniper:
             for callback in callbacks:
                 task.add_done_callback(callback)
 
+    async def alert_upcoming(self, item_id: int, when_label: str) -> None:
+        """Log-only reminder before auction end — never places a bid."""
+        favorite = self.favorites_cache["favorites"].get(item_id)
+        title = favorite["title"] if favorite else str(item_id)
+        self.logger.info(f"Upcoming snipe for '{title}' in {when_label}")
+
     async def place_bid(self, item_id: int) -> None:
+        # Hard idempotency: at most one bid attempt per item per process lifetime
+        if item_id in self.bids_placed:
+            self.logger.info(f"Skipping duplicate bid attempt for item {item_id}")
+            return None
+        self.bids_placed.add(item_id)
+
         self.update_favorites_cache(5)
         favorite = self.favorites_cache["favorites"].get(item_id, None)
         if not favorite:
@@ -225,18 +240,11 @@ class BidSniper:
             end_time_str = favorite.get("endTime", "")
             if end_time_str:
                 try:
-                    date_format = self.date_format
-                    if "." in end_time_str:
-                        date_format += ".%f"
-                    end_dt = (
-                        datetime.datetime.strptime(end_time_str, date_format)
-                        .replace(tzinfo=ZoneInfo("America/Los_Angeles"))
-                        .astimezone(ZoneInfo("Etc/UTC"))
-                    )
+                    end_dt = self._parse_end_time(end_time_str)
                     check_dt = end_dt + datetime.timedelta(minutes=2)
                     self.event_loop.create_task(
                         self.schedule_task(
-                            self.check_win(item_id, favorite["title"]),
+                            self.check_win(item_id),
                             check_dt,
                             [self.task_err_handler],
                         )
@@ -312,7 +320,7 @@ class BidSniper:
             self.update_favorites_cache(cache_ttl)
 
             for item_id, favorite_info in self.favorites_cache["favorites"].items():
-                if item_id in self.scheduled_tasks:
+                if item_id in self.scheduled_tasks or item_id in self.bids_placed:
                     continue
 
                 end_raw = favorite_info.get("endTime")
@@ -337,9 +345,12 @@ class BidSniper:
                     execution_datetime = end_time - alert_time_delta
                     if execution_datetime < now:
                         continue
+                    # Alerts are reminders only — never place_bid
                     self.event_loop.create_task(
                         self.schedule_task(
-                            self.place_bid(item_id),
+                            self.alert_upcoming(
+                                item_id, str(alert_time_delta)
+                            ),
                             execution_datetime,
                             [self.task_err_handler],
                         )

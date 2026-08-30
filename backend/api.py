@@ -576,7 +576,9 @@ def _build_sniper_config() -> dict:
             "near_end_window_seconds": 600,
             "near_end_refresh_seconds": 5,
             "favorites_max_cache_seconds": 60,
-            "alert_time_deltas": ["5 minutes", "1 minute"],
+            # One log reminder only — never places a bid. Kept ahead of the
+            # snipe moment so it can't land on the same second as the bid.
+            "alert_time_deltas": [f"{snipe_secs + 60} seconds"],
         },
         "friend_list": [],
         "logging": {"log_level": 20},
@@ -640,10 +642,26 @@ class SettingsUpdateRequest(BaseModel):
     value: object
 
 
+def _restart_sniper() -> None:
+    """Stop the running sniper so the watchdog/ensure path starts it with fresh config."""
+    global _sniper_process
+    if _sniper_process and _sniper_process.poll() is None:
+        logger.info("Restarting sniper to pick up new settings")
+        _sniper_process.terminate()
+        try:
+            _sniper_process.wait(timeout=5)
+        except Exception:
+            _sniper_process.kill()
+        _sniper_process = None
+    _ensure_sniper_running()
+
+
 @app.put("/settings")
 def update_setting(req: SettingsUpdateRequest):
     db.update_setting(req.key, req.value)
-    # scan_interval_minutes is no longer configurable — locked at 30 min
+    # Snipe timing is baked into sniper config at process start — restart to apply
+    if req.key == "snipe_seconds_before":
+        _restart_sniper()
     return {"success": True, "key": req.key, "value": req.value}
 
 

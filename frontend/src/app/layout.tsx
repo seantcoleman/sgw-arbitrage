@@ -10,9 +10,6 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 export const metadata: Metadata = {
   title: "SGW Arbitrage",
   description: "ShopGoodwill price arbitrage + bid sniper dashboard",
-  icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

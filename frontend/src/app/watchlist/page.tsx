@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { WatchlistCard } from "@/components/WatchlistCard";
-import { getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
+import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
 function parseEndTime(endTime: string): Date {
   if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
@@ -67,6 +67,7 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [sniperRunning, setSniperRunning] = useState(false);
+  const [snipeSeconds, setSnipeSeconds] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<SniperLogEntry[]>([]);
@@ -82,12 +83,14 @@ export default function WatchlistPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [wl, sniper] = await Promise.all([
+      const [wl, sniper, settings] = await Promise.all([
         getWatchlist().catch(() => ({ watchlist: [] })),
         getSniperStatus().catch(() => ({ running: false })),
+        getSettings().catch(() => null),
       ]);
       setWatchlist(wl.watchlist);
       setSniperRunning(sniper.running);
+      if (settings) setSnipeSeconds(Number(settings.snipe_seconds_before));
       setLoading(false);
     };
     load();
@@ -153,7 +156,8 @@ export default function WatchlistPage() {
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">Watchlist</h1>
           <p className="text-zinc-500 text-sm mt-1">
-            {watchlist.length} item{watchlist.length !== 1 ? "s" : ""} — sniper bids 30s before each auction ends
+            {watchlist.length} item{watchlist.length !== 1 ? "s" : ""}
+            {snipeSeconds != null && ` — sniper bids ${snipeSeconds}s before each auction ends`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
