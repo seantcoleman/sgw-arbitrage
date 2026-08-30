@@ -55,13 +55,13 @@ const STATUS_LABEL: Record<string, string> = {
   error:              "Error",
 };
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
-  scheduled:        { bg: "bg-blue-950/40",    text: "text-blue-300",    dot: "bg-blue-500 animate-pulse" },
-  bid_placed:       { bg: "bg-amber-950/40",   text: "text-amber-300",   dot: "bg-amber-500 animate-pulse" },
-  won:              { bg: "bg-emerald-950/40", text: "text-emerald-300", dot: "bg-emerald-400" },
-  awaiting_payment: { bg: "bg-green-950/40",   text: "text-green-300",   dot: "bg-green-400 animate-pulse" },
-  shipped:          { bg: "bg-sky-950/40",     text: "text-sky-300",     dot: "bg-sky-400" },
-  lost:             { bg: "bg-zinc-800/40",    text: "text-zinc-500",    dot: "bg-zinc-600" },
-  error:            { bg: "bg-red-950/40",     text: "text-red-400",     dot: "bg-red-500" },
+  scheduled:        { bg: "bg-blue-950/40 light:bg-blue-50",       text: "text-blue-300 light:text-blue-700",       dot: "bg-blue-500 animate-pulse" },
+  bid_placed:       { bg: "bg-amber-950/40 light:bg-amber-50",     text: "text-amber-300 light:text-amber-800",     dot: "bg-amber-500 animate-pulse" },
+  won:              { bg: "bg-emerald-950/40 light:bg-emerald-50", text: "text-emerald-300 light:text-emerald-800", dot: "bg-emerald-400" },
+  awaiting_payment: { bg: "bg-green-950/40 light:bg-green-50",     text: "text-green-300 light:text-green-800",     dot: "bg-green-400 animate-pulse" },
+  shipped:          { bg: "bg-sky-950/40 light:bg-sky-50",         text: "text-sky-300 light:text-sky-800",         dot: "bg-sky-400" },
+  lost:             { bg: "bg-zinc-800/40",                       text: "text-zinc-500",                           dot: "bg-zinc-600" },
+  error:            { bg: "bg-red-950/40 light:bg-red-50",         text: "text-red-400 light:text-red-700",         dot: "bg-red-500" },
 };
 
 export default function WatchlistPage() {
@@ -154,7 +154,7 @@ export default function WatchlistPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Watchlist</h1>
+          <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Watchlist</h1>
           <p className="text-zinc-500 text-sm mt-1">
             {watchlist.length} item{watchlist.length !== 1 ? "s" : ""}
             {snipeSeconds != null && ` — sniper bids ${snipeSeconds}s before each auction ends`}
@@ -167,7 +167,7 @@ export default function WatchlistPage() {
               type="button"
               onClick={() => setView("list")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                viewMode === "list" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                viewMode === "list" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
               }`}
               title="List view"
             >
@@ -179,7 +179,7 @@ export default function WatchlistPage() {
               type="button"
               onClick={() => setView("cards")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                viewMode === "cards" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                viewMode === "cards" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
               }`}
               title="Card view"
             >
@@ -202,7 +202,7 @@ export default function WatchlistPage() {
 
       {/* Warning if sniper is offline but has active items */}
       {!sniperRunning && activeItems.length > 0 && (
-        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 rounded-xl px-4 py-3 mb-5 text-sm">
+        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 light:bg-red-50 light:border-red-200 light:text-red-800 rounded-xl px-4 py-3 mb-5 text-sm">
           <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -277,7 +277,7 @@ export default function WatchlistPage() {
                     href={item.sgw_url ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-semibold text-sm text-zinc-100 hover:text-white line-clamp-1 block"
+                    className="font-semibold text-sm text-zinc-100 hover:text-zinc-50 line-clamp-1 block"
                   >
                     {item.title}
                   </a>
@@ -424,7 +424,7 @@ export default function WatchlistPage() {
                             type="button"
                             onClick={() => handleRecheck(item.item_id)}
                             disabled={rechecking}
-                            className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-2.5 py-1 rounded-lg font-semibold"
+                            className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-100 text-xs px-2.5 py-1 rounded-lg font-semibold"
                           >
                             {rechecking ? "…" : "Recheck"}
                           </button>
@@ -530,7 +530,7 @@ export default function WatchlistPage() {
                   const color = isError ? "text-red-400" : isBid ? "text-green-400" : isWarn ? "text-amber-400" : "text-zinc-500";
                   return (
                     <div key={i} className="flex gap-2">
-                      <span className="text-zinc-700 flex-shrink-0">{entry.ts}</span>
+                      <span className="text-zinc-500 flex-shrink-0">{entry.ts}</span>
                       <span className={color}>{entry.line}</span>
                     </div>
                   );

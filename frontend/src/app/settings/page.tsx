@@ -12,7 +12,7 @@ function Section({ title, description, children }: {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden mb-4">
       <div className="px-5 py-4 border-b border-zinc-800">
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
         {description && <p className="text-xs text-zinc-500 mt-0.5">{description}</p>}
       </div>
       <div className="px-5">{children}</div>
@@ -84,7 +84,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-black text-white tracking-tight">Settings</h1>
+        <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Settings</h1>
         <p className="text-zinc-500 text-sm mt-1">
           Sniper timing and credentials. Scan filters live on the Deals page.
         </p>
@@ -147,7 +147,7 @@ export default function SettingsPage() {
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-white">Credentials</h2>
+          <h2 className="text-sm font-semibold text-zinc-100">Credentials</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
             Set in <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">backend/.env</code> — restart the server after changes
           </p>

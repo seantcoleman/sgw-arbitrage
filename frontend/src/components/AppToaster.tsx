@@ -8,13 +8,13 @@ export function AppToaster() {
       position="top-right"
       toastOptions={{
         style: {
-          background: "#18181b",
-          color: "#f4f4f5",
-          border: "1px solid #3f3f46",
+          background: "var(--toast-bg)",
+          color: "var(--toast-fg)",
+          border: "1px solid var(--toast-border)",
           fontSize: "13px",
         },
-        success: { iconTheme: { primary: "#34d399", secondary: "#18181b" } },
-        error: { iconTheme: { primary: "#f87171", secondary: "#18181b" } },
+        success: { iconTheme: { primary: "#34d399", secondary: "var(--toast-bg)" } },
+        error: { iconTheme: { primary: "#f87171", secondary: "var(--toast-bg)" } },
       }}
     />
   );

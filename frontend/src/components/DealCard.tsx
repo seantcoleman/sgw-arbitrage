@@ -115,7 +115,7 @@ export function DealCard({
             href={deal.sgw_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-semibold text-[13px] text-zinc-100 hover:text-white line-clamp-2 leading-snug block"
+            className="font-semibold text-[13px] text-zinc-100 hover:text-zinc-50 line-clamp-2 leading-snug block"
           >
             {deal.title}
           </a>
@@ -168,7 +168,7 @@ export function DealCard({
                 type="button"
                 onClick={handleRecheck}
                 disabled={rechecking}
-                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-100 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
               >
                 {rechecking ? "…" : "Recheck"}
               </button>
@@ -200,7 +200,7 @@ export function DealCard({
                   value={maxBid}
                   onChange={e => onMaxBidChange(e.target.value)}
                   placeholder={`>${deal.current_bid.toFixed(2)}`}
-                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-white focus:outline-none transition-colors"
+                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
                   step="0.50"
                   min={deal.current_bid + 0.5}
                   autoFocus

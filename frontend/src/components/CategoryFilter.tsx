@@ -43,7 +43,7 @@ export function CategoryFilter({
                   : "text-xs px-3 py-1.5 rounded-xl"
               } ${
                 selected
-                  ? "bg-green-900/40 border-green-700 text-green-300"
+                  ? "bg-green-900/40 border-green-700 text-green-300 light:bg-green-50 light:border-green-300 light:text-green-800"
                   : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
               }`}
             >

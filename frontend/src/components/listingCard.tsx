@@ -218,7 +218,7 @@ export function PriceCompareRow({
     <div className="flex items-center gap-2 text-xs">
       <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
         <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
-        <div className="font-bold text-white text-[15px]">{youPay}</div>
+        <div className="font-bold text-zinc-100 text-[15px]">{youPay}</div>
         {youPayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{youPayDetail}</div>}
       </div>
       <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -226,7 +226,7 @@ export function PriceCompareRow({
       </svg>
       <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
         <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
-        <div className="font-bold text-white text-[15px]">{ebayValue}</div>
+        <div className="font-bold text-zinc-100 text-[15px]">{ebayValue}</div>
         {ebayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{ebayDetail}</div>}
       </div>
     </div>
@@ -234,4 +234,4 @@ export function PriceCompareRow({
 }
 
 export const LISTING_CARD_SHELL =
-  "group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50";
+  "group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50 light:hover:shadow-zinc-400/20";

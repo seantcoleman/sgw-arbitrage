@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { getScanStatus, triggerScan } from "@/lib/api";
+import { useTheme } from "@/components/ThemeProvider";
 
 export function Nav() {
   const path = usePathname();
+  const { theme, toggleTheme } = useTheme();
   const [scanRunning, setScanRunning] = useState(false);
   const [lastScan, setLastScan] = useState<string | null>(null);
 
@@ -58,7 +60,7 @@ export function Nav() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <span className="font-bold text-sm text-white">SGW Arb</span>
+          <span className="font-bold text-sm text-zinc-100">SGW Arb</span>
         </Link>
 
         {/* Nav links */}
@@ -71,7 +73,7 @@ export function Nav() {
                 href={href}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                   active
-                    ? "bg-zinc-800 text-white"
+                    ? "bg-zinc-800 text-zinc-100"
                     : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
                 }`}
               >
@@ -94,6 +96,23 @@ export function Nav() {
               Scanning
             </span>
           )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"
+          >
+            {theme === "dark" ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1.5M12 19.5V21M4.22 4.22l1.06 1.06M18.72 18.72l1.06 1.06M3 12h1.5M19.5 12H21M4.22 19.78l1.06-1.06M18.72 5.28l1.06-1.06M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+              </svg>
+            )}
+          </button>
           <button
             onClick={handleScan}
             disabled={scanRunning}

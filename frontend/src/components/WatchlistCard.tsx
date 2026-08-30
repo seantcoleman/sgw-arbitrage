@@ -159,7 +159,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
           href={item.sgw_url ?? "#"}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-semibold text-[13px] text-zinc-100 hover:text-white line-clamp-2 leading-snug block"
+          className="font-semibold text-[13px] text-zinc-100 hover:text-zinc-50 line-clamp-2 leading-snug block"
         >
           {item.title}
         </a>
@@ -168,7 +168,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
           <div className="text-xs space-y-1.5">
             <div className="rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Won for</div>
-              <div className="font-bold text-white text-[15px]">${item.final_price?.toFixed(2) ?? "—"}</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${item.final_price?.toFixed(2) ?? "—"}</div>
               <div className="text-[10px] text-zinc-600 mt-0.5">+ shipping/tax at checkout</div>
             </div>
             {item.due_date && (
@@ -189,7 +189,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
           <div className="text-xs space-y-1.5">
             <div className="rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Total paid</div>
-              <div className="font-bold text-white text-[15px]">${paidTotal.toFixed(2)}</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${paidTotal.toFixed(2)}</div>
               <div className="text-[10px] text-zinc-600 mt-0.5">
                 ${item.final_price?.toFixed(2)}
                 {item.final_shipping ? ` + $${item.final_shipping.toFixed(2)} ship` : ""}
@@ -216,7 +216,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
           <div className="flex items-center gap-2 text-xs">
             <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Current</div>
-              <div className="font-bold text-white text-[15px]">${item.current_bid?.toFixed(2) ?? "—"}</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${item.current_bid?.toFixed(2) ?? "—"}</div>
             </div>
             <div className="flex-1 rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Max bid</div>
@@ -240,7 +240,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
                 type="button"
                 onClick={handleRecheck}
                 disabled={rechecking}
-                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-100 text-xs px-3 py-1.5 rounded-lg font-semibold"
               >
                 {rechecking ? "…" : "Recheck"}
               </button>

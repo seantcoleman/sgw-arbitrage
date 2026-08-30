@@ -136,7 +136,7 @@ function FavCard({
           href={item.sgw_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-semibold text-[13px] text-zinc-100 hover:text-white line-clamp-2 leading-snug block"
+            className="font-semibold text-[13px] text-zinc-100 hover:text-zinc-50 line-clamp-2 leading-snug block"
         >
           {item.title}
         </a>
@@ -190,7 +190,7 @@ function FavCard({
                 type="button"
                 onClick={handleRecheck}
                 disabled={rechecking}
-                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-100 text-xs px-3 py-1.5 rounded-lg font-semibold"
               >
                 {rechecking ? "…" : "Recheck"}
               </button>
@@ -244,7 +244,7 @@ function FavCard({
                   value={maxBid}
                   onChange={e => setMaxBid(e.target.value)}
                   placeholder={`>${item.current_bid.toFixed(2)}`}
-                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-white focus:outline-none transition-colors"
+                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
                   step="0.50"
                   min={item.current_bid + 0.5}
                   autoFocus
@@ -353,7 +353,7 @@ export default function FavoritesPage() {
     <div className="min-h-screen">
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-3xl font-black text-white tracking-tight">Favorites</h1>
+          <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Favorites</h1>
           <button
             onClick={handleScan}
             disabled={scanning}
@@ -372,7 +372,7 @@ export default function FavoritesPage() {
       </div>
 
       {scanning && (
-        <div className="flex items-center gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 rounded-xl px-4 py-3 mb-5 text-sm">
+        <div className="flex items-center gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 light:bg-amber-50 light:border-amber-200 light:text-amber-800 rounded-xl px-4 py-3 mb-5 text-sm">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
           Fetching your SGW favorites and checking eBay prices — takes 1–3 min. Page updates automatically.
         </div>
@@ -382,11 +382,11 @@ export default function FavoritesPage() {
         <div className="flex items-center gap-2 mb-5">
           <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
             <span className="text-zinc-500 text-xs">Total</span>
-            <span className="text-white font-bold text-sm">{favorites.length}</span>
+            <span className="text-zinc-100 font-bold text-sm">{favorites.length}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
             <span className="text-zinc-500 text-xs">Analyzed</span>
-            <span className="text-white font-bold text-sm">{analyzed.length}</span>
+            <span className="text-zinc-100 font-bold text-sm">{analyzed.length}</span>
           </div>
           {deals.length > 0 && (
             <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">

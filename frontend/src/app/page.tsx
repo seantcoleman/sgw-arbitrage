@@ -257,7 +257,7 @@ export default function DealsPage() {
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-3xl font-black text-white tracking-tight">Deals</h1>
+          <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Deals</h1>
           {scanRunning && (
             <span className="flex items-center gap-2 text-sm text-amber-400 font-medium">
               <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
@@ -288,7 +288,7 @@ export default function DealsPage() {
 
       {/* Scan running banner */}
       {scanRunning && (
-        <div className="flex items-center gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 rounded-xl px-4 py-3 mb-5 text-sm">
+        <div className="flex items-center gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 light:bg-amber-50 light:border-amber-200 light:text-amber-800 rounded-xl px-4 py-3 mb-5 text-sm">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
           Scanning ShopGoodwill — this takes 1–2 minutes. Page updates automatically.
         </div>
@@ -302,7 +302,7 @@ export default function DealsPage() {
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
                   <span className="text-zinc-500 text-xs">Deals</span>
-                  <span className="text-white font-bold text-sm">{sortedDeals.length}</span>
+                  <span className="text-zinc-100 font-bold text-sm">{sortedDeals.length}</span>
                 </div>
                 <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
                   <span className="text-zinc-500 text-xs">Potential</span>
@@ -311,7 +311,7 @@ export default function DealsPage() {
                 {bestDeal && (
                   <div className="hidden sm:flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2">
                     <span className="text-zinc-500 text-xs">Best</span>
-                    <span className="text-white font-bold text-sm">+${bestDeal.profit.toFixed(0)}</span>
+                    <span className="text-zinc-100 font-bold text-sm">+${bestDeal.profit.toFixed(0)}</span>
                   </div>
                 )}
               </div>
@@ -325,7 +325,7 @@ export default function DealsPage() {
                 onClick={openScanFilters}
                 className={`flex items-center gap-2 text-sm px-3.5 py-2 rounded-xl border font-medium transition-all ${
                   showScanFilters || filterBadgeCount > 0
-                    ? "bg-green-950/40 border-green-800/60 text-green-300"
+                    ? "bg-green-950/40 border-green-800/60 text-green-300 light:bg-green-50 light:border-green-200 light:text-green-800"
                     : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
                 }`}
               >
@@ -345,7 +345,7 @@ export default function DealsPage() {
                   type="button"
                   onClick={() => setSortBy("ending")}
                   className={`text-xs px-3 py-2 font-medium transition-colors ${
-                    sortBy === "ending" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                    sortBy === "ending" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
                   Ending soon
@@ -354,7 +354,7 @@ export default function DealsPage() {
                   type="button"
                   onClick={() => setSortBy("profit")}
                   className={`text-xs px-3 py-2 font-medium transition-colors ${
-                    sortBy === "profit" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                    sortBy === "profit" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
                   Highest profit
@@ -436,7 +436,7 @@ export default function DealsPage() {
                 <button
                   type="button"
                   onClick={addKeyword}
-                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-[11px] px-2.5 py-1 rounded-md font-medium"
+                  className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-[11px] px-2.5 py-1 rounded-md font-medium"
                 >
                   Add
                 </button>
