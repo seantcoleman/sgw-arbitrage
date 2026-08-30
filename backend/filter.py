@@ -23,8 +23,8 @@ JUNK_WORDS = [
     "lot of", "as is", "as-is", "for parts", "untested", "broken",
     "damaged", "incomplete", "missing", "cracked", "read desc",
     "read description", "not working", "parts only", "spares",
-    "no power", "powers on", "unknown", "unverified", "sold as is",
-    "bag of", "bundle of", "mixed lot", "various", "assorted",
+    "no power", "unknown", "unverified", "sold as is",
+    "assorted",
     "junk drawer", "estate lot",
 ]
 
