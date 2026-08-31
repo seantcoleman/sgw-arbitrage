@@ -168,9 +168,9 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
         {item.sniper_status === "awaiting_payment" ? (
           <div className="text-xs space-y-1.5">
             <div className={PRICE_WELL}>
-              <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">Won for</div>
-              <div className="font-bold text-white text-[15px]">${item.final_price?.toFixed(2) ?? "—"}</div>
-              <div className="text-[10px] text-neutral-500 mt-0.5">+ shipping/tax at checkout</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Won for</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${item.final_price?.toFixed(2) ?? "—"}</div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">+ shipping/tax at checkout</div>
             </div>
             {item.due_date && (
               <p className="text-red-400 text-[11px]">
@@ -189,9 +189,9 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
         ) : item.sniper_status === "shipped" ? (
           <div className="text-xs space-y-1.5">
             <div className={PRICE_WELL}>
-              <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">Total paid</div>
-              <div className="font-bold text-white text-[15px]">${paidTotal.toFixed(2)}</div>
-              <div className="text-[10px] text-neutral-500 mt-0.5">
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Total paid</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${paidTotal.toFixed(2)}</div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">
                 ${item.final_price?.toFixed(2)}
                 {item.final_shipping ? ` + $${item.final_shipping.toFixed(2)} ship` : ""}
                 {item.handling_price ? ` + $${item.handling_price.toFixed(2)} hndl` : ""}
@@ -216,11 +216,11 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
         ) : (
           <div className="flex items-center gap-2 text-xs">
             <div className={`flex-1 ${PRICE_WELL}`}>
-              <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">Current</div>
-              <div className="font-bold text-white text-[15px]">${item.current_bid?.toFixed(2) ?? "—"}</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Current</div>
+              <div className="font-bold text-zinc-100 text-[15px]">${item.current_bid?.toFixed(2) ?? "—"}</div>
             </div>
             <div className={`flex-1 ${PRICE_WELL}`}>
-              <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">Max bid</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Max bid</div>
               <div className="font-bold text-green-400 text-[15px]">${item.max_bid.toFixed(2)}</div>
             </div>
           </div>

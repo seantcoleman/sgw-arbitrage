@@ -217,25 +217,25 @@ export function PriceCompareRow({
   return (
     <div className="flex items-center gap-2 text-xs">
       <div className={`flex-1 ${PRICE_WELL}`}>
-        <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">You Pay</div>
-        <div className="font-bold text-white text-[15px]">{youPay}</div>
-        {youPayDetail && <div className="text-[10px] text-neutral-500 mt-0.5">{youPayDetail}</div>}
+        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">You Pay</div>
+        <div className="font-bold text-zinc-100 text-[15px]">{youPay}</div>
+        {youPayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{youPayDetail}</div>}
       </div>
       <svg className="w-4 h-4 text-zinc-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
       </svg>
       <div className={`flex-1 ${PRICE_WELL}`}>
-        <div className="text-[9px] text-neutral-400 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
-        <div className="font-bold text-white text-[15px]">{ebayValue}</div>
-        {ebayDetail && <div className="text-[10px] text-neutral-500 mt-0.5">{ebayDetail}</div>}
+        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
+        <div className="font-bold text-zinc-100 text-[15px]">{ebayValue}</div>
+        {ebayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{ebayDetail}</div>}
       </div>
     </div>
   );
 }
 
-/** Always-dark wells so prices stay white in both themes. */
+/** Follows the theme — dark well in dark mode, light well in light mode. */
 export const PRICE_WELL =
-  "rounded-xl bg-neutral-800 border border-neutral-700/80 px-3 py-2.5";
+  "rounded-xl bg-zinc-800/70 border border-zinc-700/50 px-3 py-2.5";
 
 export const LISTING_CARD_SHELL =
   "group relative bg-zinc-900 border border-zinc-800/80 hover:border-zinc-600 rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:shadow-2xl hover:shadow-black/50 light:hover:shadow-zinc-400/20";
