@@ -129,7 +129,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
             {item.ebay_median != null ? (
               <StatPill label="eBay Est." value={`$${item.ebay_median.toFixed(0)}`} size="md" />
             ) : (
-              <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-sm text-zinc-400">
+              <div className="rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 text-sm text-white">
                 No eBay estimate
               </div>
             )}

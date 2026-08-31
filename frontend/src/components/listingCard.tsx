@@ -29,7 +29,7 @@ export function formatRoi(margin: number): string {
 }
 
 const URGENCY_BADGE: Record<Urgency, string> = {
-  normal: "text-zinc-400 bg-black/50",
+  normal: "text-neutral-300 bg-black/50",
   soon: "text-amber-300 bg-amber-950/70",
   urgent: "text-red-300 bg-red-950/70",
 };
@@ -117,7 +117,7 @@ export function CardImage({
   children?: ReactNode;
 }) {
   return (
-    <div className={`relative ${heightClass} bg-zinc-800 overflow-hidden flex-shrink-0`}>
+    <div className={`relative ${heightClass} bg-neutral-800 overflow-hidden flex-shrink-0`}>
       {src ? (
         <>
           <img
@@ -125,7 +125,7 @@ export function CardImage({
             alt={alt}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-transparent opacity-80" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
         </>
       ) : (
         <div className="w-full h-full flex items-center justify-center">
@@ -162,7 +162,7 @@ export function StatPill({
   const valueSize = size === "lg" ? "text-3xl" : size === "md" ? "text-2xl" : "text-sm font-semibold";
   return (
     <div className={`rounded-xl bg-black/70 backdrop-blur-md border border-white/10 px-3 py-2 ${align === "right" ? "text-right" : ""}`}>
-      <div className={`text-[10px] mb-0.5 ${align === "right" ? "text-zinc-400" : "text-zinc-300 uppercase tracking-widest font-semibold"}`}>
+      <div className={`text-[10px] mb-0.5 ${align === "right" ? "text-neutral-300" : "text-neutral-300 uppercase tracking-widest font-semibold"}`}>
         {label}
       </div>
       <div className={`${valueSize} font-black leading-none ${valueClassName}`}>{value}</div>
