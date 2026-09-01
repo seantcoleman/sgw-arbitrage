@@ -275,11 +275,16 @@ class Scanner:
         clean_term = None
         shipping = self._get_shipping(item_id) or 12.0
 
+        existing = db.get_deals_by_ids([item_id])
+        stored_term = ((existing[0].get("ebay_search") or "").strip() if existing else "")
+        custom_term = stored_term if stored_term and stored_term.lower() != title.strip().lower() else None
+
         try:
             resolved = search_term.resolve_ebay_search(
                 title,
                 days_back=self.days_back,
                 min_comps=self.min_sold_comps,
+                preferred_term=custom_term,
                 learn=True,
             )
         except Exception as e:
@@ -289,8 +294,7 @@ class Scanner:
 
         clean_term = resolved.term or None
         price_result = resolved.price_result
-        # Always persist the listing title as the search term (no truncation).
-        display_term = title.strip()
+        display_term = (custom_term or resolved.term or title).strip()
 
         if not resolved.term:
             _save_skipped("title couldn't be cleaned for eBay search")

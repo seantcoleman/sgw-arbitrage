@@ -344,16 +344,15 @@ def reprice_item(item_id: int, req: RepriceRequest):
         **price_result.to_dict(),
         "profit": profit,
         "margin": margin,
-        # Always show/store the exact term we searched (prefer listing title).
-        "ebay_search": title.strip(),
+        "ebay_search": term,
     })
 
     if watch:
-        db.update_watchlist_pricing(item_id, price_result.median, profit, title.strip())
+        db.update_watchlist_pricing(item_id, price_result.median, profit, term)
 
     return {
         "item_id": item_id,
-        "ebay_search": title.strip(),
+        "ebay_search": term,
         "ebay_median": round(price_result.median, 2),
         "ebay_low": round(price_result.low, 2),
         "ebay_high": round(price_result.high, 2),

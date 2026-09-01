@@ -114,7 +114,7 @@ def resolve_ebay_search(
     ):
         remember_search_term(
             title,
-            best_term,
+            preferred_term or best_term,
             source="manual" if preferred_term else "auto",
         )
 
