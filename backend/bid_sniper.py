@@ -127,6 +127,26 @@ class BidSniper:
                 if self.outage_start_time is not None:
                     self.logger.error(f"{type(be).__name__} updating favorites cache - {be}")
 
+    def _favorite_max_bid(self, favorite_info: Dict) -> Optional[float]:
+        """Return the favorite's max_bid if a real snipe is configured, else None."""
+        notes = favorite_info.get("notes")
+        if not notes:
+            return None
+        try:
+            notes_js = json.loads(notes)
+        except (JSONDecodeError, TypeError):
+            return None
+        raw = notes_js.get("max_bid") if isinstance(notes_js, dict) else None
+        if raw is None or raw == "":
+            return None
+        try:
+            max_bid = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if max_bid <= 0:
+            return None
+        return max_bid
+
     def _parse_end_time(self, end_time_str: str) -> datetime.datetime:
         date_format = self.date_format
         if "." in end_time_str:
@@ -192,23 +212,8 @@ class BidSniper:
         if not favorite:
             return None
 
-        notes = favorite.get("notes", None)
-        if not notes:
-            return None
-
-        try:
-            notes_js = json.loads(notes)
-        except JSONDecodeError:
-            return None
-
-        max_bid = notes_js.get("max_bid", None)
-        if not max_bid:
-            return None
-
-        try:
-            max_bid = float(max_bid)
-        except ValueError:
-            self.logger.error(f"ValueError casting max_bid value '{max_bid}' as float")
+        max_bid = self._favorite_max_bid(favorite)
+        if max_bid is None:
             return None
 
         if self.config.get("friend_list", list()):
@@ -339,6 +344,10 @@ class BidSniper:
 
                 if end_time <= now:
                     self.scheduled_tasks.add(item_id)
+                    continue
+
+                # Favorites without a max_bid are not snipes — don't schedule or log
+                if self._favorite_max_bid(favorite_info) is None:
                     continue
 
                 for alert_time_delta in self.alert_time_deltas:
