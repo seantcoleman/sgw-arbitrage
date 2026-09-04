@@ -7,10 +7,11 @@ import {
   CardImage,
   CardTopBadges,
   DealImageOverlay,
+  EbayDisplayMode,
   LISTING_CARD_SHELL,
   PriceCompareRow,
   RoiBadge,
-  formatYouGetLine,
+  resolveEbayWell,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -25,6 +26,7 @@ interface DealCardProps {
   onConfirmWatch: () => void;
   onRepriced?: (itemId: number, update: Partial<Deal>) => void;
   categories?: Category[];
+  ebayDisplayMode?: EbayDisplayMode;
 }
 
 /** Turn raw scanner tags like category:[13] into readable labels. */
@@ -58,6 +60,7 @@ export function DealCard({
   onConfirmWatch,
   onRepriced,
   categories = [],
+  ebayDisplayMode = "net",
 }: DealCardProps) {
   const [showRecheck, setShowRecheck] = useState(false);
   const [searchTerm, setSearchTerm] = useState(deal.ebay_search ?? "");
@@ -65,6 +68,15 @@ export function DealCard({
 
   const { label: timeLabel, urgency } = timeUntil(deal.end_time);
   const totalCost = deal.current_bid + (deal.shipping_est ?? 0);
+  const ebayWell = resolveEbayWell({
+    mode: ebayDisplayMode,
+    ebayMedian: deal.ebay_median,
+    ebayLow: deal.ebay_low,
+    ebayHigh: deal.ebay_high,
+    youGet: deal.you_get,
+    feePct: deal.ebay_fee_pct,
+    resaleShip: deal.ebay_resale_shipping,
+  });
 
   const handleRecheck = async () => {
     const term = searchTerm.trim();
@@ -131,9 +143,11 @@ export function DealCard({
         <PriceCompareRow
           youPay={`$${totalCost.toFixed(2)}`}
           youPayDetail={`$${deal.current_bid.toFixed(2)} + $${(deal.shipping_est ?? 0).toFixed(2)} ship`}
-          ebayValue={`$${deal.ebay_median.toFixed(2)}`}
-          ebayDetail={`$${deal.ebay_low.toFixed(0)}–$${deal.ebay_high.toFixed(0)} range`}
-          youGetLine={formatYouGetLine(deal.you_get, deal.ebay_fee_pct, deal.ebay_resale_shipping, deal.ebay_median)}
+          ebayLabel={ebayWell.ebayLabel}
+          ebayValue={ebayWell.ebayValue}
+          ebayDetail={ebayWell.ebayDetail}
+          ebaySecondary={ebayWell.ebaySecondary}
+          ebaySecondaryClass={ebayWell.ebaySecondaryClass}
         />
 
         {/* Search term + wrong item */}

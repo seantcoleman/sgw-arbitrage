@@ -165,6 +165,37 @@ export default function SettingsPage() {
           onSave={v => save("ebay_resale_shipping", v)}
           suffix="$" min={0} step={1}
         />
+        <div className="flex items-center justify-between py-4">
+          <div>
+            <div className="text-sm font-medium text-zinc-200">eBay price display</div>
+            <div className="text-xs text-zinc-600 mt-0.5">
+              Big number on deal cards — net after fees, or gross eBay median
+            </div>
+          </div>
+          <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden">
+            {([
+              { value: "net" as const, label: "You Get" },
+              { value: "gross" as const, label: "eBay Value" },
+            ]).map(opt => {
+              const active = (settings.ebay_display_mode ?? "net") === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setSettings(prev => ({ ...prev, ebay_display_mode: opt.value }));
+                    save("ebay_display_mode", opt.value);
+                  }}
+                  className={`text-xs px-3 py-2 font-medium transition-colors ${
+                    active ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </Section>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">

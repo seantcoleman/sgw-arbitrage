@@ -183,6 +183,8 @@ export function StatPill({
   );
 }
 
+export type EbayDisplayMode = "net" | "gross";
+
 export function computeYouGet(
   ebayMedian: number,
   feePct: number = 13,
@@ -199,22 +201,58 @@ export function formatYouGetCaption(feePct?: number | null, resaleShip?: number 
   return `after ${feeLabel}% + $${shipLabel} ship`;
 }
 
-export function formatYouGetLine(
-  youGet: number | null | undefined,
-  feePct?: number | null,
-  resaleShip?: number | null,
-  ebayMedian?: number | null,
-): string | undefined {
+/** Build the right-hand price well for net (You Get) or gross (eBay Value) display. */
+export function resolveEbayWell({
+  mode = "net",
+  ebayMedian,
+  ebayLow,
+  ebayHigh,
+  youGet,
+  feePct,
+  resaleShip,
+}: {
+  mode?: EbayDisplayMode | null;
+  ebayMedian: number;
+  ebayLow?: number | null;
+  ebayHigh?: number | null;
+  youGet?: number | null;
+  feePct?: number | null;
+  resaleShip?: number | null;
+}): {
+  ebayLabel: string;
+  ebayValue: string;
+  ebayDetail?: string;
+  ebaySecondary?: string;
+  ebaySecondaryClass?: string;
+} {
   const fee = feePct ?? 13;
   const ship = resaleShip ?? 7;
-  const yg =
-    youGet != null
-      ? youGet
-      : ebayMedian != null
-      ? computeYouGet(ebayMedian, fee, ship)
-      : null;
-  if (yg == null) return undefined;
-  return `You Get $${yg.toFixed(0)} ${formatYouGetCaption(fee, ship)}`;
+  const yg = youGet != null ? youGet : computeYouGet(ebayMedian, fee, ship);
+  const range =
+    ebayLow != null && ebayHigh != null
+      ? `$${ebayLow.toFixed(0)}–$${ebayHigh.toFixed(0)}`
+      : undefined;
+  const displayMode: EbayDisplayMode = mode === "gross" ? "gross" : "net";
+
+  if (displayMode === "gross") {
+    return {
+      ebayLabel: "eBay Value",
+      ebayValue: `$${ebayMedian.toFixed(2)}`,
+      ebayDetail: range ? `${range} range` : undefined,
+      ebaySecondary: `You Get $${yg.toFixed(0)} ${formatYouGetCaption(fee, ship)}`,
+      ebaySecondaryClass: "text-green-500/90",
+    };
+  }
+
+  return {
+    ebayLabel: "You Get",
+    ebayValue: `$${yg.toFixed(2)}`,
+    ebayDetail: formatYouGetCaption(fee, ship),
+    ebaySecondary: range
+      ? `eBay $${ebayMedian.toFixed(2)} · ${range}`
+      : `eBay $${ebayMedian.toFixed(2)}`,
+    ebaySecondaryClass: "text-zinc-600",
+  };
 }
 
 /** Shared image-bottom stats for Deals / Favorites. */
@@ -255,14 +293,16 @@ export function PriceCompareRow({
   youPayDetail,
   ebayValue,
   ebayDetail,
-  youGetLine,
+  ebaySecondary,
+  ebaySecondaryClass = "text-green-500/90",
   ebayLabel = "eBay Value",
 }: {
   youPay: string;
   youPayDetail?: string;
   ebayValue: string;
   ebayDetail?: string;
-  youGetLine?: string;
+  ebaySecondary?: string;
+  ebaySecondaryClass?: string;
   ebayLabel?: string;
 }) {
   return (
@@ -279,7 +319,7 @@ export function PriceCompareRow({
         <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">{ebayLabel}</div>
         <div className="font-bold text-zinc-100 text-[15px]">{ebayValue}</div>
         {ebayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{ebayDetail}</div>}
-        {youGetLine && <div className="text-[10px] text-green-500/90 mt-0.5">{youGetLine}</div>}
+        {ebaySecondary && <div className={`text-[10px] mt-0.5 ${ebaySecondaryClass}`}>{ebaySecondary}</div>}
       </div>
     </div>
   );

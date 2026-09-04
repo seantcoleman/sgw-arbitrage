@@ -168,6 +168,7 @@ export interface Settings {
   scan_max_items: number;
   ebay_fee_pct: number;
   ebay_resale_shipping: number;
+  ebay_display_mode: "net" | "gross";
 }
 
 export interface Category {

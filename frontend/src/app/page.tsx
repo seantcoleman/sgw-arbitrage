@@ -16,6 +16,7 @@ import {
 } from "@/lib/api";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { DealCard } from "@/components/DealCard";
+import type { EbayDisplayMode } from "@/components/listingCard";
 
 function ScanNumField({
   label,
@@ -76,6 +77,7 @@ export default function DealsPage() {
   const [minSoldComps, setMinSoldComps] = useState(5);
   const [minBidFloor, setMinBidFloor] = useState(3);
   const [maxBidCap, setMaxBidCap] = useState(300);
+  const [ebayDisplayMode, setEbayDisplayMode] = useState<EbayDisplayMode>("net");
 
   const fetchDeals = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -114,6 +116,9 @@ export default function DealsPage() {
         setMinSoldComps(s.min_sold_comps ?? 5);
         setMinBidFloor(s.min_bid_floor ?? 3);
         setMaxBidCap(s.max_bid_cap ?? 300);
+        if (s.ebay_display_mode === "gross" || s.ebay_display_mode === "net") {
+          setEbayDisplayMode(s.ebay_display_mode);
+        }
       }
       setCategories(c.categories);
     } catch {
@@ -527,6 +532,7 @@ export default function DealsPage() {
               key={deal.item_id}
               deal={deal}
               categories={categories}
+              ebayDisplayMode={ebayDisplayMode}
               isWatching={watchingId === deal.item_id}
               isOnWatchlist={watchedIds.has(deal.item_id)}
               maxBid={maxBidInput[deal.item_id] ?? ""}

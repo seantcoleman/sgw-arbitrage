@@ -7,6 +7,7 @@ import {
   FavoriteItem,
   getAllFavorites,
   getFavoritesScanStatus,
+  getSettings,
   getWatchlist,
   repriceItem,
   triggerFavoritesScan,
@@ -15,12 +16,13 @@ import {
   CardImage,
   CardTopBadges,
   DealImageOverlay,
+  EbayDisplayMode,
   LISTING_CARD_SHELL,
   PriceCompareRow,
   RoiBadge,
   StatPill,
   StatusPill,
-  formatYouGetLine,
+  resolveEbayWell,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -34,11 +36,13 @@ function FavCard({
   isOnWatchlist,
   onSnipe,
   onUpdated,
+  ebayDisplayMode = "net",
 }: {
   item: FavoriteItem;
   isOnWatchlist: boolean;
   onSnipe: (item: FavoriteItem, maxBid: number) => Promise<boolean>;
   onUpdated: (itemId: number, update: Partial<FavoriteItem>) => void;
+  ebayDisplayMode?: EbayDisplayMode;
 }) {
   const [maxBid, setMaxBid] = useState("");
   const [sniping, setSniping] = useState(false);
@@ -48,6 +52,17 @@ function FavCard({
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
   const totalCost = item.current_bid + (item.shipping_est ?? 12);
   const hasEbay = item.ebay_median != null;
+  const ebayWell = hasEbay
+    ? resolveEbayWell({
+        mode: ebayDisplayMode,
+        ebayMedian: item.ebay_median!,
+        ebayLow: item.ebay_low,
+        ebayHigh: item.ebay_high,
+        youGet: item.you_get,
+        feePct: item.ebay_fee_pct,
+        resaleShip: item.ebay_resale_shipping,
+      })
+    : null;
 
   const handleSnipe = async () => {
     const bid = parseFloat(maxBid);
@@ -150,15 +165,11 @@ function FavCard({
             <PriceCompareRow
               youPay={`$${totalCost.toFixed(2)}`}
               youPayDetail={`$${item.current_bid.toFixed(2)} bid`}
-              ebayValue={`$${item.ebay_median!.toFixed(2)}`}
-              ebayDetail={
-                item.ebay_low != null && item.ebay_high != null
-                  ? `$${item.ebay_low.toFixed(0)}–$${item.ebay_high.toFixed(0)}`
-                  : item.ebay_sold_count != null
-                  ? `${item.ebay_sold_count} comps`
-                  : undefined
-              }
-              youGetLine={formatYouGetLine(item.you_get, item.ebay_fee_pct, item.ebay_resale_shipping, item.ebay_median)}
+              ebayLabel={ebayWell!.ebayLabel}
+              ebayValue={ebayWell!.ebayValue}
+              ebayDetail={ebayWell!.ebayDetail}
+              ebaySecondary={ebayWell!.ebaySecondary}
+              ebaySecondaryClass={ebayWell!.ebaySecondaryClass}
             />
             {!item.is_deal && item.skip_reason && (
               <p className="text-[11px] text-zinc-500">{item.skip_reason}</p>
@@ -282,6 +293,7 @@ export default function FavoritesPage() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
+  const [ebayDisplayMode, setEbayDisplayMode] = useState<EbayDisplayMode>("net");
   const firstLoad = useRef(true);
 
   const fetchFavorites = async (silent = false) => {
@@ -303,6 +315,13 @@ export default function FavoritesPage() {
       fetchFavorites();
       getWatchlist()
         .then(data => setWatchedIds(new Set(data.watchlist.map(w => w.item_id))))
+        .catch(() => {});
+      getSettings()
+        .then(s => {
+          if (s.ebay_display_mode === "gross" || s.ebay_display_mode === "net") {
+            setEbayDisplayMode(s.ebay_display_mode);
+          }
+        })
         .catch(() => {});
     }
   }, []);
@@ -436,6 +455,7 @@ export default function FavoritesPage() {
               isOnWatchlist={watchedIds.has(item.item_id)}
               onSnipe={handleSnipe}
               onUpdated={handleUpdated}
+              ebayDisplayMode={ebayDisplayMode}
             />
           ))}
         </div>
