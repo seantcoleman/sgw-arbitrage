@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { WatchlistCard } from "@/components/WatchlistCard";
 import { TERMINAL_SNIPER_STATUSES, displaySniperStatus, parseEndTime } from "@/components/listingCard";
@@ -142,6 +142,15 @@ export default function WatchlistPage() {
     return status === "scheduled" || status === "bid_placed";
   });
 
+  const sortedWatchlist = useMemo(
+    () =>
+      [...watchlist].sort((a, b) => {
+        const byAdded = (b.added_at ?? "").localeCompare(a.added_at ?? "");
+        return byAdded !== 0 ? byAdded : b.item_id - a.item_id;
+      }),
+    [watchlist],
+  );
+
   const setView = (mode: "list" | "cards") => {
     setViewMode(mode);
     localStorage.setItem("watchlist-view", mode);
@@ -240,7 +249,7 @@ export default function WatchlistPage() {
         </div>
       ) : viewMode === "cards" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {watchlist.map(item => (
+          {sortedWatchlist.map(item => (
             <WatchlistCard
               key={item.item_id}
               item={item}
@@ -253,7 +262,7 @@ export default function WatchlistPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {watchlist.map(item => {
+          {sortedWatchlist.map(item => {
             const { label: timeLabel, urgency } = countdown(item.end_time);
             const displayStatus = displaySniperStatus(item.sniper_status, item.end_time);
             const status = STATUS_STYLE[displayStatus] ?? STATUS_STYLE.scheduled;

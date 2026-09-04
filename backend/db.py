@@ -434,7 +434,9 @@ def update_watchlist_pricing(
 
 def get_watchlist() -> List[Dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM watchlist ORDER BY end_time ASC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM watchlist ORDER BY added_at DESC, item_id DESC"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
