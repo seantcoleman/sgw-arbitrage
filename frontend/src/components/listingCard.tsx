@@ -15,11 +15,11 @@ export function auctionHasEnded(endTime: string | null): boolean {
   return parseEndTime(endTime).getTime() < Date.now();
 }
 
-export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost"] as const;
+export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost", "ended"] as const;
 
-/** scheduled + ended means we never got a bid down — treat as lost for display. */
+/** Ended scheduled items are not lost — we may still have won and not synced yet. */
 export function displaySniperStatus(status: string, endTime: string | null): string {
-  if (status === "scheduled" && auctionHasEnded(endTime)) return "lost";
+  if (status === "scheduled" && auctionHasEnded(endTime)) return "ended";
   return status;
 }
 
@@ -183,6 +183,23 @@ export function StatPill({
   );
 }
 
+export function formatYouGetCaption(feePct?: number | null, resaleShip?: number | null): string {
+  const fee = feePct ?? 13;
+  const ship = resaleShip ?? 7;
+  const feeLabel = Number.isInteger(fee) ? String(fee) : fee.toFixed(1);
+  const shipLabel = Number.isInteger(ship) ? String(ship) : ship.toFixed(2);
+  return `after ${feeLabel}% + $${shipLabel} ship`;
+}
+
+export function formatYouGetLine(
+  youGet: number | null | undefined,
+  feePct?: number | null,
+  resaleShip?: number | null,
+): string | undefined {
+  if (youGet == null) return undefined;
+  return `You Get $${youGet.toFixed(0)} ${formatYouGetCaption(feePct, resaleShip)}`;
+}
+
 /** Shared image-bottom stats for Deals / Favorites. */
 export function DealImageOverlay({
   profit,
@@ -199,7 +216,7 @@ export function DealImageOverlay({
     <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
       <div className="flex items-end justify-between gap-2">
         <StatPill
-          label="Est. Profit"
+          label="Net profit"
           value={`${profit >= 0 ? "+" : ""}$${profit.toFixed(0)}`}
           size={size}
           valueClassName={profit >= 0 ? "text-white" : "text-red-400"}
@@ -221,11 +238,15 @@ export function PriceCompareRow({
   youPayDetail,
   ebayValue,
   ebayDetail,
+  youGetLine,
+  ebayLabel = "eBay Value",
 }: {
   youPay: string;
   youPayDetail?: string;
   ebayValue: string;
   ebayDetail?: string;
+  youGetLine?: string;
+  ebayLabel?: string;
 }) {
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -238,9 +259,10 @@ export function PriceCompareRow({
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
       </svg>
       <div className={`flex-1 ${PRICE_WELL}`}>
-        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">eBay Value</div>
+        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">{ebayLabel}</div>
         <div className="font-bold text-zinc-100 text-[15px]">{ebayValue}</div>
         {ebayDetail && <div className="text-[10px] text-zinc-600 mt-0.5">{ebayDetail}</div>}
+        {youGetLine && <div className="text-[10px] text-green-500/90 mt-0.5">{youGetLine}</div>}
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import {
   RoiBadge,
   StatPill,
   StatusPill,
+  formatYouGetLine,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -76,12 +77,15 @@ function FavCard({
         ebay_low: result.ebay_low,
         ebay_high: result.ebay_high,
         ebay_sold_count: result.ebay_sold_count,
+        you_get: result.you_get,
         profit: result.profit,
         margin: result.margin,
+        ebay_fee_pct: result.ebay_fee_pct,
+        ebay_resale_shipping: result.ebay_resale_shipping,
       });
       setSearchTerm(result.ebay_search);
       setShowRecheck(false);
-      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · ${result.profit >= 0 ? "+" : ""}$${result.profit.toFixed(0)}`);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · ${result.profit >= 0 ? "+" : ""}$${result.profit.toFixed(0)} net`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Recheck failed");
     } finally {
@@ -154,6 +158,7 @@ function FavCard({
                   ? `${item.ebay_sold_count} comps`
                   : undefined
               }
+              youGetLine={formatYouGetLine(item.you_get, item.ebay_fee_pct, item.ebay_resale_shipping)}
             />
             {!item.is_deal && item.skip_reason && (
               <p className="text-[11px] text-zinc-500">{item.skip_reason}</p>

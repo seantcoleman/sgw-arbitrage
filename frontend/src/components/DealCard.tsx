@@ -10,6 +10,7 @@ import {
   LISTING_CARD_SHELL,
   PriceCompareRow,
   RoiBadge,
+  formatYouGetLine,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -80,12 +81,15 @@ export function DealCard({
         ebay_low: result.ebay_low,
         ebay_high: result.ebay_high,
         ebay_sold_count: result.ebay_sold_count,
+        you_get: result.you_get,
         profit: result.profit,
         margin: result.margin,
+        ebay_fee_pct: result.ebay_fee_pct,
+        ebay_resale_shipping: result.ebay_resale_shipping,
       });
       setSearchTerm(result.ebay_search);
       setShowRecheck(false);
-      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · +$${result.profit.toFixed(0)}`);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · +$${result.profit.toFixed(0)} net`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Recheck failed");
     } finally {
@@ -129,6 +133,7 @@ export function DealCard({
           youPayDetail={`$${deal.current_bid.toFixed(2)} + $${(deal.shipping_est ?? 0).toFixed(2)} ship`}
           ebayValue={`$${deal.ebay_median.toFixed(2)}`}
           ebayDetail={`$${deal.ebay_low.toFixed(0)}–$${deal.ebay_high.toFixed(0)} range`}
+          youGetLine={formatYouGetLine(deal.you_get, deal.ebay_fee_pct, deal.ebay_resale_shipping)}
         />
 
         {/* Search term + wrong item */}

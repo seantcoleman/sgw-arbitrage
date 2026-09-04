@@ -99,8 +99,13 @@ def init_db():
                 ('snipe_seconds_before', '30'),
                 ('your_zip_code', '90210'),
                 ('ebay_days_back', '90'),
-                ('scan_category_ids', '[]');
+                ('scan_category_ids', '[]'),
+                ('ebay_fee_pct', '13'),
+                ('ebay_resale_shipping', '7');
         """)
+        # Seed resale-cost settings on DBs created before these keys existed
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_fee_pct', '13')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_resale_shipping', '7')")
         # Migrate existing DBs that predate final_price / final_shipping columns
         existing = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
         for col, typedef in [

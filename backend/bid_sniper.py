@@ -263,7 +263,11 @@ class BidSniper:
     async def check_win(self, item_id: int) -> None:
         """Check SGW ~2 min after auction end to see if we won."""
         try:
-            username = self.config["auth_info"].get("username", "")
+            username = (
+                os.getenv("SGW_USERNAME")
+                or self.config.get("auth_info", {}).get("username")
+                or ""
+            ).lower()
             info = self.shopgoodwill_client.get_item_info(item_id)
 
             # Final hammer price
@@ -278,10 +282,23 @@ class BidSniper:
             except (TypeError, ValueError):
                 pass
 
-            # Determine winner from bid history
-            bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
-            winner = bid_summary[0]["bidderName"] if bid_summary else None
-            won = winner and winner.lower() == username.lower()
+            won = False
+            try:
+                open_ids = {int(o["itemId"]) for o in self.shopgoodwill_client.get_open_orders()}
+                if item_id in open_ids:
+                    won = True
+            except Exception as e:
+                self.logger.error(f"Open-order win check failed for {item_id}: {e}")
+
+            winner = None
+            if not won:
+                bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
+                winner = bid_summary[0]["bidderName"] if bid_summary else None
+                w = (winner or "").strip().lower()
+                if w and username and (w == username or (
+                    "*" in w and len(w) == len(username) and w[0] == username[0] and w[-1] == username[-1]
+                )):
+                    won = True
 
             status = "won" if won else "lost"
             db.update_watchlist_result(item_id, status, final_price, final_shipping)

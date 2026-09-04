@@ -145,6 +145,28 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+      <Section
+        title="Resale costs"
+        description="Subtracted from the eBay median so deal cards show net profit (You Get − You Pay)."
+      >
+        <NumField
+          label="eBay fee"
+          description="Final value + payment processing take rate"
+          value={settings.ebay_fee_pct ?? 13}
+          onChange={v => setSettings(prev => ({ ...prev, ebay_fee_pct: v }))}
+          onSave={v => save("ebay_fee_pct", v)}
+          suffix="%" min={0} step={0.5}
+        />
+        <NumField
+          label="eBay outbound shipping"
+          description="Assumed cost to ship the item to your buyer"
+          value={settings.ebay_resale_shipping ?? 7}
+          onChange={v => setSettings(prev => ({ ...prev, ebay_resale_shipping: v }))}
+          onSave={v => save("ebay_resale_shipping", v)}
+          suffix="$" min={0} step={1}
+        />
+      </Section>
+
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-100">Credentials</h2>

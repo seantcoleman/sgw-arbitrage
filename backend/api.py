@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 import db
 import ebay
+import profit as profit_calc
 import search_term
 import shopgoodwill
 
@@ -176,14 +177,28 @@ def list_deals(
         if expired:
             logger.info(f"Expired {expired} past-due deal(s)")
     deals = db.get_deals(
-        min_profit=min_profit,
-        min_margin=min_margin / 100 if min_margin > 1 else min_margin,
+        min_profit=0,
+        min_margin=0,
         status=status,
-        limit=limit,
-        offset=offset,
+        limit=500,
+        offset=0,
     )
-    total = db.count_deals(min_profit=min_profit, min_margin=min_margin / 100 if min_margin > 1 else min_margin, status=status)
-    return {"deals": deals, "count": total}
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
+    min_m = min_margin / 100 if min_margin > 1 else min_margin
+    annotated = []
+    for d in deals:
+        row = profit_calc.annotate_deal(dict(d), fee_pct, resale_ship)
+        profit = row.get("profit")
+        margin = row.get("margin") or 0
+        if profit is None:
+            continue
+        if profit < min_profit or margin < min_m:
+            continue
+        annotated.append(row)
+    # Preserve profit-desc order after recompute
+    annotated.sort(key=lambda x: x.get("profit") or 0, reverse=True)
+    page = annotated[offset: offset + limit]
+    return {"deals": page, "count": len(annotated)}
 
 
 # ── Watchlist ───────────────────────────────────────────────────────────────
@@ -195,7 +210,9 @@ class WatchlistAddRequest(BaseModel):
 
 @app.get("/watchlist")
 def get_watchlist():
-    return {"watchlist": db.get_watchlist()}
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
+    items = [profit_calc.annotate_deal(dict(w), fee_pct, resale_ship) for w in db.get_watchlist()]
+    return {"watchlist": items}
 
 
 def _sgw_item_image_url(item_info: dict) -> Optional[str]:
@@ -285,7 +302,7 @@ def reprice_item(item_id: int, req: RepriceRequest):
 
     settings = db.get_settings()
     days_back = int(settings.get("ebay_days_back", 90))
-    EBAY_FEE_RATE = 0.87
+    fee_pct, resale_ship = profit_calc.fee_settings(settings)
 
     # Prefer existing deal row; fall back to watchlist / SGW for cost basis
     records = db.get_deals_by_ids([item_id])
@@ -322,10 +339,12 @@ def reprice_item(item_id: int, req: RepriceRequest):
 
     # For shipped items, profit vs actual total paid is more useful on the watchlist UI;
     # still store estimate using bid+shipping for the deals table consistency.
-    ebay_net = price_result.median * EBAY_FEE_RATE
-    total_cost = current_bid + shipping
-    profit = round(ebay_net - total_cost, 2)
+    you_get, total_cost, profit = profit_calc.net_profit(
+        price_result.median, current_bid, shipping, fee_pct, resale_ship
+    )
     margin = round(profit / total_cost, 4) if total_cost > 0 else 0.0
+    profit = round(profit, 2)
+    you_get = round(you_get, 2)
 
     image_url = (deal or {}).get("image_url") or (watch or {}).get("image_url")
     end_time = (deal or {}).get("end_time") or (watch or {}).get("end_time")
@@ -357,8 +376,11 @@ def reprice_item(item_id: int, req: RepriceRequest):
         "ebay_low": round(price_result.low, 2),
         "ebay_high": round(price_result.high, 2),
         "ebay_sold_count": price_result.sold_count,
+        "you_get": you_get,
         "profit": profit,
         "margin": margin,
+        "ebay_fee_pct": fee_pct,
+        "ebay_resale_shipping": resale_ship,
     }
 
 
@@ -412,84 +434,46 @@ def _watchlist_item_ended(item: dict) -> Optional[bool]:
         return None
 
 
+def _bidder_is_us(winner: Optional[str], username: str) -> bool:
+    """Match SGW high-bidder strings, including masked names like s********n."""
+    if not winner or not username:
+        return False
+    w, u = winner.strip().lower(), username.strip().lower()
+    if w == u:
+        return True
+    if "*" in w and len(w) == len(u) and w[0] == u[0] and w[-1] == u[-1]:
+        return True
+    return False
+
+
 def _check_bid_results() -> None:
     """
-    Single sweep that handles two jobs:
-    1. Resolve ended scheduled/bid_placed items → won/lost using SGW item detail
-    2. Sync won items → awaiting_payment / shipped using order APIs
+    Resolve watchlist outcomes from ShopGoodwill:
+    1. Open/shipped orders are ground truth for a win (also heals false 'lost')
+    2. Remaining ended scheduled/bid_placed items → won/lost from bid history
     """
     watchlist = db.get_watchlist()
-    pending_bid = [
-        w for w in watchlist
-        if w.get("sniper_status") in ("scheduled", "bid_placed")
-        and _watchlist_item_ended(w) is not False
-    ]
-    won_items   = [w for w in watchlist if w.get("sniper_status") in ("won", "awaiting_payment")]
-
-    if not pending_bid and not won_items:
+    if not watchlist:
         return
 
     try:
         sgw = _get_sgw_client()
     except Exception as e:
         logger.error(f"Win-check: could not create SGW client: {e}")
-        # Still flip ended scheduled items so they don't stay "ready to snipe"
-        for item in pending_bid:
-            if item.get("sniper_status") == "scheduled" and _watchlist_item_ended(item) is True:
-                db.update_watchlist_result(item["item_id"], "lost", None, None)
         return
+
+    try:
+        open_orders = {int(o["itemId"]): o for o in sgw.get_open_orders()}
+        shipped_orders = {int(o["itemId"]): o for o in sgw.get_shipped_orders()}
+    except Exception as e:
+        logger.error(f"Order fetch failed: {e}")
+        open_orders, shipped_orders = {}, {}
 
     username = os.getenv("SGW_USERNAME", "").lower()
 
-    # ── Step 1: resolve ended scheduled / bid_placed → won / lost ────────────
-    if pending_bid:
-        logger.info(f"Win-check sweep: {len(pending_bid)} ended item(s) still scheduled/bid_placed")
-    for item in pending_bid:
-        item_id = item["item_id"]
-        try:
-            info = sgw.get_item_info(item_id)
-            try:
-                final_price = float(info.get("currentPrice") or 0)
-            except (TypeError, ValueError):
-                final_price = None
-            try:
-                final_shipping = float(info.get("shippingPrice") or 0)
-            except (TypeError, ValueError):
-                final_shipping = None
-            bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
-            winner = bid_summary[0]["bidderName"].lower() if bid_summary else None
-
-            ended = _watchlist_item_ended(item)
-            if ended is False:
-                continue
-
-            if not winner and not info.get("isClosed") and ended is not True:
-                continue
-
-            won = bool(winner and winner == username)
-            status = "won" if won else "lost"
-            db.update_watchlist_result(item_id, status, final_price, final_shipping)
-            if won:
-                logger.warning(f"WIN confirmed: '{item.get('title', item_id)}' — ${final_price:.2f}")
-            else:
-                logger.info(f"Lost: '{item.get('title', item_id)}' — winner: {winner or 'unknown'}")
-        except Exception as e:
-            logger.error(f"Win-check failed for item {item_id}: {e}")
-            if item.get("sniper_status") == "scheduled" and _watchlist_item_ended(item) is True:
-                db.update_watchlist_result(item_id, "lost", None, None)
-
-    # ── Step 2: sync won items against open/shipped orders ───────────────────
-    if not won_items:
-        return
-    try:
-        open_orders    = {int(o["itemId"]): o for o in sgw.get_open_orders()}
-        shipped_orders = {int(o["itemId"]): o for o in sgw.get_shipped_orders()}
-    except Exception as e:
-        logger.error(f"Order sync failed: {e}")
-        return
-
-    for item in won_items:
-        item_id = item["item_id"]
+    # ── Step 1: orders are the source of truth (fixes false Lost on wins) ────
+    for item in watchlist:
+        item_id = int(item["item_id"])
         try:
             if item_id in shipped_orders:
                 o = shipped_orders[item_id]
@@ -517,6 +501,46 @@ def _check_bid_results() -> None:
                 logger.info(f"Open order: '{item.get('title', item_id)}' — pay by {o.get('pastDueEndDate', '')[:10]}")
         except Exception as e:
             logger.error(f"Order sync failed for item {item_id}: {e}")
+
+    # ── Step 2: bid-history win/loss for items not already in orders ─────────
+    watchlist = db.get_watchlist()
+    pending = [
+        w for w in watchlist
+        if w.get("sniper_status") in ("scheduled", "bid_placed")
+        and _watchlist_item_ended(w) is not False
+    ]
+    if pending:
+        logger.info(f"Win-check sweep: {len(pending)} ended item(s) still scheduled/bid_placed")
+    for item in pending:
+        item_id = item["item_id"]
+        try:
+            info = sgw.get_item_info(item_id)
+            try:
+                final_price = float(info.get("currentPrice") or 0)
+            except (TypeError, ValueError):
+                final_price = None
+            try:
+                final_shipping = float(info.get("shippingPrice") or 0)
+            except (TypeError, ValueError):
+                final_shipping = None
+            bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
+            winner = bid_summary[0]["bidderName"] if bid_summary else None
+
+            ended = _watchlist_item_ended(item)
+            if ended is False:
+                continue
+
+            if not winner and not info.get("isClosed") and ended is not True:
+                continue
+
+            if _bidder_is_us(winner, username):
+                db.update_watchlist_result(item_id, "won", final_price, final_shipping)
+                logger.warning(f"WIN confirmed: '{item.get('title', item_id)}' — ${final_price:.2f}")
+            elif ended is True and (info.get("isClosed") or winner):
+                db.update_watchlist_result(item_id, "lost", final_price, final_shipping)
+                logger.info(f"Lost: '{item.get('title', item_id)}' — winner: {winner or 'unknown'}")
+        except Exception as e:
+            logger.error(f"Win-check failed for item {item_id}: {e}")
 
 
 def _get_sgw_client() -> shopgoodwill.Shopgoodwill:
@@ -574,6 +598,7 @@ def _build_sniper_config() -> dict:
         auth_info = {
             "encrypted_username": os.getenv("SGW_ENCRYPTED_USERNAME"),
             "encrypted_password": os.getenv("SGW_ENCRYPTED_PASSWORD"),
+            "username": os.getenv("SGW_USERNAME", ""),
         }
     else:
         auth_info = {
@@ -707,6 +732,7 @@ def get_all_favorites():
         raise HTTPException(status_code=502, detail=f"Could not reach SGW: {e}")
 
     records = {d["item_id"]: d for d in db.get_deals_by_ids(list(raw_favorites.keys()))}
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
 
     result = []
     for item_id, fav in raw_favorites.items():
@@ -735,6 +761,10 @@ def get_all_favorites():
             "margin": record["margin"] if record else None,
             "shipping_est": record["shipping_est"] if record else None,
         }
+        if record and record.get("ebay_median") is not None:
+            # Prefer live SGW bid for cost basis when annotating
+            entry["shipping_est"] = record.get("shipping_est")
+            profit_calc.annotate_deal(entry, fee_pct, resale_ship)
         result.append(entry)
 
     # Soonest ending first; missing end times last

@@ -45,6 +45,7 @@ const STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Pay now",
   shipped: "Shipped",
   lost: "Lost",
+  ended: "Ended",
   error: "Error",
 };
 
@@ -55,6 +56,7 @@ const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "green" | "sky"
   awaiting_payment: "green",
   shipped: "sky",
   lost: "neutral",
+  ended: "neutral",
   error: "red",
 };
 
@@ -82,7 +84,9 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
     (item.tax ?? 0);
 
   const shippedProfit =
-    item.ebay_median != null && item.final_price != null
+    item.you_get != null && item.final_price != null
+      ? item.you_get - paidTotal
+      : item.ebay_median != null && item.final_price != null
       ? item.ebay_median - paidTotal
       : null;
 
@@ -98,11 +102,14 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
       onRepriced(item.item_id, {
         ebay_search: result.ebay_search,
         ebay_median: result.ebay_median,
+        you_get: result.you_get,
         profit: result.profit,
+        ebay_fee_pct: result.ebay_fee_pct,
+        ebay_resale_shipping: result.ebay_resale_shipping,
       });
       setSearchTerm(result.ebay_search);
       setShowRecheck(false);
-      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay`);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · +$${result.profit.toFixed(0)} net`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Recheck failed");
     } finally {
@@ -147,7 +154,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
             )}
             {status !== "shipped" && item.profit != null && item.profit > 0 && (
               <StatPill
-                label="Est. profit"
+                label="Net profit"
                 value={`+$${item.profit.toFixed(0)}`}
                 align="right"
                 valueClassName="text-green-400"
@@ -215,6 +222,10 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
         ) : status === "lost" ? (
           <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
             Outbid — max was ${item.max_bid.toFixed(2)}
+          </div>
+        ) : status === "ended" ? (
+          <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
+            Auction ended — waiting for win/loss from ShopGoodwill
           </div>
         ) : (
           <div className="flex items-center gap-2 text-xs">

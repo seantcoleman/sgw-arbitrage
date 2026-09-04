@@ -22,12 +22,11 @@ from zoneinfo import ZoneInfo
 import db
 import ebay
 import filter as item_filter
+import profit as profit_calc
 import search_term
 import shopgoodwill
 
 logger = logging.getLogger(__name__)
-
-EBAY_FEE_RATE = 0.87  # eBay takes ~13% (final value + payment processing)
 
 SGW_SEARCH_TEMPLATE = {
     "searchText": "",
@@ -56,6 +55,7 @@ class Scanner:
         self.zip_code = str(settings.get("your_zip_code", "90210"))
         self.days_back = int(settings.get("ebay_days_back", 90))
         self.max_items = min(int(settings.get("scan_max_items", 200)), 200)  # hard cap
+        self.ebay_fee_pct, self.ebay_resale_shipping = profit_calc.fee_settings(settings)
         self.keywords = settings.get(
             "scan_keywords",
             ["sony headphones", "apple watch", "canon camera"],
@@ -315,9 +315,13 @@ class Scanner:
             )
             return False
 
-        ebay_net = price_result.median * EBAY_FEE_RATE
-        total_cost = current_bid + shipping
-        profit = ebay_net - total_cost
+        ebay_net, total_cost, profit = profit_calc.net_profit(
+            price_result.median,
+            current_bid,
+            shipping,
+            self.ebay_fee_pct,
+            self.ebay_resale_shipping,
+        )
         margin = profit / total_cost if total_cost > 0 else 0
 
         if profit < self.min_profit or margin < self.min_margin:
@@ -332,7 +336,7 @@ class Scanner:
 
         logger.info(
             f"DEAL ({keyword}): '{title}' | Bid: ${current_bid:.2f} | "
-            f"eBay: ${price_result.median:.2f} | Profit: ${profit:.2f}"
+            f"eBay: ${price_result.median:.2f} → net ${ebay_net:.2f} | Profit: ${profit:.2f}"
         )
 
         image_urls = item.get("imageUrls") or item.get("imageURL") or item.get("galleryURL")

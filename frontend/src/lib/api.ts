@@ -71,8 +71,11 @@ export const repriceItem = (item_id: number, search_term: string) =>
     ebay_low: number;
     ebay_high: number;
     ebay_sold_count: number;
+    you_get: number;
     profit: number;
     margin: number;
+    ebay_fee_pct: number;
+    ebay_resale_shipping: number;
   }>(`/items/${item_id}/reprice`, {
     method: "POST",
     body: JSON.stringify({ search_term }),
@@ -93,8 +96,11 @@ export interface Deal {
   ebay_high: number;
   ebay_sold_count: number;
   ebay_search: string;
+  you_get?: number | null;
   profit: number;
   margin: number;
+  ebay_fee_pct?: number;
+  ebay_resale_shipping?: number;
   status: string;
   last_updated: string;
 }
@@ -109,7 +115,10 @@ export interface WatchlistItem {
   image_url: string | null;
   ebay_median: number | null;
   ebay_search: string | null;
+  you_get?: number | null;
   profit: number | null;
+  ebay_fee_pct?: number;
+  ebay_resale_shipping?: number;
   sniper_status: string;
   final_price: number | null;
   final_shipping: number | null;
@@ -157,6 +166,8 @@ export interface Settings {
   your_zip_code: string;
   ebay_days_back: number;
   scan_max_items: number;
+  ebay_fee_pct: number;
+  ebay_resale_shipping: number;
 }
 
 export interface Category {
@@ -180,7 +191,10 @@ export interface FavoriteItem {
   ebay_high: number | null;
   ebay_sold_count: number | null;
   ebay_search: string | null;
+  you_get?: number | null;
   profit: number | null;
   margin: number | null;
   shipping_est: number | null;
+  ebay_fee_pct?: number;
+  ebay_resale_shipping?: number;
 }

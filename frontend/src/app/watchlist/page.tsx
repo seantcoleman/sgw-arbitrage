@@ -47,6 +47,7 @@ const STATUS_LABEL: Record<string, string> = {
   awaiting_payment:   "Pay now",
   shipped:            "Shipped",
   lost:               "Lost",
+  ended:              "Ended",
   error:              "Error",
 };
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
@@ -56,6 +57,7 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
   awaiting_payment: { bg: "bg-green-950/40 light:bg-green-50",     text: "text-green-300 light:text-green-800",     dot: "bg-green-400 animate-pulse" },
   shipped:          { bg: "bg-sky-950/40 light:bg-sky-50",         text: "text-sky-300 light:text-sky-800",         dot: "bg-sky-400" },
   lost:             { bg: "bg-zinc-800/40",                       text: "text-zinc-500",                           dot: "bg-zinc-600" },
+  ended:            { bg: "bg-zinc-800/40",                       text: "text-zinc-400",                           dot: "bg-zinc-500" },
   error:            { bg: "bg-red-950/40 light:bg-red-50",         text: "text-red-400 light:text-red-700",         dot: "bg-red-500" },
 };
 
@@ -125,11 +127,11 @@ export default function WatchlistPage() {
       const result = await repriceItem(item_id, term);
       setWatchlist(prev => prev.map(i =>
         i.item_id === item_id
-          ? { ...i, ebay_median: result.ebay_median, ebay_search: result.ebay_search, profit: result.profit }
+          ? { ...i, ebay_median: result.ebay_median, ebay_search: result.ebay_search, you_get: result.you_get, profit: result.profit, ebay_fee_pct: result.ebay_fee_pct, ebay_resale_shipping: result.ebay_resale_shipping }
           : i
       ));
       setRecheckId(null);
-      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay`);
+      toast.success(`Updated: $${result.ebay_median.toFixed(0)} eBay · +$${result.profit.toFixed(0)} net`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Recheck failed");
     } finally {
@@ -302,7 +304,7 @@ export default function WatchlistPage() {
                           <>
                             <span className="text-zinc-700">·</span>
                             <span className="text-zinc-400">
-                              eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                              You Get <span className="text-zinc-200 font-medium">${(item.you_get ?? item.ebay_median).toFixed(0)}</span>
                             </span>
                           </>
                         )}
@@ -341,17 +343,17 @@ export default function WatchlistPage() {
                           <>
                             <span className="text-zinc-700">·</span>
                             <span className="text-zinc-400">
-                              eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                              You Get <span className="text-zinc-200 font-medium">${(item.you_get ?? item.ebay_median).toFixed(0)}</span>
                             </span>
                           </>
                         )}
                         {item.ebay_median != null && item.final_price != null && (() => {
-                          const profit = item.ebay_median - (item.final_price ?? 0) - (item.final_shipping ?? 0) - (item.handling_price ?? 0) - (item.tax ?? 0);
+                          const net = (item.you_get ?? item.ebay_median) - (item.final_price ?? 0) - (item.final_shipping ?? 0) - (item.handling_price ?? 0) - (item.tax ?? 0);
                           return (
                             <>
                               <span className="text-zinc-700">·</span>
-                              <span className={profit > 0 ? "text-green-400" : "text-red-400"}>
-                                {profit > 0 ? "+" : ""}${profit.toFixed(0)} profit
+                              <span className={net > 0 ? "text-green-400" : "text-red-400"}>
+                                {net > 0 ? "+" : ""}${net.toFixed(0)} net
                               </span>
                             </>
                           );
@@ -375,7 +377,7 @@ export default function WatchlistPage() {
                       </span>
                       {item.ebay_median != null && (
                         <span className="text-zinc-400">
-                          eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                          You Get <span className="text-zinc-200 font-medium">${(item.you_get ?? item.ebay_median).toFixed(0)}</span>
                         </span>
                       )}
                       <span className="text-zinc-600 text-[10px]">Syncing order details…</span>
@@ -392,6 +394,10 @@ export default function WatchlistPage() {
                         </>
                       )}
                     </div>
+                  ) : displayStatus === "ended" ? (
+                    <div className="mt-1.5 text-xs text-zinc-500">
+                      Auction ended — waiting for win/loss from ShopGoodwill
+                    </div>
                   ) : (
                     <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
                       <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
@@ -401,14 +407,14 @@ export default function WatchlistPage() {
                         <>
                           <span className="text-zinc-700">·</span>
                           <span className="text-zinc-400">
-                            eBay est. <span className="text-zinc-200 font-medium">${item.ebay_median.toFixed(0)}</span>
+                            You Get <span className="text-zinc-200 font-medium">${(item.you_get ?? item.ebay_median).toFixed(0)}</span>
                           </span>
                         </>
                       )}
                       {item.profit != null && item.profit > 0 && (
                         <>
                           <span className="text-zinc-700">·</span>
-                          <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} est.</span>
+                          <span className="text-green-400 font-medium">+${item.profit.toFixed(2)} net</span>
                         </>
                       )}
                     </div>
