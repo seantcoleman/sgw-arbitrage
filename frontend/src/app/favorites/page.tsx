@@ -158,7 +158,7 @@ function FavCard({
                   ? `${item.ebay_sold_count} comps`
                   : undefined
               }
-              youGetLine={formatYouGetLine(item.you_get, item.ebay_fee_pct, item.ebay_resale_shipping)}
+              youGetLine={formatYouGetLine(item.you_get, item.ebay_fee_pct, item.ebay_resale_shipping, item.ebay_median)}
             />
             {!item.is_deal && item.skip_reason && (
               <p className="text-[11px] text-zinc-500">{item.skip_reason}</p>

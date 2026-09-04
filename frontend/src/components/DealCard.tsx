@@ -133,7 +133,7 @@ export function DealCard({
           youPayDetail={`$${deal.current_bid.toFixed(2)} + $${(deal.shipping_est ?? 0).toFixed(2)} ship`}
           ebayValue={`$${deal.ebay_median.toFixed(2)}`}
           ebayDetail={`$${deal.ebay_low.toFixed(0)}–$${deal.ebay_high.toFixed(0)} range`}
-          youGetLine={formatYouGetLine(deal.you_get, deal.ebay_fee_pct, deal.ebay_resale_shipping)}
+          youGetLine={formatYouGetLine(deal.you_get, deal.ebay_fee_pct, deal.ebay_resale_shipping, deal.ebay_median)}
         />
 
         {/* Search term + wrong item */}

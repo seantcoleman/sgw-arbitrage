@@ -183,6 +183,14 @@ export function StatPill({
   );
 }
 
+export function computeYouGet(
+  ebayMedian: number,
+  feePct: number = 13,
+  resaleShip: number = 7,
+): number {
+  return ebayMedian * (1 - feePct / 100) - resaleShip;
+}
+
 export function formatYouGetCaption(feePct?: number | null, resaleShip?: number | null): string {
   const fee = feePct ?? 13;
   const ship = resaleShip ?? 7;
@@ -195,9 +203,18 @@ export function formatYouGetLine(
   youGet: number | null | undefined,
   feePct?: number | null,
   resaleShip?: number | null,
+  ebayMedian?: number | null,
 ): string | undefined {
-  if (youGet == null) return undefined;
-  return `You Get $${youGet.toFixed(0)} ${formatYouGetCaption(feePct, resaleShip)}`;
+  const fee = feePct ?? 13;
+  const ship = resaleShip ?? 7;
+  const yg =
+    youGet != null
+      ? youGet
+      : ebayMedian != null
+      ? computeYouGet(ebayMedian, fee, ship)
+      : null;
+  if (yg == null) return undefined;
+  return `You Get $${yg.toFixed(0)} ${formatYouGetCaption(fee, ship)}`;
 }
 
 /** Shared image-bottom stats for Deals / Favorites. */
