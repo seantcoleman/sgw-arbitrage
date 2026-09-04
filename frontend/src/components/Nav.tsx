@@ -12,6 +12,7 @@ export function Nav() {
   const { theme, toggleTheme } = useTheme();
   const [scanRunning, setScanRunning] = useState(false);
   const [lastScan, setLastScan] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const poll = async () => {
@@ -24,6 +25,10 @@ export function Nav() {
     const interval = setInterval(poll, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [path]);
 
   const handleScan = async () => {
     try {
@@ -50,50 +55,48 @@ export function Nav() {
     { href: "/settings", label: "Settings" },
   ];
 
+  const linkClass = (href: string) => {
+    const active = path === href;
+    return `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+      active
+        ? "bg-zinc-800 text-zinc-100"
+        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+    }`;
+  };
+
   return (
     <nav className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4 min-w-0">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-2.5 shrink-0">
+        <Link href="/" className="flex items-center gap-2 shrink-0" onClick={() => setMenuOpen(false)}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md shadow-green-900/50">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <span className="font-bold text-sm text-zinc-100">SGW Arb</span>
+          <span className="hidden sm:inline font-bold text-sm text-zinc-100">SGW Arb</span>
         </Link>
 
-        {/* Nav links */}
-        <div className="flex items-center gap-1">
-          {links.map(({ href, label }) => {
-            const active = path === href;
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-zinc-800 text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
-                }`}
-              >
-                {label}
-              </Link>
-            );
-          })}
+        {/* Desktop links */}
+        <div className="hidden md:flex items-center gap-1 min-w-0">
+          {links.map(({ href, label }) => (
+            <Link key={href} href={href} className={linkClass(href)}>
+              {label}
+            </Link>
+          ))}
         </div>
 
         {/* Right */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
           {lastScan && (
-            <span className="hidden md:block text-xs text-zinc-600">
+            <span className="hidden lg:block text-xs text-zinc-600">
               scanned {minutesAgo(lastScan)}
             </span>
           )}
           {scanRunning && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Scanning
+              <span className="hidden sm:inline">Scanning</span>
             </span>
           )}
           <button
@@ -116,7 +119,7 @@ export function Nav() {
           <button
             onClick={handleScan}
             disabled={scanRunning}
-            className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-white text-xs px-3.5 py-2 rounded-lg font-semibold transition-all"
+            className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-white text-xs px-2.5 sm:px-3.5 py-2 rounded-lg font-semibold transition-all"
           >
             {scanRunning ? (
               <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -125,10 +128,37 @@ export function Nav() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             )}
-            {scanRunning ? "Scanning" : "Scan"}
+            <span className="hidden sm:inline">{scanRunning ? "Scanning" : "Scan"}</span>
+          </button>
+          <button
+            type="button"
+            className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(o => !o)}
+          >
+            {menuOpen ? (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <div className="md:hidden border-t border-zinc-800/80 px-3 py-2 flex flex-col gap-1">
+          {links.map(({ href, label }) => (
+            <Link key={href} href={href} className={`${linkClass(href)} w-full`}>
+              {label}
+            </Link>
+          ))}
+        </div>
+      )}
     </nav>
   );
 }

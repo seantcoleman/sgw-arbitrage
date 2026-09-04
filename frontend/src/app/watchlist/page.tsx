@@ -3,13 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { WatchlistCard } from "@/components/WatchlistCard";
+import { TERMINAL_SNIPER_STATUSES, displaySniperStatus, parseEndTime } from "@/components/listingCard";
 import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
-
-function parseEndTime(endTime: string): Date {
-  if (endTime.endsWith("Z") || endTime.includes("+") || endTime.includes("-0")) return new Date(endTime);
-  const isDST = new Date().getTimezoneOffset() < new Date(new Date().getFullYear(), 0, 1).getTimezoneOffset();
-  return new Date(endTime + (isDST ? "-07:00" : "-08:00"));
-}
 
 function countdown(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
   if (!endTime) return { label: "—", urgency: "normal" };
@@ -142,7 +137,10 @@ export default function WatchlistPage() {
     }
   };
 
-  const activeItems = watchlist.filter(i => i.sniper_status === "scheduled" || i.sniper_status === "bid_placed");
+  const activeItems = watchlist.filter(i => {
+    const status = displaySniperStatus(i.sniper_status, i.end_time);
+    return status === "scheduled" || status === "bid_placed";
+  });
 
   const setView = (mode: "list" | "cards") => {
     setViewMode(mode);
@@ -257,8 +255,9 @@ export default function WatchlistPage() {
         <div className="space-y-3">
           {watchlist.map(item => {
             const { label: timeLabel, urgency } = countdown(item.end_time);
-            const status = STATUS_STYLE[item.sniper_status] ?? STATUS_STYLE.scheduled;
-            const statusLabel = STATUS_LABEL[item.sniper_status] ?? item.sniper_status;
+            const displayStatus = displaySniperStatus(item.sniper_status, item.end_time);
+            const status = STATUS_STYLE[displayStatus] ?? STATUS_STYLE.scheduled;
+            const statusLabel = STATUS_LABEL[displayStatus] ?? displayStatus;
             const timeColor = { urgent: "text-red-400", soon: "text-amber-400", normal: "text-zinc-200" }[urgency];
 
             return (
@@ -283,7 +282,7 @@ export default function WatchlistPage() {
                   </a>
 
                   {/* Won result — show final price instead of live prices */}
-                  {item.sniper_status === "awaiting_payment" ? (
+                  {displayStatus === "awaiting_payment" ? (
                     <div className="mt-1.5 text-xs space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-green-400 font-semibold">
@@ -314,7 +313,7 @@ export default function WatchlistPage() {
                         Pay on ShopGoodwill →
                       </a>
                     </div>
-                  ) : item.sniper_status === "shipped" ? (
+                  ) : displayStatus === "shipped" ? (
                     <div className="mt-1.5 text-xs space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap text-zinc-400">
                         {item.final_price != null && (
@@ -360,7 +359,7 @@ export default function WatchlistPage() {
                         </a>
                       )}
                     </div>
-                  ) : item.sniper_status === "won" && item.final_price != null ? (
+                  ) : displayStatus === "won" && item.final_price != null ? (
                     <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
                       <span className="text-emerald-400 font-semibold">
                         Won · ${item.final_price.toFixed(2)}
@@ -372,7 +371,7 @@ export default function WatchlistPage() {
                       )}
                       <span className="text-zinc-600 text-[10px]">Syncing order details…</span>
                     </div>
-                  ) : item.sniper_status === "lost" ? (
+                  ) : displayStatus === "lost" ? (
                     <div className="mt-1.5 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
                       <span>Outbid — max was ${item.max_bid.toFixed(2)}</span>
                       {item.ebay_median != null && (
@@ -463,7 +462,7 @@ export default function WatchlistPage() {
 
                 {/* Countdown — only shown while auction is live */}
                 {(() => {
-                  const terminal = ["won", "awaiting_payment", "shipped", "lost"].includes(item.sniper_status);
+                  const terminal = (TERMINAL_SNIPER_STATUSES as readonly string[]).includes(displayStatus);
                   if (terminal) return null;
                   return (
                     <div className="text-center flex-shrink-0">

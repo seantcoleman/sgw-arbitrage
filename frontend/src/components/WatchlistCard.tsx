@@ -10,6 +10,8 @@ import {
   PRICE_WELL,
   StatPill,
   StatusPill,
+  TERMINAL_SNIPER_STATUSES,
+  displaySniperStatus,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -68,9 +70,10 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
   const [rechecking, setRechecking] = useState(false);
 
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
-  const terminal = ["won", "awaiting_payment", "shipped", "lost"].includes(item.sniper_status);
-  const statusLabel = STATUS_LABEL[item.sniper_status] ?? item.sniper_status;
-  const statusTone = STATUS_TONE[item.sniper_status] ?? "blue";
+  const status = displaySniperStatus(item.sniper_status, item.end_time);
+  const terminal = (TERMINAL_SNIPER_STATUSES as readonly string[]).includes(status);
+  const statusLabel = STATUS_LABEL[status] ?? status;
+  const statusTone = STATUS_TONE[status] ?? "blue";
 
   const paidTotal =
     (item.final_price ?? 0) +
@@ -133,7 +136,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
                 No eBay estimate
               </div>
             )}
-            {item.sniper_status === "shipped" && shippedProfit != null && (
+            {status === "shipped" && shippedProfit != null && (
               <StatPill
                 label="vs paid"
                 value={`${shippedProfit > 0 ? "+" : ""}$${shippedProfit.toFixed(0)}`}
@@ -142,7 +145,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
                 size="sm"
               />
             )}
-            {item.sniper_status !== "shipped" && item.profit != null && item.profit > 0 && (
+            {status !== "shipped" && item.profit != null && item.profit > 0 && (
               <StatPill
                 label="Est. profit"
                 value={`+$${item.profit.toFixed(0)}`}
@@ -165,7 +168,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
           {item.title}
         </a>
 
-        {item.sniper_status === "awaiting_payment" ? (
+        {status === "awaiting_payment" ? (
           <div className="text-xs space-y-1.5">
             <div className={PRICE_WELL}>
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Won for</div>
@@ -186,7 +189,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
               Pay on ShopGoodwill →
             </a>
           </div>
-        ) : item.sniper_status === "shipped" ? (
+        ) : status === "shipped" ? (
           <div className="text-xs space-y-1.5">
             <div className={PRICE_WELL}>
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Total paid</div>
@@ -209,7 +212,7 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
               </a>
             )}
           </div>
-        ) : item.sniper_status === "lost" ? (
+        ) : status === "lost" ? (
           <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
             Outbid — max was ${item.max_bid.toFixed(2)}
           </div>

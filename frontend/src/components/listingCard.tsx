@@ -10,6 +10,19 @@ export function parseEndTime(endTime: string): Date {
   return new Date(endTime + (isDST ? "-07:00" : "-08:00"));
 }
 
+export function auctionHasEnded(endTime: string | null): boolean {
+  if (!endTime) return false;
+  return parseEndTime(endTime).getTime() < Date.now();
+}
+
+export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost"] as const;
+
+/** scheduled + ended means we never got a bid down — treat as lost for display. */
+export function displaySniperStatus(status: string, endTime: string | null): string {
+  if (status === "scheduled" && auctionHasEnded(endTime)) return "lost";
+  return status;
+}
+
 export function timeUntil(endTime: string | null): { label: string; urgency: Urgency } {
   if (!endTime) return { label: "—", urgency: "normal" };
   const diff = parseEndTime(endTime).getTime() - Date.now();

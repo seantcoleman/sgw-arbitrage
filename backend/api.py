@@ -398,14 +398,32 @@ def _sgw_to_utc(end_time_str: Optional[str]) -> Optional[str]:
         return end_time_str
 
 
+def _watchlist_item_ended(item: dict) -> Optional[bool]:
+    """True if auction end_time is past, False if still live, None if unknown."""
+    end_time_str = item.get("end_time")
+    if not end_time_str:
+        return None
+    try:
+        end_dt = datetime.fromisoformat(str(end_time_str).replace("Z", "+00:00"))
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+        return end_dt <= datetime.now(timezone.utc)
+    except Exception:
+        return None
+
+
 def _check_bid_results() -> None:
     """
     Single sweep that handles two jobs:
-    1. Resolve bid_placed items → won/lost using SGW item detail
+    1. Resolve ended scheduled/bid_placed items → won/lost using SGW item detail
     2. Sync won items → awaiting_payment / shipped using order APIs
     """
     watchlist = db.get_watchlist()
-    pending_bid = [w for w in watchlist if w.get("sniper_status") == "bid_placed"]
+    pending_bid = [
+        w for w in watchlist
+        if w.get("sniper_status") in ("scheduled", "bid_placed")
+        and _watchlist_item_ended(w) is not False
+    ]
     won_items   = [w for w in watchlist if w.get("sniper_status") in ("won", "awaiting_payment")]
 
     if not pending_bid and not won_items:
@@ -415,13 +433,17 @@ def _check_bid_results() -> None:
         sgw = _get_sgw_client()
     except Exception as e:
         logger.error(f"Win-check: could not create SGW client: {e}")
+        # Still flip ended scheduled items so they don't stay "ready to snipe"
+        for item in pending_bid:
+            if item.get("sniper_status") == "scheduled" and _watchlist_item_ended(item) is True:
+                db.update_watchlist_result(item["item_id"], "lost", None, None)
         return
 
     username = os.getenv("SGW_USERNAME", "").lower()
 
-    # ── Step 1: resolve bid_placed → won / lost ──────────────────────────────
+    # ── Step 1: resolve ended scheduled / bid_placed → won / lost ────────────
     if pending_bid:
-        logger.info(f"Win-check sweep: {len(pending_bid)} item(s) with bid_placed status")
+        logger.info(f"Win-check sweep: {len(pending_bid)} ended item(s) still scheduled/bid_placed")
     for item in pending_bid:
         item_id = item["item_id"]
         try:
@@ -437,16 +459,11 @@ def _check_bid_results() -> None:
             bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
             winner = bid_summary[0]["bidderName"].lower() if bid_summary else None
 
-            end_time_str = item.get("end_time")
-            if end_time_str:
-                try:
-                    end_dt = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
-                    if end_dt > datetime.now(timezone.utc):
-                        continue  # not ended yet
-                except Exception:
-                    pass
+            ended = _watchlist_item_ended(item)
+            if ended is False:
+                continue
 
-            if not winner and not info.get("isClosed"):
+            if not winner and not info.get("isClosed") and ended is not True:
                 continue
 
             won = bool(winner and winner == username)
@@ -458,6 +475,8 @@ def _check_bid_results() -> None:
                 logger.info(f"Lost: '{item.get('title', item_id)}' — winner: {winner or 'unknown'}")
         except Exception as e:
             logger.error(f"Win-check failed for item {item_id}: {e}")
+            if item.get("sniper_status") == "scheduled" and _watchlist_item_ended(item) is True:
+                db.update_watchlist_result(item_id, "lost", None, None)
 
     # ── Step 2: sync won items against open/shipped orders ───────────────────
     if not won_items:

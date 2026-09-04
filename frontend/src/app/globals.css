@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 @custom-variant light (&:where(html.light, html.light *));
 
 :root {
