@@ -235,6 +235,35 @@ export default function DealsPage() {
     }
   };
 
+  /** Persist all filter values and run a scan so changes take effect. */
+  const applyFiltersAndScan = async () => {
+    // Include any keyword typed but not yet added
+    let nextKeywords = keywords;
+    const pending = newKeyword.trim().toLowerCase();
+    if (pending && !keywords.includes(pending)) {
+      nextKeywords = [...keywords, pending];
+      setKeywords(nextKeywords);
+      setNewKeyword("");
+    }
+
+    try {
+      await Promise.all([
+        updateSetting("min_profit_usd", scanMinProfit),
+        updateSetting("min_margin_pct", scanMinMargin),
+        updateSetting("min_sold_comps", minSoldComps),
+        updateSetting("min_bid_floor", minBidFloor),
+        updateSetting("max_bid_cap", maxBidCap),
+        updateSetting("scan_keywords", nextKeywords),
+        updateSetting("scan_category_ids", selectedCatIds),
+      ]);
+    } catch {
+      toast.error("Failed to save filters");
+      return;
+    }
+    setShowScanFilters(false);
+    await handleScanNow();
+  };
+
   const scanFilterCount = keywords.length + selectedCatIds.length;
   const filterBadgeCount = scanFilterCount;
 
@@ -464,6 +493,20 @@ export default function DealsPage() {
                   loading={categoriesLoading}
                   compact
                 />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
+                <p className="text-[11px] text-zinc-600">
+                  Filters apply on the next scan — not to deals already listed.
+                </p>
+                <button
+                  type="button"
+                  onClick={applyFiltersAndScan}
+                  disabled={scanRunning}
+                  className="bg-green-600 hover:bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs px-3.5 py-2 rounded-lg font-semibold transition-colors"
+                >
+                  {scanRunning ? "Scanning…" : "Apply & Scan"}
+                </button>
               </div>
             </div>
           )}
