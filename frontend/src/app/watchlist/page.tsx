@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { WatchlistCard } from "@/components/WatchlistCard";
+import { EditableMaxBid, WatchlistCard } from "@/components/WatchlistCard";
 import { TERMINAL_SNIPER_STATUSES, displaySniperStatus, parseEndTime } from "@/components/listingCard";
 import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
@@ -139,6 +139,10 @@ export default function WatchlistPage() {
     }
   };
 
+  const handleMaxBidUpdated = (itemId: number, maxBid: number) => {
+    setWatchlist(prev => prev.map(i => (i.item_id === itemId ? { ...i, max_bid: maxBid } : i)));
+  };
+
   const activeItems = watchlist.filter(i => {
     const status = displaySniperStatus(i.sniper_status, i.end_time);
     return status === "scheduled" || status === "bid_placed";
@@ -259,6 +263,7 @@ export default function WatchlistPage() {
               onRepriced={(itemId, update) => {
                 setWatchlist(prev => prev.map(i => i.item_id === itemId ? { ...i, ...update } : i));
               }}
+              onMaxBidUpdated={handleMaxBidUpdated}
             />
           ))}
         </div>
@@ -402,7 +407,7 @@ export default function WatchlistPage() {
                     <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
                       <span className="text-zinc-500">Current: <span className="text-zinc-300">${item.current_bid?.toFixed(2) ?? "—"}</span></span>
                       <span className="text-zinc-700">·</span>
-                      <span className="text-zinc-500">Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span></span>
+                      <EditableMaxBid item={item} onUpdated={handleMaxBidUpdated} compact />
                       {item.ebay_median != null && (
                         <>
                           <span className="text-zinc-700">·</span>

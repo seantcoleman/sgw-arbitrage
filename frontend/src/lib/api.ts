@@ -38,6 +38,12 @@ export const addToWatchlist = (item_id: number, max_bid: number) =>
 export const removeFromWatchlist = (item_id: number) =>
   apiFetch(`/watchlist/${item_id}`, { method: "DELETE" });
 
+export const updateWatchlistMaxBid = (item_id: number, max_bid: number) =>
+  apiFetch<{ success: boolean; item_id: number; max_bid: number }>(`/watchlist/${item_id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ max_bid }),
+  });
+
 // Scanner
 export const triggerScan = () => apiFetch("/scan", { method: "POST" });
 export const getScanStatus = () => apiFetch<ScanStatus>("/scan/status");

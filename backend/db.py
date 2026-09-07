@@ -452,6 +452,14 @@ def remove_from_watchlist(item_id: int) -> None:
         conn.execute("DELETE FROM watchlist WHERE item_id = ?", (item_id,))
 
 
+def update_watchlist_max_bid(item_id: int, max_bid: float) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE watchlist SET max_bid = ? WHERE item_id = ?",
+            (max_bid, item_id),
+        )
+
+
 def update_watchlist_status(item_id: int, status: str) -> None:
     with get_conn() as conn:
         conn.execute(

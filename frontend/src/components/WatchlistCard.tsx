@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { repriceItem, WatchlistItem } from "@/lib/api";
+import { repriceItem, updateWatchlistMaxBid, WatchlistItem } from "@/lib/api";
 import {
   CardImage,
   CardTopBadges,
@@ -11,6 +11,7 @@ import {
   StatPill,
   StatusPill,
   TERMINAL_SNIPER_STATUSES,
+  auctionHasEnded,
   displaySniperStatus,
   timeUntil,
   UrgencyBadge,
@@ -60,13 +61,173 @@ const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "green" | "sky"
   error: "red",
 };
 
+/** Max bid can change until the auction ends and before the sniper places a bid. */
+export function canEditMaxBid(item: Pick<WatchlistItem, "end_time" | "sniper_status">): boolean {
+  if (auctionHasEnded(item.end_time)) return false;
+  const status = displaySniperStatus(item.sniper_status, item.end_time);
+  return status === "scheduled" || status === "error";
+}
+
+export function EditableMaxBid({
+  item,
+  onUpdated,
+  compact = false,
+}: {
+  item: WatchlistItem;
+  onUpdated: (itemId: number, maxBid: number) => void;
+  compact?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(item.max_bid));
+  const [saving, setSaving] = useState(false);
+  const editable = canEditMaxBid(item);
+
+  const startEdit = () => {
+    setValue(String(item.max_bid));
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    setValue(String(item.max_bid));
+  };
+
+  const save = async () => {
+    const bid = parseFloat(value);
+    if (!Number.isFinite(bid) || bid <= (item.current_bid ?? 0)) {
+      toast.error(`Max bid must be > $${(item.current_bid ?? 0).toFixed(2)}`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await updateWatchlistMaxBid(item.item_id, bid);
+      onUpdated(item.item_id, result.max_bid);
+      setEditing(false);
+      toast.success(`Max bid updated to $${result.max_bid.toFixed(2)}`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to update max bid");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editable) {
+    return compact ? (
+      <span className="text-zinc-500">
+        Max bid: <span className="text-green-400 font-semibold">${item.max_bid.toFixed(2)}</span>
+      </span>
+    ) : (
+      <div className={`flex-1 ${PRICE_WELL}`}>
+        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Max bid</div>
+        <div className="font-bold text-green-400 text-[15px]">${item.max_bid.toFixed(2)}</div>
+      </div>
+    );
+  }
+
+  if (editing) {
+    return compact ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-zinc-500">Max bid:</span>
+        <span className="relative">
+          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[11px]">$</span>
+          <input
+            type="number"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") cancel();
+            }}
+            min={(item.current_bid ?? 0) + 0.5}
+            step="0.50"
+            autoFocus
+            className="w-20 bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-md pl-4 pr-1.5 py-0.5 text-xs text-green-400 font-semibold focus:outline-none"
+          />
+        </span>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="text-green-400 hover:text-green-300 text-[11px] font-semibold disabled:opacity-50"
+        >
+          {saving ? "…" : "Save"}
+        </button>
+        <button type="button" onClick={cancel} className="text-zinc-600 hover:text-zinc-400 text-[11px]">
+          ✕
+        </button>
+      </span>
+    ) : (
+      <div className={`flex-1 ${PRICE_WELL}`}>
+        <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Max bid</div>
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <span className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+            <input
+              type="number"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") save();
+                if (e.key === "Escape") cancel();
+              }}
+              min={(item.current_bid ?? 0) + 0.5}
+              step="0.50"
+              autoFocus
+              className="w-full bg-transparent border-b border-zinc-600 focus:border-green-500 pl-3.5 pr-1 py-0.5 text-[15px] font-bold text-green-400 focus:outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="text-[11px] font-semibold text-green-400 hover:text-green-300 disabled:opacity-50"
+          >
+            {saving ? "…" : "Save"}
+          </button>
+          <button type="button" onClick={cancel} className="text-zinc-600 hover:text-zinc-400 text-xs px-0.5">
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return compact ? (
+    <span className="text-zinc-500">
+      Max bid:{" "}
+      <button
+        type="button"
+        onClick={startEdit}
+        className="text-green-400 font-semibold hover:text-green-300 underline underline-offset-2 decoration-green-700/60"
+        title="Edit max bid"
+      >
+        ${item.max_bid.toFixed(2)}
+      </button>
+    </span>
+  ) : (
+    <button
+      type="button"
+      onClick={startEdit}
+      className={`flex-1 ${PRICE_WELL} text-left hover:border-zinc-500 transition-colors group`}
+      title="Edit max bid"
+    >
+      <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1 flex items-center justify-between">
+        Max bid
+        <span className="normal-case tracking-normal font-medium text-zinc-600 group-hover:text-zinc-400">Edit</span>
+      </div>
+      <div className="font-bold text-green-400 text-[15px]">${item.max_bid.toFixed(2)}</div>
+    </button>
+  );
+}
+
 interface WatchlistCardProps {
   item: WatchlistItem;
   onRemove: (itemId: number) => void;
   onRepriced: (itemId: number, update: Partial<WatchlistItem>) => void;
+  onMaxBidUpdated?: (itemId: number, maxBid: number) => void;
 }
 
-export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps) {
+export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: WatchlistCardProps) {
   const [showRecheck, setShowRecheck] = useState(false);
   const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
   const [rechecking, setRechecking] = useState(false);
@@ -233,10 +394,10 @@ export function WatchlistCard({ item, onRemove, onRepriced }: WatchlistCardProps
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Current</div>
               <div className="font-bold text-zinc-100 text-[15px]">${item.current_bid?.toFixed(2) ?? "—"}</div>
             </div>
-            <div className={`flex-1 ${PRICE_WELL}`}>
-              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">Max bid</div>
-              <div className="font-bold text-green-400 text-[15px]">${item.max_bid.toFixed(2)}</div>
-            </div>
+            <EditableMaxBid
+              item={item}
+              onUpdated={(id, maxBid) => onMaxBidUpdated?.(id, maxBid)}
+            />
           </div>
         )}
 

@@ -289,6 +289,38 @@ def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks):
     return {"success": True}
 
 
+class WatchlistMaxBidRequest(BaseModel):
+    max_bid: float
+
+
+@app.patch("/watchlist/{item_id}")
+def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, background_tasks: BackgroundTasks):
+    """Update sniper max bid for a live, not-yet-sniped watchlist item."""
+    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
+    if not watch:
+        raise HTTPException(status_code=404, detail="Item not on watchlist")
+
+    if _watchlist_item_ended(watch) is True:
+        raise HTTPException(status_code=400, detail="Auction has already ended")
+
+    status = (watch.get("sniper_status") or "scheduled").lower()
+    if status in ("won", "awaiting_payment", "shipped", "lost", "ended"):
+        raise HTTPException(status_code=400, detail=f"Cannot edit max bid when status is '{status}'")
+    if status == "bid_placed":
+        raise HTTPException(status_code=400, detail="Bid already placed — max bid can no longer be changed")
+
+    current = float(watch.get("current_bid") or 0)
+    if req.max_bid <= current:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max bid must be greater than current bid of ${current:.2f}",
+        )
+
+    db.update_watchlist_max_bid(item_id, req.max_bid)
+    background_tasks.add_task(_update_sgw_favorite_max_bid, item_id, req.max_bid)
+    return {"success": True, "item_id": item_id, "max_bid": req.max_bid}
+
+
 class RepriceRequest(BaseModel):
     search_term: str
 
@@ -392,6 +424,21 @@ def _add_sgw_favorite(item_id: int, max_bid: float):
         logger.info(f"Added item {item_id} to SGW favorites with max_bid={max_bid}")
     except Exception as e:
         logger.error(f"Failed to add SGW favorite {item_id}: {e}")
+
+
+def _update_sgw_favorite_max_bid(item_id: int, max_bid: float):
+    """Update the favorite note the sniper reads for max_bid."""
+    try:
+        sgw = _get_sgw_client()
+        note = json.dumps({"max_bid": max_bid})
+        try:
+            sgw.add_favorite_note(item_id, note)
+        except Exception:
+            # Not favorited yet — add then set note
+            sgw.add_favorite(item_id, note=note)
+        logger.info(f"Updated SGW favorite note for {item_id} to max_bid={max_bid}")
+    except Exception as e:
+        logger.error(f"Failed to update SGW favorite max_bid for {item_id}: {e}")
 
 
 def _remove_sgw_favorite(item_id: int):
