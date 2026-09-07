@@ -460,6 +460,25 @@ def update_watchlist_max_bid(item_id: int, max_bid: float) -> None:
         )
 
 
+def update_watchlist_live_bid(
+    item_id: int,
+    current_bid: float,
+    end_time: Optional[str] = None,
+) -> None:
+    """Refresh the live auction price (and optionally end time) on a watchlist row."""
+    with get_conn() as conn:
+        if end_time is not None:
+            conn.execute(
+                "UPDATE watchlist SET current_bid = ?, end_time = ? WHERE item_id = ?",
+                (current_bid, end_time, item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET current_bid = ? WHERE item_id = ?",
+                (current_bid, item_id),
+            )
+
+
 def update_watchlist_status(item_id: int, status: str) -> None:
     with get_conn() as conn:
         conn.execute(

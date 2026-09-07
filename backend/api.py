@@ -211,7 +211,38 @@ class WatchlistAddRequest(BaseModel):
 @app.get("/watchlist")
 def get_watchlist():
     fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
-    items = [profit_calc.annotate_deal(dict(w), fee_pct, resale_ship) for w in db.get_watchlist()]
+    items = [dict(w) for w in db.get_watchlist()]
+
+    # Keep live auction prices in sync — current_bid was snapshotted at add time
+    # and otherwise goes stale vs Favorites / SGW.
+    active = [
+        w for w in items
+        if (w.get("sniper_status") or "").lower() in ("scheduled", "bid_placed", "error")
+        and _watchlist_item_ended(w) is not True
+    ]
+    if active:
+        try:
+            favs = _get_sgw_client().get_favorites()
+            for w in active:
+                fav = favs.get(int(w["item_id"]))
+                if not fav:
+                    continue
+                live_bid = float(fav.get("currentPrice") or fav.get("currentBid") or 0)
+                end_raw = fav.get("endTime") or fav.get("endDateTime")
+                live_end = _sgw_to_utc(end_raw) if end_raw else None
+                stored_bid = float(w.get("current_bid") or 0)
+                if live_bid > 0 and abs(live_bid - stored_bid) >= 0.01:
+                    db.update_watchlist_live_bid(w["item_id"], live_bid, live_end)
+                    w["current_bid"] = live_bid
+                    if live_end:
+                        w["end_time"] = live_end
+                elif live_end and live_end != w.get("end_time"):
+                    db.update_watchlist_live_bid(w["item_id"], stored_bid or live_bid, live_end)
+                    w["end_time"] = live_end
+        except Exception as e:
+            logger.warning(f"Watchlist live-bid sync skipped: {e}")
+
+    items = [profit_calc.annotate_deal(w, fee_pct, resale_ship) for w in items]
     return {"watchlist": items}
 
 
