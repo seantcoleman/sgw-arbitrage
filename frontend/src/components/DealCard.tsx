@@ -11,7 +11,11 @@ import {
   LISTING_CARD_SHELL,
   PriceCompareRow,
   RoiBadge,
+  SnipeBidHints,
+  profitAtBid,
+  recommendedMaxBid,
   resolveEbayWell,
+  resolveYouGetAmount,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -67,7 +71,27 @@ export function DealCard({
   const [rechecking, setRechecking] = useState(false);
 
   const { label: timeLabel, urgency } = timeUntil(deal.end_time);
-  const totalCost = deal.current_bid + (deal.shipping_est ?? 0);
+  const sgwShipping = deal.shipping_est ?? 0;
+  const totalCost = deal.current_bid + sgwShipping;
+  const youGetAmt = resolveYouGetAmount({
+    youGet: deal.you_get,
+    ebayMedian: deal.ebay_median,
+    feePct: deal.ebay_fee_pct,
+    resaleShip: deal.ebay_resale_shipping,
+  });
+  const recommended =
+    youGetAmt != null
+      ? recommendedMaxBid({
+          youGet: youGetAmt,
+          sgwShipping,
+          currentBid: deal.current_bid,
+        })
+      : null;
+  const typedBid = parseFloat(maxBid);
+  const livePreview =
+    youGetAmt != null && Number.isFinite(typedBid) && typedBid > 0
+      ? profitAtBid({ youGet: youGetAmt, bid: typedBid, sgwShipping })
+      : null;
   const ebayWell = resolveEbayWell({
     mode: ebayDisplayMode,
     ebayMedian: deal.ebay_median,
@@ -77,6 +101,13 @@ export function DealCard({
     feePct: deal.ebay_fee_pct,
     resaleShip: deal.ebay_resale_shipping,
   });
+
+  const openSnipe = () => {
+    if (!maxBid.trim() && recommended != null) {
+      onMaxBidChange(recommended.toFixed(2));
+    }
+    onWatchClick();
+  };
 
   const handleRecheck = async () => {
     const term = searchTerm.trim();
@@ -211,36 +242,45 @@ export function DealCard({
               On Sniper
             </div>
           ) : isWatching ? (
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm font-medium">$</span>
-                <input
-                  type="number"
-                  value={maxBid}
-                  onChange={e => onMaxBidChange(e.target.value)}
-                  placeholder={`>${deal.current_bid.toFixed(2)}`}
-                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
-                  step="0.50"
-                  min={deal.current_bid + 0.5}
-                  autoFocus
-                />
+            <div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm font-medium">$</span>
+                  <input
+                    type="number"
+                    value={maxBid}
+                    onChange={e => onMaxBidChange(e.target.value)}
+                    placeholder={`>${deal.current_bid.toFixed(2)}`}
+                    className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
+                    step="0.50"
+                    min={deal.current_bid + 0.5}
+                    autoFocus
+                  />
+                </div>
+                <button
+                  onClick={onConfirmWatch}
+                  className="bg-green-600 hover:bg-green-500 active:scale-95 text-white text-xs px-4 py-2.5 rounded-xl font-bold transition-all"
+                >
+                  Snipe
+                </button>
+                <button
+                  onClick={onWatchClick}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs px-3 py-2.5 rounded-xl transition-colors"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                onClick={onConfirmWatch}
-                className="bg-green-600 hover:bg-green-500 active:scale-95 text-white text-xs px-4 py-2.5 rounded-xl font-bold transition-all"
-              >
-                Snipe
-              </button>
-              <button
-                onClick={onWatchClick}
-                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs px-3 py-2.5 rounded-xl transition-colors"
-              >
-                ✕
-              </button>
+              <SnipeBidHints
+                recommended={recommended}
+                live={livePreview}
+                onUseRecommended={
+                  recommended != null ? () => onMaxBidChange(recommended.toFixed(2)) : undefined
+                }
+              />
             </div>
           ) : (
             <button
-              onClick={onWatchClick}
+              onClick={openSnipe}
               className="w-full bg-zinc-800/80 hover:bg-green-900/30 border border-zinc-700 hover:border-green-700/60 text-zinc-400 hover:text-green-300 text-sm py-2.5 rounded-xl font-semibold transition-all"
             >
               + Add to Sniper

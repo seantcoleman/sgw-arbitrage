@@ -20,9 +20,13 @@ import {
   LISTING_CARD_SHELL,
   PriceCompareRow,
   RoiBadge,
+  SnipeBidHints,
   StatPill,
   StatusPill,
+  profitAtBid,
+  recommendedMaxBid,
   resolveEbayWell,
+  resolveYouGetAmount,
   timeUntil,
   UrgencyBadge,
 } from "@/components/listingCard";
@@ -50,8 +54,28 @@ function FavCard({
   const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
   const [rechecking, setRechecking] = useState(false);
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
-  const totalCost = item.current_bid + (item.shipping_est ?? 12);
+  const sgwShipping = item.shipping_est ?? 12;
+  const totalCost = item.current_bid + sgwShipping;
   const hasEbay = item.ebay_median != null;
+  const youGetAmt = resolveYouGetAmount({
+    youGet: item.you_get,
+    ebayMedian: item.ebay_median,
+    feePct: item.ebay_fee_pct,
+    resaleShip: item.ebay_resale_shipping,
+  });
+  const recommended =
+    youGetAmt != null
+      ? recommendedMaxBid({
+          youGet: youGetAmt,
+          sgwShipping,
+          currentBid: item.current_bid,
+        })
+      : null;
+  const typedBid = parseFloat(maxBid);
+  const livePreview =
+    youGetAmt != null && Number.isFinite(typedBid) && typedBid > 0
+      ? profitAtBid({ youGet: youGetAmt, bid: typedBid, sgwShipping })
+      : null;
   const ebayWell = hasEbay
     ? resolveEbayWell({
         mode: ebayDisplayMode,
@@ -63,6 +87,13 @@ function FavCard({
         resaleShip: item.ebay_resale_shipping,
       })
     : null;
+
+  const openSnipe = () => {
+    if (!maxBid.trim() && recommended != null) {
+      setMaxBid(recommended.toFixed(2));
+    }
+    setSniping(true);
+  };
 
   const handleSnipe = async () => {
     const bid = parseFloat(maxBid);
@@ -252,30 +283,39 @@ function FavCard({
               On Sniper
             </div>
           ) : sniping ? (
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
-                <input
-                  type="number"
-                  value={maxBid}
-                  onChange={e => setMaxBid(e.target.value)}
-                  placeholder={`>${item.current_bid.toFixed(2)}`}
-                  className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
-                  step="0.50"
-                  min={item.current_bid + 0.5}
-                  autoFocus
-                />
+            <div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
+                  <input
+                    type="number"
+                    value={maxBid}
+                    onChange={e => setMaxBid(e.target.value)}
+                    placeholder={`>${item.current_bid.toFixed(2)}`}
+                    className="w-full bg-zinc-800 border border-zinc-600 focus:border-green-500 rounded-xl pl-6 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none transition-colors"
+                    step="0.50"
+                    min={item.current_bid + 0.5}
+                    autoFocus
+                  />
+                </div>
+                <button onClick={handleSnipe} className="bg-green-600 hover:bg-green-500 text-white text-xs px-4 py-2.5 rounded-xl font-bold transition-all">
+                  Snipe
+                </button>
+                <button onClick={() => setSniping(false)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs px-3 py-2.5 rounded-xl">
+                  ✕
+                </button>
               </div>
-              <button onClick={handleSnipe} className="bg-green-600 hover:bg-green-500 text-white text-xs px-4 py-2.5 rounded-xl font-bold transition-all">
-                Snipe
-              </button>
-              <button onClick={() => setSniping(false)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs px-3 py-2.5 rounded-xl">
-                ✕
-              </button>
+              <SnipeBidHints
+                recommended={recommended}
+                live={livePreview}
+                onUseRecommended={
+                  recommended != null ? () => setMaxBid(recommended.toFixed(2)) : undefined
+                }
+              />
             </div>
           ) : (
             <button
-              onClick={() => setSniping(true)}
+              onClick={openSnipe}
               className="w-full bg-zinc-800/80 hover:bg-green-900/30 border border-zinc-700 hover:border-green-700/60 text-zinc-400 hover:text-green-300 text-sm py-2.5 rounded-xl font-semibold transition-all"
             >
               + Add to Sniper

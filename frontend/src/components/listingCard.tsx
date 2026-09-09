@@ -201,6 +201,123 @@ export function formatYouGetCaption(feePct?: number | null, resaleShip?: number 
   return `after ${feeLabel}% + $${shipLabel} ship`;
 }
 
+/** Resolve You Get from an explicit value or from median + fee settings. */
+export function resolveYouGetAmount({
+  youGet,
+  ebayMedian,
+  feePct,
+  resaleShip,
+}: {
+  youGet?: number | null;
+  ebayMedian?: number | null;
+  feePct?: number | null;
+  resaleShip?: number | null;
+}): number | null {
+  if (youGet != null && Number.isFinite(youGet)) return youGet;
+  if (ebayMedian == null || !Number.isFinite(ebayMedian)) return null;
+  return computeYouGet(ebayMedian, feePct ?? 13, resaleShip ?? 7);
+}
+
+function roundDownToHalfDollar(n: number): number {
+  return Math.floor(n * 2) / 2;
+}
+
+/**
+ * Max bid that still yields targetRoi on you_pay (= bid + SGW ship).
+ * ROI here matches app margin: profit / you_pay.
+ */
+export function recommendedMaxBid({
+  youGet,
+  sgwShipping,
+  currentBid,
+  targetRoi = 0.5,
+}: {
+  youGet: number;
+  sgwShipping: number;
+  currentBid: number;
+  targetRoi?: number;
+}): number | null {
+  if (!(youGet > 0) || !(targetRoi >= 0)) return null;
+  const youPay = youGet / (1 + targetRoi);
+  const raw = youPay - sgwShipping;
+  const floor = currentBid + 0.5;
+  if (!Number.isFinite(raw)) return null;
+  const rounded = roundDownToHalfDollar(raw);
+  // If even the floor can't hit the target, still suggest the floor so the input is usable
+  return Math.max(floor, rounded);
+}
+
+export function profitAtBid({
+  youGet,
+  bid,
+  sgwShipping,
+}: {
+  youGet: number;
+  bid: number;
+  sgwShipping: number;
+}): { net: number; roi: number; youPay: number } | null {
+  if (!(bid > 0) || !Number.isFinite(bid) || !Number.isFinite(youGet)) return null;
+  const youPay = bid + sgwShipping;
+  if (youPay <= 0) return null;
+  const net = youGet - youPay;
+  return { net, roi: net / youPay, youPay };
+}
+
+/** Hint row under the sniper max-bid input: recommended amount + live net/ROI. */
+export function SnipeBidHints({
+  recommended,
+  targetRoiLabel = "50% ROI",
+  live,
+  onUseRecommended,
+}: {
+  recommended: number | null;
+  targetRoiLabel?: string;
+  live: { net: number; roi: number } | null;
+  onUseRecommended?: () => void;
+}) {
+  if (recommended == null && live == null) return null;
+
+  const liveCls =
+    live == null
+      ? ""
+      : live.net >= 0 && live.roi >= 0.5
+      ? "text-green-400"
+      : live.net >= 0
+      ? "text-amber-400"
+      : "text-red-400";
+
+  return (
+    <div className="mt-1.5 space-y-0.5 text-[11px]">
+      {recommended != null && (
+        <p className="text-zinc-500">
+          Recommended ≤{" "}
+          {onUseRecommended ? (
+            <button
+              type="button"
+              onClick={onUseRecommended}
+              className="text-zinc-300 hover:text-green-300 font-semibold underline underline-offset-2 decoration-zinc-600"
+              title="Use recommended max bid"
+            >
+              ${recommended.toFixed(2)}
+            </button>
+          ) : (
+            <span className="text-zinc-300 font-semibold">${recommended.toFixed(2)}</span>
+          )}{" "}
+          for {targetRoiLabel}
+        </p>
+      )}
+      {live != null && (
+        <p className={liveCls}>
+          Net {live.net >= 0 ? "+" : "−"}${Math.abs(live.net).toFixed(0)}
+          {" · "}
+          {live.roi >= 10 ? `${live.roi.toFixed(0)}x` : `${Math.round(live.roi * 100)}%`} ROI
+          {" at this bid"}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Build the right-hand price well for net (You Get) or gross (eBay Value) display. */
 export function resolveEbayWell({
   mode = "net",
