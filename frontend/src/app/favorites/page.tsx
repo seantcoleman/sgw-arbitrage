@@ -307,6 +307,7 @@ function FavCard({
               </div>
               <SnipeBidHints
                 recommended={recommended}
+                sgwShipping={sgwShipping}
                 live={livePreview}
                 onUseRecommended={
                   recommended != null ? () => setMaxBid(recommended.toFixed(2)) : undefined

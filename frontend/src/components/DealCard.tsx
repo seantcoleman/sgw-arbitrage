@@ -272,6 +272,7 @@ export function DealCard({
               </div>
               <SnipeBidHints
                 recommended={recommended}
+                sgwShipping={sgwShipping}
                 live={livePreview}
                 onUseRecommended={
                   recommended != null ? () => onMaxBidChange(recommended.toFixed(2)) : undefined

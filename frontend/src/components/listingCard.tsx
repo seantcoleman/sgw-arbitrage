@@ -266,13 +266,15 @@ export function profitAtBid({
 /** Hint row under the sniper max-bid input: recommended amount + live net/ROI. */
 export function SnipeBidHints({
   recommended,
+  sgwShipping = 0,
   targetRoiLabel = "50% ROI",
   live,
   onUseRecommended,
 }: {
   recommended: number | null;
+  sgwShipping?: number;
   targetRoiLabel?: string;
-  live: { net: number; roi: number } | null;
+  live: { net: number; roi: number; youPay: number } | null;
   onUseRecommended?: () => void;
 }) {
   if (recommended == null && live == null) return null;
@@ -286,9 +288,13 @@ export function SnipeBidHints({
       ? "text-amber-400"
       : "text-red-400";
 
+  const ship = Math.max(0, sgwShipping);
+  const recommendedTotal =
+    recommended != null ? recommended + ship : null;
+
   return (
     <div className="mt-1.5 space-y-0.5 text-[11px]">
-      {recommended != null && (
+      {recommended != null && recommendedTotal != null && (
         <p className="text-zinc-500">
           Recommended ≤{" "}
           {onUseRecommended ? (
@@ -302,7 +308,14 @@ export function SnipeBidHints({
             </button>
           ) : (
             <span className="text-zinc-300 font-semibold">${recommended.toFixed(2)}</span>
-          )}{" "}
+          )}
+          {ship > 0 ? (
+            <>
+              {" "}
+              + ${ship.toFixed(2)} ship ={" "}
+              <span className="text-zinc-400 font-medium">${recommendedTotal.toFixed(2)} total</span>
+            </>
+          ) : null}{" "}
           for {targetRoiLabel}
         </p>
       )}
@@ -311,7 +324,10 @@ export function SnipeBidHints({
           Net {live.net >= 0 ? "+" : "−"}${Math.abs(live.net).toFixed(0)}
           {" · "}
           {live.roi >= 10 ? `${live.roi.toFixed(0)}x` : `${Math.round(live.roi * 100)}%`} ROI
-          {" at this bid"}
+          {" on $"}
+          {live.youPay.toFixed(2)}
+          {" total"}
+          {ship > 0 ? " (bid + ship)" : ""}
         </p>
       )}
     </div>
