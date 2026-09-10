@@ -289,6 +289,11 @@ def upsert_skipped(item: Dict[str, Any]) -> None:
         """, item)
 
 
+# Favorites "Check eBay Prices" stores enrichment rows under this keyword.
+# They must not appear on the Deals page or be wiped by keyword-scan stale marking.
+FAVORITE_KEYWORD = "⭐ favorite"
+
+
 def get_deals(
     min_profit: float = 0,
     min_margin: float = 0,
@@ -300,9 +305,10 @@ def get_deals(
         rows = conn.execute("""
             SELECT * FROM deals
             WHERE profit >= ? AND margin >= ? AND status = ?
+              AND (keyword IS NULL OR keyword != ?)
             ORDER BY profit DESC
             LIMIT ? OFFSET ?
-        """, (min_profit, min_margin, status, limit, offset)).fetchall()
+        """, (min_profit, min_margin, status, FAVORITE_KEYWORD, limit, offset)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -328,20 +334,27 @@ def count_deals(
         row = conn.execute("""
             SELECT COUNT(*) FROM deals
             WHERE profit >= ? AND margin >= ? AND status = ?
-        """, (min_profit, min_margin, status)).fetchone()
+              AND (keyword IS NULL OR keyword != ?)
+        """, (min_profit, min_margin, status, FAVORITE_KEYWORD)).fetchone()
     return row[0] if row else 0
 
 
 def mark_deals_stale(active_item_ids: List[int]) -> None:
-    """Mark deals no longer in scan results as ended."""
+    """Mark deals no longer in scan results as ended.
+
+    Skips favorite-enrichment rows so a keyword/browse scan doesn't wipe
+    Favorites page analysis.
+    """
     if not active_item_ids:
         return
     placeholders = ",".join("?" * len(active_item_ids))
     with get_conn() as conn:
         conn.execute(f"""
             UPDATE deals SET status = 'ended'
-            WHERE status = 'active' AND item_id NOT IN ({placeholders})
-        """, active_item_ids)
+            WHERE status = 'active'
+              AND (keyword IS NULL OR keyword != ?)
+              AND item_id NOT IN ({placeholders})
+        """, [FAVORITE_KEYWORD, *active_item_ids])
 
 
 def expire_past_deals() -> int:

@@ -28,6 +28,9 @@ import shopgoodwill
 
 logger = logging.getLogger(__name__)
 
+# Favorites enrichment reuses the deals table; Deals page / stale marking exclude this tag.
+FAVORITE_KEYWORD = "⭐ favorite"
+
 SGW_SEARCH_TEMPLATE = {
     "searchText": "",
     "categoryId": [],
@@ -83,13 +86,16 @@ class Scanner:
         active_item_ids = []
         errors = []
 
-        # If categories are set but no keywords, browse each category directly
-        scan_targets = self.keywords if self.keywords else (
-            [None] if self.category_ids else []
-        )
+        # Empty keywords = one browse pass (site-wide, or category-filtered if set)
+        scan_targets = self.keywords if self.keywords else [None]
 
         for keyword in scan_targets:
-            label = f"keyword: '{keyword}'" if keyword else f"category browse (ids={self.category_ids})"
+            if keyword:
+                label = f"keyword: '{keyword}'"
+            elif self.category_ids:
+                label = f"category browse (ids={self.category_ids})"
+            else:
+                label = "site-wide browse (no keywords/categories)"
             logger.info(f"Scanning {label}")
             try:
                 results = self._scan_keyword(keyword)
@@ -115,6 +121,9 @@ class Scanner:
         query = {**SGW_SEARCH_TEMPLATE, "searchText": keyword or ""}
         if self.category_ids:
             query["categoryId"] = self.category_ids
+        # Empty site-wide browse: ending-later first so results aren't all about to expire
+        if not keyword and not self.category_ids:
+            query["sortDescending"] = True
         label = f"'{keyword}'" if keyword else f"category {self.category_ids}"
         try:
             items = self.sgw.get_query_results(query, page_size=40)
@@ -195,7 +204,7 @@ class Scanner:
                         fav_data.get("imageURL")
                     ),
                 }
-                result = self._process_item(normalized, keyword="⭐ favorite", save_skipped=True)
+                result = self._process_item(normalized, keyword=FAVORITE_KEYWORD, save_skipped=True)
                 if result:
                     deals += 1
             except Exception as e:
@@ -222,7 +231,7 @@ class Scanner:
             self._category_names.get(int(cid), f"Category {cid}")
             for cid in (self.category_ids or [])
         ]
-        return ", ".join(names) if names else "Category browse"
+        return ", ".join(names) if names else "All listings"
 
     def _process_item(self, item: dict, keyword: Optional[str] = None, save_skipped: bool = False) -> bool:
         """Run a single normalized item through the full arbitrage pipeline. Returns True if saved as a deal."""

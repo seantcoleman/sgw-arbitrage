@@ -269,11 +269,15 @@ class Shopgoodwill:
         """
         Search SGW using the Azure-backed ItemListingData endpoint (GET).
         The API caps results at ~80 items across pages; page_size is always 40 on the server side.
+
+        Sort: sc=1 is EndTime. sd=false → ending soonest first; sd=true → ending later first.
         """
         search_text = urllib.parse.quote(query_json.get("searchText", "").replace('"', ""))
         # Category IDs: pass as comma-separated `scids` param (the correct SGW filter param)
         cat_ids: list = query_json.get("categoryId", [])
         scids_param = ",".join(str(c) for c in cat_ids) if cat_ids else ""
+        # Default ending-soonest; callers can set sortDescending=True for site-wide browse
+        sort_desc = "true" if query_json.get("sortDescending") else "false"
 
         total_listings: List[Dict] = []
         page = 1
@@ -283,7 +287,7 @@ class Shopgoodwill:
         while page <= max_pages:
             url = (
                 f"{Shopgoodwill.API_ROOT}/Search/ItemListingData"
-                f"?pn=0&cl=0&cids=&scids={scids_param}&p={page}&sc=1&sd=false"
+                f"?pn=0&cl=0&cids=&scids={scids_param}&p={page}&sc=1&sd={sort_desc}"
                 f"&cid=0&sg=&st={search_text}"
             )
             query_res = self.shopgoodwill_session.get(url)
