@@ -56,7 +56,7 @@ def _load_sniper_logs_from_disk() -> None:
             raw = raw.rstrip("\n")
             if not raw:
                 continue
-            # Stored as "HH:MM:SS\\tmessage"
+            # Stored as "ISO-UTC\\tmessage" (or legacy "HH:MM:SS\\tmessage")
             if "\t" in raw:
                 ts, line = raw.split("\t", 1)
             else:
@@ -170,7 +170,8 @@ def _tail_sniper_output(proc: subprocess.Popen) -> None:
     try:
         for raw in proc.stdout:  # type: ignore[union-attr]
             line = raw.rstrip()
-            ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+            # Canonical UTC ISO — UI converts to the viewer's local timezone
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             _append_sniper_log(ts, line)
             # Mirror to uvicorn console so nothing is lost
             logger.info(f"[sniper] {line}")

@@ -28,6 +28,24 @@ function countdown(endTime: string | null): { label: string; urgency: "normal" |
   return { label: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`, urgency };
 }
 
+function formatSniperLogTime(ts: string): string {
+  if (!ts) return "";
+  // New format: UTC ISO (…Z). Show in the viewer's local timezone.
+  if (ts.endsWith("Z") || ts.includes("T")) {
+    const d = new Date(ts);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+  }
+  // Legacy HH:MM:SS rows (UTC or Pacific) — show as stored
+  return ts;
+}
+
 function trackingUrl(shipper: string | null, tracking: string): string {
   const s = (shipper ?? "").toLowerCase();
   const t = encodeURIComponent(tracking);
@@ -584,7 +602,7 @@ export default function WatchlistPage() {
           <div className="mt-3 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
               <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Sniper Log</span>
-              <span className="text-[10px] text-zinc-600">live · last 200 lines</span>
+              <span className="text-[10px] text-zinc-600">live · your local time · last 200 lines</span>
             </div>
             <div className="h-72 overflow-y-auto p-3 font-mono text-xs space-y-0.5">
               {logs.length === 0 ? (
@@ -597,7 +615,7 @@ export default function WatchlistPage() {
                   const color = isError ? "text-red-400" : isBid ? "text-green-400" : isWarn ? "text-amber-400" : "text-zinc-500";
                   return (
                     <div key={i} className="flex gap-2">
-                      <span className="text-zinc-500 flex-shrink-0">{entry.ts}</span>
+                      <span className="text-zinc-500 flex-shrink-0">{formatSniperLogTime(entry.ts)}</span>
                       <span className={color}>{entry.line}</span>
                     </div>
                   );
