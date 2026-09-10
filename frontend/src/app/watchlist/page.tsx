@@ -6,6 +6,16 @@ import { EditableMaxBid, WatchlistCard } from "@/components/WatchlistCard";
 import { TERMINAL_SNIPER_STATUSES, displaySniperStatus, parseEndTime } from "@/components/listingCard";
 import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
+function endTimeMs(endTime: string | null): number {
+  if (!endTime) return Number.POSITIVE_INFINITY;
+  return parseEndTime(endTime).getTime();
+}
+
+function isActiveWatchlistItem(item: WatchlistItem): boolean {
+  const status = displaySniperStatus(item.sniper_status, item.end_time);
+  return !(TERMINAL_SNIPER_STATUSES as readonly string[]).includes(status);
+}
+
 function countdown(endTime: string | null): { label: string; urgency: "normal" | "soon" | "urgent" } {
   if (!endTime) return { label: "—", urgency: "normal" };
   const diff = parseEndTime(endTime).getTime() - Date.now();
@@ -143,133 +153,38 @@ export default function WatchlistPage() {
     setWatchlist(prev => prev.map(i => (i.item_id === itemId ? { ...i, max_bid: maxBid } : i)));
   };
 
-  const activeItems = watchlist.filter(i => {
-    const status = displaySniperStatus(i.sniper_status, i.end_time);
-    return status === "scheduled" || status === "bid_placed";
-  });
+  const activeItems = watchlist.filter(isActiveWatchlistItem);
 
-  const sortedWatchlist = useMemo(
-    () =>
-      [...watchlist].sort((a, b) => {
-        const byAdded = (b.added_at ?? "").localeCompare(a.added_at ?? "");
-        return byAdded !== 0 ? byAdded : b.item_id - a.item_id;
-      }),
-    [watchlist],
-  );
+  const { activeSorted, endedSorted } = useMemo(() => {
+    const active: WatchlistItem[] = [];
+    const ended: WatchlistItem[] = [];
+    for (const item of watchlist) {
+      (isActiveWatchlistItem(item) ? active : ended).push(item);
+    }
+    active.sort((a, b) => endTimeMs(a.end_time) - endTimeMs(b.end_time) || b.item_id - a.item_id);
+    // Most recently ended first
+    ended.sort((a, b) => endTimeMs(b.end_time) - endTimeMs(a.end_time) || b.item_id - a.item_id);
+    return { activeSorted: active, endedSorted: ended };
+  }, [watchlist, tick]);
 
   const setView = (mode: "list" | "cards") => {
     setViewMode(mode);
     localStorage.setItem("watchlist-view", mode);
   };
 
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Watchlist</h1>
-          <p className="text-zinc-500 text-sm mt-1">
-            {watchlist.length} item{watchlist.length !== 1 ? "s" : ""}
-            {snipeSeconds != null && ` — sniper bids ${snipeSeconds}s before each auction ends`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* View toggle */}
-          <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-0.5">
-            <button
-              type="button"
-              onClick={() => setView("list")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                viewMode === "list" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-              title="List view"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("cards")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                viewMode === "cards" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-              title="Card view"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-            </button>
-          </div>
-          {/* Sniper status indicator */}
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-            sniperRunning
-              ? "bg-green-950/40 border-green-800/50 text-green-400"
-              : "bg-red-950/40 border-red-800/50 text-red-400"
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
-            Sniper {sniperRunning ? "active" : "offline"}
-          </div>
-        </div>
-      </div>
+  const renderCard = (item: WatchlistItem) => (
+    <WatchlistCard
+      key={item.item_id}
+      item={item}
+      onRemove={handleRemove}
+      onRepriced={(itemId, update) => {
+        setWatchlist(prev => prev.map(i => i.item_id === itemId ? { ...i, ...update } : i));
+      }}
+      onMaxBidUpdated={handleMaxBidUpdated}
+    />
+  );
 
-      {/* Warning if sniper is offline but has active items */}
-      {!sniperRunning && activeItems.length > 0 && (
-        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 light:bg-red-50 light:border-red-200 light:text-red-800 rounded-xl px-4 py-3 mb-5 text-sm">
-          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>
-            Sniper is offline — the backend may have restarted. Your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} will not be bid on until it reconnects.
-            Restart the backend server to restore the sniper.
-          </span>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 animate-pulse">
-              <div className="flex gap-4">
-                <div className="w-16 h-16 bg-zinc-800 rounded-xl flex-shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-zinc-800 rounded w-2/3" />
-                  <div className="h-3 bg-zinc-800 rounded w-1/3" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : watchlist.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-40 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
-            <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          </div>
-          <h2 className="text-base font-semibold text-zinc-300 mb-1">No items queued</h2>
-          <p className="text-sm text-zinc-600 max-w-xs">
-            Go to Deals or Favorites and click "+ Add to Sniper" on any auction you want to bid on.
-          </p>
-        </div>
-      ) : viewMode === "cards" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {sortedWatchlist.map(item => (
-            <WatchlistCard
-              key={item.item_id}
-              item={item}
-              onRemove={handleRemove}
-              onRepriced={(itemId, update) => {
-                setWatchlist(prev => prev.map(i => i.item_id === itemId ? { ...i, ...update } : i));
-              }}
-              onMaxBidUpdated={handleMaxBidUpdated}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {sortedWatchlist.map(item => {
+  const renderListRow = (item: WatchlistItem) => {
             const { label: timeLabel, urgency } = countdown(item.end_time);
             const displayStatus = displaySniperStatus(item.sniper_status, item.end_time);
             const status = STATUS_STYLE[displayStatus] ?? STATUS_STYLE.scheduled;
@@ -513,7 +428,140 @@ export default function WatchlistPage() {
                 </button>
               </div>
             );
-          })}
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Watchlist</h1>
+          <p className="text-zinc-500 text-sm mt-1">
+            {watchlist.length} item{watchlist.length !== 1 ? "s" : ""}
+            {snipeSeconds != null && ` — sniper bids ${snipeSeconds}s before each auction ends`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View toggle */}
+          <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-0.5">
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                viewMode === "list" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+              title="List view"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("cards")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                viewMode === "cards" ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+              title="Card view"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+          </div>
+          {/* Sniper status indicator */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+            sniperRunning
+              ? "bg-green-950/40 border-green-800/50 text-green-400"
+              : "bg-red-950/40 border-red-800/50 text-red-400"
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${sniperRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+            Sniper {sniperRunning ? "active" : "offline"}
+          </div>
+        </div>
+      </div>
+
+      {/* Warning if sniper is offline but has active items */}
+      {!sniperRunning && activeItems.length > 0 && (
+        <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 light:bg-red-50 light:border-red-200 light:text-red-800 rounded-xl px-4 py-3 mb-5 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            Sniper is offline — the backend may have restarted. Your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} will not be bid on until it reconnects.
+            Restart the backend server to restore the sniper.
+          </span>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 animate-pulse">
+              <div className="flex gap-4">
+                <div className="w-16 h-16 bg-zinc-800 rounded-xl flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-zinc-800 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-800 rounded w-1/3" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : watchlist.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-40 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
+            <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+          <h2 className="text-base font-semibold text-zinc-300 mb-1">No items queued</h2>
+          <p className="text-sm text-zinc-600 max-w-xs">
+            Go to Deals or Favorites and click "+ Add to Sniper" on any auction you want to bid on.
+          </p>
+        </div>
+      ) : viewMode === "cards" ? (
+        <div className="space-y-8">
+          {activeSorted.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {activeSorted.map(renderCard)}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600 py-6 text-center">No active auctions in the sniper queue.</p>
+          )}
+          {endedSorted.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-3">
+                Ended
+                <span className="text-zinc-600 font-medium normal-case tracking-normal ml-2">{endedSorted.length}</span>
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 opacity-90">
+                {endedSorted.map(renderCard)}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <div className="space-y-3">
+            {activeSorted.length > 0 ? (
+              activeSorted.map(renderListRow)
+            ) : (
+              <p className="text-sm text-zinc-600 py-6 text-center">No active auctions in the sniper queue.</p>
+            )}
+          </div>
+          {endedSorted.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-3">
+                Ended
+                <span className="text-zinc-600 font-medium normal-case tracking-normal ml-2">{endedSorted.length}</span>
+              </h2>
+              <div className="space-y-3 opacity-90">
+                {endedSorted.map(renderListRow)}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
