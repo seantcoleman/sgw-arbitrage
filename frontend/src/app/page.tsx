@@ -244,6 +244,7 @@ export default function DealsPage() {
   };
 
   const handleScanNow = async () => {
+    setShowScanFilters(false);
     try {
       await triggerScan();
       setScanRunning(true);
