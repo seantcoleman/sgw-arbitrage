@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { Category, Deal, repriceItem } from "@/lib/api";
+import { Category, Deal, flattenCategories, repriceItem } from "@/lib/api";
 import {
   CardImage,
   CardTopBadges,
@@ -45,8 +45,9 @@ export function formatDealKeyword(keyword: string, categories: Category[] = []):
     .map(s => Number(s.trim()))
     .filter(n => Number.isFinite(n) && n > 0);
   if (!ids.length) return "Category browse";
+  const flat = flattenCategories(categories);
   return ids
-    .map(id => categories.find(c => c.id === id)?.name ?? `Category ${id}`)
+    .map(id => flat.find(c => c.id === id)?.name ?? `Category ${id}`)
     .join(", ");
 }
 

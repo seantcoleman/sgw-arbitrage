@@ -223,8 +223,11 @@ class Scanner:
             return name
         if not self._category_names:
             try:
-                for cat in self.sgw.get_categories():
-                    self._category_names[int(cat["id"])] = cat["name"]
+                def _walk(nodes):
+                    for cat in nodes:
+                        self._category_names[int(cat["id"])] = cat["name"]
+                        _walk(cat.get("children") or [])
+                _walk(self.sgw.get_categories())
             except Exception as e:
                 logger.warning(f"Could not load category names: {e}")
         names = [

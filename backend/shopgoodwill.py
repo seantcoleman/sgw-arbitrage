@@ -189,28 +189,57 @@ class Shopgoodwill:
             f"{Shopgoodwill.API_ROOT}/ItemBid/PlaceBid", json=bid_json
         ).json()
 
+    @staticmethod
+    def _parse_mapped_cat_id(raw) -> Optional[int]:
+        """Return a single scid from mappedCatId, or None for missing/multi-id promo values."""
+        if raw is None:
+            return None
+        s = str(raw).strip()
+        if not s or "," in s:
+            return None
+        try:
+            return int(s)
+        except (TypeError, ValueError):
+            return None
+
+    def _map_category_node(self, node: Dict) -> Optional[Dict]:
+        """Map an SGW category node to {id, name, children?}."""
+        name = (node.get("categoryName") or node.get("name") or "").strip()
+        cat_id = self._parse_mapped_cat_id(node.get("mappedCatId"))
+        if cat_id is None:
+            cat_id = self._parse_mapped_cat_id(node.get("categoryId"))
+        if not name or cat_id is None:
+            return None
+        children: List[Dict] = []
+        for child in node.get("childCategories") or []:
+            mapped = self._map_category_node(child)
+            if mapped:
+                children.append(mapped)
+        children.sort(key=lambda c: c["name"].lower())
+        out: Dict = {"id": cat_id, "name": name}
+        if children:
+            out["children"] = children
+        return out
+
     def get_categories(self) -> List[Dict]:
-        """Fetch SGW top-level browse categories with their correct scids values."""
+        """Fetch SGW category tree (parents + subcategories) for filter UI / scids."""
         try:
             res = self.shopgoodwill_session.get(
-                f"{Shopgoodwill.API_ROOT}/Category/GetAllCategoryPageList"
+                f"{Shopgoodwill.API_ROOT}/Category/GetAllCategoriesByPageType",
+                params={"PageType": 0},
             )
-            data = res.json().get("data", {})
-            categories = []
-            for section in data.get("categories", []):
-                for child in (section.get("childCategories") or []):
-                    name = (child.get("categoryName") or "").strip()
-                    mid  = child.get("mappedCatId")
-                    if name and mid:
-                        try:
-                            categories.append({"id": int(mid), "name": name})
-                        except (ValueError, TypeError):
-                            pass
+            data = res.json().get("data") or []
+            categories: List[Dict] = []
+            for node in data if isinstance(data, list) else []:
+                mapped = self._map_category_node(node)
+                if mapped:
+                    categories.append(mapped)
             if categories:
-                return sorted(categories, key=lambda c: c["name"])
+                return sorted(categories, key=lambda c: c["name"].lower())
         except Exception:
             pass
-        # Fallback: correct scids values discovered from GetAllCategoryPageList
+
+        # Fallback: flat top-level list (no subcategories)
         return [
             {"id": 1,   "name": "Antiques"},
             {"id": 15,  "name": "Art"},

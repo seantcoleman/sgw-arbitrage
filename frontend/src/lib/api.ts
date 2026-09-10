@@ -180,6 +180,20 @@ export interface Settings {
 export interface Category {
   id: number;
   name: string;
+  children?: Category[];
+}
+
+/** Flatten a nested category tree for id → name lookups. */
+export function flattenCategories(categories: Category[]): Category[] {
+  const out: Category[] = [];
+  const walk = (nodes: Category[]) => {
+    for (const c of nodes) {
+      out.push({ id: c.id, name: c.name });
+      if (c.children?.length) walk(c.children);
+    }
+  };
+  walk(categories);
+  return out;
 }
 
 export interface FavoriteItem {
