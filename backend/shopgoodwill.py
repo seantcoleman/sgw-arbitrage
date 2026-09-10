@@ -21,6 +21,17 @@ from requests.models import PreparedRequest, Response
 _SHIPPING_COST_PATTERN = re.compile(r"Shipping: \$(\d+\.\d+) \(.*\)<\/span>")
 _SGW_BUYERAPI_DOMAIN = "buyerapi.shopgoodwill.com"
 
+# Connect timeout, read timeout — never hang forever on SGW (critical for snipes)
+_DEFAULT_TIMEOUT = (5, 20)
+
+
+class TimeoutSession(requests.Session):
+    """requests.Session that always applies a default timeout."""
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
+        return super().request(*args, **kwargs)
+
 
 class IgnoreBuyerApiCookieJar(RequestsCookieJar):
     def set_cookie(self, cookie, *args, **kwargs):
@@ -44,7 +55,7 @@ class Shopgoodwill:
         res.raise_for_status()
 
     def __init__(self, auth_info: Optional[Dict] = None):
-        self.shopgoodwill_session = requests.Session()
+        self.shopgoodwill_session = TimeoutSession()
         self.shopgoodwill_session.cookies = IgnoreBuyerApiCookieJar()
         self.shopgoodwill_session.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:12.0) Gecko/20100101 Firefox/12.0"

@@ -39,8 +39,53 @@ _sniper_process: Optional[subprocess.Popen] = None
 _scan_lock = threading.Lock()
 _scan_running = False
 _scheduler = BackgroundScheduler()
-# Rolling sniper log buffer (most recent 500 lines)
+# Rolling sniper log buffer (most recent 500 lines) — also mirrored to disk
 _sniper_logs: collections.deque = collections.deque(maxlen=500)
+_SNIPER_LOG_PATH = os.path.join(os.path.dirname(__file__), "sniper_activity.log")
+_sniper_log_lock = threading.Lock()
+
+
+def _load_sniper_logs_from_disk() -> None:
+    """Seed the in-memory buffer from the on-disk ring so UI survives restarts."""
+    try:
+        if not os.path.isfile(_SNIPER_LOG_PATH):
+            return
+        with open(_SNIPER_LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()[-500:]
+        for raw in lines:
+            raw = raw.rstrip("\n")
+            if not raw:
+                continue
+            # Stored as "HH:MM:SS\\tmessage"
+            if "\t" in raw:
+                ts, line = raw.split("\t", 1)
+            else:
+                ts, line = "", raw
+            _sniper_logs.append({"ts": ts, "line": line})
+        logger.info(f"Loaded {len(_sniper_logs)} sniper log line(s) from disk")
+    except Exception as e:
+        logger.warning(f"Could not load sniper log file: {e}")
+
+
+def _append_sniper_log(ts: str, line: str) -> None:
+    entry = {"ts": ts, "line": line}
+    _sniper_logs.append(entry)
+    try:
+        with _sniper_log_lock:
+            with open(_SNIPER_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(f"{ts}\t{line}\n")
+            # Trim file if it grows too large (~2000 lines)
+            try:
+                size = os.path.getsize(_SNIPER_LOG_PATH)
+            except OSError:
+                size = 0
+            if size > 512_000:
+                with open(_SNIPER_LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                    keep = f.readlines()[-500:]
+                with open(_SNIPER_LOG_PATH, "w", encoding="utf-8") as f:
+                    f.writelines(keep)
+    except Exception:
+        pass
 
 
 def _schedule_scan(interval_minutes: int) -> None:
@@ -61,6 +106,7 @@ def _schedule_scan(interval_minutes: int) -> None:
 async def lifespan(app: FastAPI):
     db.init_db()
     logger.info("Database initialized")
+    _load_sniper_logs_from_disk()
     n = db.backfill_watchlist_from_deals()
     if n:
         logger.info(f"Backfilled image/eBay fields on {n} watchlist row(s) from deals")
@@ -120,13 +166,12 @@ def _ensure_sniper_running() -> None:
 
 
 def _tail_sniper_output(proc: subprocess.Popen) -> None:
-    """Read sniper stdout line-by-line into the in-memory log buffer."""
+    """Read sniper stdout line-by-line into the in-memory + on-disk log buffer."""
     try:
         for raw in proc.stdout:  # type: ignore[union-attr]
             line = raw.rstrip()
             ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-            entry = {"ts": ts, "line": line}
-            _sniper_logs.append(entry)
+            _append_sniper_log(ts, line)
             # Mirror to uvicorn console so nothing is lost
             logger.info(f"[sniper] {line}")
     except (ValueError, OSError):

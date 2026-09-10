@@ -18,6 +18,7 @@ import datetime
 import json
 import logging
 import logging.config
+import os
 import queue
 from json.decoder import JSONDecodeError
 from logging.handlers import QueueHandler, QueueListener
@@ -25,7 +26,7 @@ from typing import Any, Callable, Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
 
 import parsedatetime
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, RequestException, Timeout
 from requests.models import Response
 
 import db
@@ -124,8 +125,7 @@ class BidSniper:
                     "last_updated": datetime.datetime.now(datetime.timezone.utc),
                 }
             except BaseException as be:
-                if self.outage_start_time is not None:
-                    self.logger.error(f"{type(be).__name__} updating favorites cache - {be}")
+                self.logger.error(f"{type(be).__name__} updating favorites cache - {be}")
 
     def _favorite_max_bid(self, favorite_info: Dict) -> Optional[float]:
         """Return the favorite's max_bid if a real snipe is configured, else None."""
@@ -183,13 +183,21 @@ class BidSniper:
 
     async def schedule_task(
         self,
-        coroutine,
+        coroutine_factory: Callable[[], Any],
         execution_datetime: datetime.datetime,
         callbacks: Optional[Iterable[Callable[[asyncio.Task], Any]]] = None,
     ) -> None:
+        """Sleep until execution_datetime, then run coroutine_factory().
+
+        Pass a zero-arg factory (e.g. lambda: self.place_bid(id)) so the
+        coroutine is created at fire time, not at schedule time.
+        """
         now = datetime.datetime.now(datetime.timezone.utc)
-        await asyncio.sleep((execution_datetime - now).total_seconds())
-        task = self.event_loop.create_task(coroutine)
+        delay = (execution_datetime - now).total_seconds()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        coro = coroutine_factory() if callable(coroutine_factory) else coroutine_factory
+        task = self.event_loop.create_task(coro)
         if callbacks:
             for callback in callbacks:
                 task.add_done_callback(callback)
@@ -201,20 +209,35 @@ class BidSniper:
         self.logger.info(f"Upcoming snipe for '{title}' in {when_label}")
 
     async def place_bid(self, item_id: int) -> None:
-        # Hard idempotency: at most one bid attempt per item per process lifetime
+        # Hard idempotency: at most one in-flight / completed bid attempt per item
         if item_id in self.bids_placed:
             self.logger.info(f"Skipping duplicate bid attempt for item {item_id}")
             return None
         self.bids_placed.add(item_id)
 
-        self.update_favorites_cache(5)
+        self.logger.warning(f"Snipe firing for item {item_id} — refreshing favorites…")
+        try:
+            self.update_favorites_cache(0)  # always fresh at bid time
+        except Exception as e:
+            self.logger.error(f"Favorites refresh failed before bid on {item_id}: {e}")
+
         favorite = self.favorites_cache["favorites"].get(item_id, None)
         if not favorite:
+            self.logger.error(
+                f"Snipe aborted for item {item_id}: not in SGW favorites at bid time"
+            )
             return None
 
         max_bid = self._favorite_max_bid(favorite)
         if max_bid is None:
+            self.logger.error(
+                f"Snipe aborted for '{favorite.get('title', item_id)}': "
+                f"no max_bid in favorite note"
+            )
             return None
+
+        title = favorite.get("title", str(item_id))
+        self.logger.warning(f"{self.dry_run_msg}Placing bid on '{title}' for {max_bid}")
 
         if self.config.get("friend_list", list()):
             try:
@@ -223,18 +246,22 @@ class BidSniper:
                 if bid_summary:
                     bidder_name = bid_summary[0]["bidderName"]
                     if bidder_name in self.config.get("friend_list", list()):
-                        self.logger.info(f"Canceling bid due to friendship for item '{favorite['title']}'")
+                        self.logger.info(f"Canceling bid due to friendship for item '{title}'")
                         return None
             except BaseException as be:
-                self.logger.error(f"{type(be).__name__} getting info for item ID '{item_id}' - continuing")
+                self.logger.error(
+                    f"{type(be).__name__} getting info for item ID '{item_id}' - continuing"
+                )
 
         if not self.dry_run:
             try:
                 self.bid_shopgoodwill_client.place_bid(
                     item_id, max_bid, favorite["sellerId"], quantity=1
                 )
-            except HTTPError as he:
-                self.logger.error(f"HTTPError placing bid on '{favorite['title']}' - {he}")
+            except (Timeout, RequestException, HTTPError) as he:
+                # Allow a single retry if auction still has time (don't leave a false "attempted")
+                self.bids_placed.discard(item_id)
+                self.logger.error(f"Bid failed on '{title}' - {type(he).__name__}: {he}")
                 return None
             try:
                 db.update_watchlist_status(item_id, "bid_placed")
@@ -249,7 +276,7 @@ class BidSniper:
                     check_dt = end_dt + datetime.timedelta(minutes=2)
                     self.event_loop.create_task(
                         self.schedule_task(
-                            self.check_win(item_id),
+                            lambda i=item_id: self.check_win(i),
                             check_dt,
                             [self.task_err_handler],
                         )
@@ -257,7 +284,7 @@ class BidSniper:
                 except Exception as e:
                     self.logger.error(f"Could not schedule win check for {item_id}: {e}")
 
-        self.logger.warning(f"{self.dry_run_msg}Placing bid on '{favorite['title']}' for {max_bid}")
+            self.logger.warning(f"Bid submitted for '{title}' at max ${max_bid}")
         return None
 
     async def check_win(self, item_id: int) -> None:
@@ -372,11 +399,11 @@ class BidSniper:
                     if execution_datetime < now:
                         continue
                     # Alerts are reminders only — never place_bid
+                    alert_id = item_id
+                    alert_label = str(alert_time_delta)
                     self.event_loop.create_task(
                         self.schedule_task(
-                            self.alert_upcoming(
-                                item_id, str(alert_time_delta)
-                            ),
+                            lambda i=alert_id, lab=alert_label: self.alert_upcoming(i, lab),
                             execution_datetime,
                             [self.task_err_handler],
                         )
@@ -391,15 +418,17 @@ class BidSniper:
                         f"Snipe window missed for '{favorite_info['title']}' "
                         f"({late_by}s late) — bidding immediately ({secs_left}s left)"
                     )
+                    bid_id = item_id
                     self.event_loop.create_task(
-                        self.place_bid(item_id)
+                        self.place_bid(bid_id)
                     ).add_done_callback(self.task_err_handler)
                     self.scheduled_tasks.add(item_id)
                     continue
 
+                bid_id = item_id
                 self.event_loop.create_task(
                     self.schedule_task(
-                        self.place_bid(item_id),
+                        lambda i=bid_id: self.place_bid(i),
                         bid_execution_datetime,
                         [self.task_err_handler],
                     )
