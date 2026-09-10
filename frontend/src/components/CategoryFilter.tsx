@@ -12,6 +12,35 @@ interface CategoryFilterProps {
   compact?: boolean;
 }
 
+/**
+ * Toggle a category id with parent/child mutual exclusion within a branch:
+ * selecting a parent clears its children; selecting a child clears its parent.
+ * Sibling selections are unchanged.
+ */
+export function nextCategorySelection(
+  categories: Category[],
+  selectedIds: number[],
+  toggledId: number,
+): number[] {
+  if (selectedIds.includes(toggledId)) {
+    return selectedIds.filter(id => id !== toggledId);
+  }
+
+  const parent = categories.find(c => c.id === toggledId);
+  if (parent?.children?.length) {
+    const childIds = new Set(parent.children.map(c => c.id));
+    return [...selectedIds.filter(id => !childIds.has(id)), toggledId];
+  }
+
+  for (const p of categories) {
+    if ((p.children ?? []).some(c => c.id === toggledId)) {
+      return [...selectedIds.filter(id => id !== p.id), toggledId];
+    }
+  }
+
+  return [...selectedIds, toggledId];
+}
+
 function chipClass(selected: boolean, compact: boolean): string {
   return `font-medium transition-all border ${
     compact ? "text-[11px] px-2 py-0.5 rounded-md" : "text-xs px-3 py-1.5 rounded-xl"

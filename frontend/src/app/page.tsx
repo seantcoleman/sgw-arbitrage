@@ -14,7 +14,7 @@ import {
   triggerScan,
   updateSetting,
 } from "@/lib/api";
-import { CategoryFilter } from "@/components/CategoryFilter";
+import { CategoryFilter, nextCategorySelection } from "@/components/CategoryFilter";
 import { DealCard } from "@/components/DealCard";
 import type { EbayDisplayMode } from "@/components/listingCard";
 
@@ -182,9 +182,7 @@ export default function DealsPage() {
   };
 
   const toggleCategory = async (id: number) => {
-    const updated = selectedCatIds.includes(id)
-      ? selectedCatIds.filter(c => c !== id)
-      : [...selectedCatIds, id];
+    const updated = nextCategorySelection(categories, selectedCatIds, id);
     setSelectedCatIds(updated);
     try {
       await updateSetting("scan_category_ids", updated);
