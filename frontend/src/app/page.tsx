@@ -18,6 +18,26 @@ import { CategoryFilter } from "@/components/CategoryFilter";
 import { DealCard } from "@/components/DealCard";
 import type { EbayDisplayMode } from "@/components/listingCard";
 
+/** SQLite datetime('now') is UTC without a timezone — treat naive strings as UTC. */
+function parseScanFinishedAt(ts: string): Date {
+  const s = ts.trim();
+  if (s.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)) {
+    return new Date(s.includes("T") ? s : s.replace(" ", "T"));
+  }
+  return new Date(s.replace(" ", "T") + "Z");
+}
+
+function formatScanAgo(ts: string): string {
+  const diffMs = Date.now() - parseScanFinishedAt(ts).getTime();
+  if (!Number.isFinite(diffMs)) return "unknown";
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 function ScanNumField({
   label,
   value,
@@ -302,7 +322,7 @@ export default function DealsPage() {
         <p className="text-zinc-500 text-sm">
           ShopGoodwill listings with eBay arbitrage potential
           {lastScanTime && (
-            <span className="text-zinc-600"> · last scan {new Date(lastScanTime).toLocaleTimeString()}</span>
+            <span className="text-zinc-600"> · last scan {formatScanAgo(lastScanTime)}</span>
           )}
           {lastScanItems !== null && (
             <span className="text-zinc-600"> · {lastScanItems} items checked</span>

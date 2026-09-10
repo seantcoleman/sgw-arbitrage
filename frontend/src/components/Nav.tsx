@@ -3,23 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import toast from "react-hot-toast";
-import { getScanStatus, triggerScan } from "@/lib/api";
+import { getScanStatus } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
 
 export function Nav() {
   const path = usePathname();
   const { theme, toggleTheme } = useTheme();
   const [scanRunning, setScanRunning] = useState(false);
-  const [lastScan, setLastScan] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const poll = async () => {
-      const scan = await getScanStatus().catch(() => ({ running: false, recent_scans: [] }));
+      const scan = await getScanStatus().catch(() => ({ running: false }));
       setScanRunning(scan.running);
-      const scans = (scan as { recent_scans?: { finished_at?: string }[] }).recent_scans;
-      if (scans?.length) setLastScan(scans[0].finished_at ?? null);
     };
     poll();
     const interval = setInterval(poll, 8000);
@@ -29,24 +25,6 @@ export function Nav() {
   useEffect(() => {
     setMenuOpen(false);
   }, [path]);
-
-  const handleScan = async () => {
-    try {
-      await triggerScan();
-      setScanRunning(true);
-      toast("Scanning ShopGoodwill…", { icon: "🔍" });
-    } catch {
-      toast.error("Failed to start scan");
-    }
-  };
-
-  function minutesAgo(ts: string | null) {
-    if (!ts) return null;
-    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-    if (diff < 1) return "just now";
-    if (diff < 60) return `${diff}m ago`;
-    return `${Math.floor(diff / 60)}h ago`;
-  }
 
   const links = [
     { href: "/", label: "Deals" },
@@ -88,11 +66,6 @@ export function Nav() {
 
         {/* Right */}
         <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {lastScan && (
-            <span className="hidden lg:block text-xs text-zinc-600">
-              scanned {minutesAgo(lastScan)}
-            </span>
-          )}
           {scanRunning && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -115,20 +88,6 @@ export function Nav() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
               </svg>
             )}
-          </button>
-          <button
-            onClick={handleScan}
-            disabled={scanRunning}
-            className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-white text-xs px-2.5 sm:px-3.5 py-2 rounded-lg font-semibold transition-all"
-          >
-            {scanRunning ? (
-              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            )}
-            <span className="hidden sm:inline">{scanRunning ? "Scanning" : "Scan"}</span>
           </button>
           <button
             type="button"
