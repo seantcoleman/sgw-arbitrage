@@ -51,6 +51,82 @@ function chipClass(selected: boolean, compact: boolean): string {
   }`;
 }
 
+function CategoryBranch({
+  cat,
+  selectedSet,
+  expanded,
+  onToggle,
+  onToggleExpand,
+  compact,
+}: {
+  cat: Category;
+  selectedSet: Set<number>;
+  expanded: Set<number>;
+  onToggle: (id: number) => void;
+  onToggleExpand: (id: number) => void;
+  compact: boolean;
+}) {
+  const kids = cat.children ?? [];
+  const hasKids = kids.length > 0;
+  const isOpen = expanded.has(cat.id);
+  const selected = selectedSet.has(cat.id);
+  const childSelectedCount = kids.filter(c => selectedSet.has(c.id)).length;
+
+  return (
+    <div className="break-inside-avoid mb-1.5">
+      <div className="flex items-center gap-1 min-w-0">
+        {hasKids ? (
+          <button
+            type="button"
+            onClick={() => onToggleExpand(cat.id)}
+            aria-label={isOpen ? `Collapse ${cat.name}` : `Expand ${cat.name}`}
+            aria-expanded={isOpen}
+            className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors flex-shrink-0"
+          >
+            <svg
+              className={`w-3 h-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : (
+          <span className="w-5 flex-shrink-0" />
+        )}
+        <button
+          type="button"
+          onClick={() => onToggle(cat.id)}
+          className={`${chipClass(selected, compact)} min-w-0 truncate max-w-full`}
+          title={cat.name}
+        >
+          {cat.name}
+          {hasKids && childSelectedCount > 0 && !selected && (
+            <span className="ml-1 text-[10px] opacity-70">{childSelectedCount}</span>
+          )}
+        </button>
+      </div>
+
+      {hasKids && isOpen && (
+        <div className={`flex flex-wrap ml-5 mt-1 ${compact ? "gap-1" : "gap-1.5"}`}>
+          {kids.map(child => (
+            <button
+              key={child.id}
+              type="button"
+              onClick={() => onToggle(child.id)}
+              className={chipClass(selectedSet.has(child.id), compact)}
+              title={child.name}
+            >
+              {child.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CategoryFilter({
   categories,
   selectedIds,
@@ -100,66 +176,20 @@ export function CategoryFilter({
 
   return (
     <div>
-      <div className={`space-y-1.5 ${compact ? "" : "mb-3"}`}>
-        {categories.map(cat => {
-          const kids = cat.children ?? [];
-          const hasKids = kids.length > 0;
-          const isOpen = expanded.has(cat.id);
-          const selected = selectedSet.has(cat.id);
-          const childSelectedCount = kids.filter(c => selectedSet.has(c.id)).length;
-
-          return (
-            <div key={cat.id}>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {hasKids ? (
-                  <button
-                    type="button"
-                    onClick={() => toggleExpand(cat.id)}
-                    aria-label={isOpen ? `Collapse ${cat.name}` : `Expand ${cat.name}`}
-                    aria-expanded={isOpen}
-                    className="w-6 h-6 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors flex-shrink-0"
-                  >
-                    <svg
-                      className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                ) : (
-                  <span className="w-6 flex-shrink-0" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => onToggle(cat.id)}
-                  className={chipClass(selected, compact)}
-                >
-                  {cat.name}
-                  {hasKids && childSelectedCount > 0 && !selected && (
-                    <span className="ml-1.5 text-[10px] opacity-70">{childSelectedCount}</span>
-                  )}
-                </button>
-              </div>
-
-              {hasKids && isOpen && (
-                <div className={`flex flex-wrap ml-7 mt-1.5 ${compact ? "gap-1" : "gap-1.5"}`}>
-                  {kids.map(child => (
-                    <button
-                      key={child.id}
-                      type="button"
-                      onClick={() => onToggle(child.id)}
-                      className={chipClass(selectedSet.has(child.id), compact)}
-                    >
-                      {child.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div
+        className={`columns-2 gap-x-4 ${compact ? "max-h-56 overflow-y-auto pr-1" : "mb-3"}`}
+      >
+        {categories.map(cat => (
+          <CategoryBranch
+            key={cat.id}
+            cat={cat}
+            selectedSet={selectedSet}
+            expanded={expanded}
+            onToggle={onToggle}
+            onToggleExpand={toggleExpand}
+            compact={compact}
+          />
+        ))}
       </div>
       {!compact && selectedIds.length > 0 && (
         <button
