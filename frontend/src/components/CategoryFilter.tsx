@@ -73,7 +73,7 @@ function CategoryBranch({
   const childSelectedCount = kids.filter(c => selectedSet.has(c.id)).length;
 
   return (
-    <div className="break-inside-avoid mb-1.5">
+    <div>
       <div className="flex items-center gap-1 min-w-0">
         {hasKids ? (
           <button
@@ -174,21 +174,27 @@ export function CategoryFilter({
     });
   };
 
+  // Explicit split — CSS column-count was flowing chips into more than 2 visual columns.
+  const mid = Math.ceil(categories.length / 2);
+  const columns = [categories.slice(0, mid), categories.slice(mid)];
+
   return (
     <div>
-      <div
-        className={`columns-2 gap-x-4 ${compact ? "max-h-56 overflow-y-auto pr-1" : "mb-3"}`}
-      >
-        {categories.map(cat => (
-          <CategoryBranch
-            key={cat.id}
-            cat={cat}
-            selectedSet={selectedSet}
-            expanded={expanded}
-            onToggle={onToggle}
-            onToggleExpand={toggleExpand}
-            compact={compact}
-          />
+      <div className={`grid grid-cols-2 gap-x-4 gap-y-0 ${compact ? "" : "mb-3"}`}>
+        {columns.map((col, colIdx) => (
+          <div key={colIdx} className="flex flex-col gap-1.5 min-w-0">
+            {col.map(cat => (
+              <CategoryBranch
+                key={cat.id}
+                cat={cat}
+                selectedSet={selectedSet}
+                expanded={expanded}
+                onToggle={onToggle}
+                onToggleExpand={toggleExpand}
+                compact={compact}
+              />
+            ))}
+          </div>
         ))}
       </div>
       {!compact && selectedIds.length > 0 && (
