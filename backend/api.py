@@ -659,10 +659,25 @@ def _check_bid_results() -> None:
 
             if _bidder_is_us(winner, username):
                 db.update_watchlist_result(item_id, "won", final_price, final_shipping)
-                logger.warning(f"WIN confirmed: '{item.get('title', item_id)}' — ${final_price:.2f}")
+                our_max = item.get("max_bid")
+                logger.warning(
+                    f"WIN confirmed: '{item.get('title', item_id)}' — ${final_price:.2f}"
+                    + (f" (our max ${float(our_max):.2f})" if our_max else "")
+                )
             elif ended is True and (info.get("isClosed") or winner):
                 db.update_watchlist_result(item_id, "lost", final_price, final_shipping)
-                logger.info(f"Lost: '{item.get('title', item_id)}' — winner: {winner or 'unknown'}")
+                our_max = item.get("max_bid")
+                max_bit = f", our max ${float(our_max):.2f}" if our_max else ""
+                note = ""
+                try:
+                    if our_max is not None and final_price is not None and float(final_price) > float(our_max) + 1e-9:
+                        note = " — final above our max (outbid or bid never accepted)"
+                except (TypeError, ValueError):
+                    pass
+                logger.info(
+                    f"Lost: '{item.get('title', item_id)}' — final "
+                    f"${final_price:.2f}{max_bit}, winner: {winner or 'unknown'}{note}"
+                )
         except Exception as e:
             logger.error(f"Win-check failed for item {item_id}: {e}")
 

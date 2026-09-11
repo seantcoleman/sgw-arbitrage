@@ -5,10 +5,11 @@ Original author: Scott Conway — https://github.com/scottmconway/shopgoodwill-s
 
 import base64
 import datetime
+import json
 import re
 import urllib.parse
 from copy import deepcopy  # kept for any external callers
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import requests
@@ -178,16 +179,75 @@ class Shopgoodwill:
         )
 
     @requires_auth
-    def place_bid(self, item_id: int, bid_amount: float, seller_id: int, quantity: int = 1):
+    def place_bid(self, item_id: int, bid_amount: float, seller_id: int, quantity: int = 1) -> Dict:
+        """Place a bid. Returns SGW's JSON body (success/failure is in status/message)."""
         bid_json = {
             "itemId": item_id,
             "bidAmount": "%.2f" % bid_amount,
             "sellerId": seller_id,
             "quantity": quantity,
         }
-        self.shopgoodwill_session.post(
+        bid_res = self.shopgoodwill_session.post(
             f"{Shopgoodwill.API_ROOT}/ItemBid/PlaceBid", json=bid_json
         ).json()
+        # Possible bodies (from SGW / scottmconway notes):
+        # - High bidder: message starts with "Bid Received! You are currently the high bidder..."
+        # - Immediately outbid: "You have already been outbid..."
+        # - Closed / too low: status=false + message
+        return bid_res if isinstance(bid_res, dict) else {"raw": bid_res}
+
+    @staticmethod
+    def interpret_place_bid_response(res: Dict) -> Tuple[str, str]:
+        """
+        Classify a PlaceBid JSON body.
+        Returns (outcome, detail) where outcome is:
+          accepted | outbid | rejected | unknown
+        """
+        if not isinstance(res, dict):
+            return "unknown", str(res)
+        msg = str(res.get("message") or res.get("Message") or "").strip()
+        status = res.get("status", res.get("Status"))
+        msg_l = msg.lower()
+
+        if status is False or status == "false":
+            return "rejected", msg or "SGW returned status=false"
+
+        if "bid received" in msg_l or "high bidder" in msg_l:
+            return "accepted", msg or "High bidder"
+
+        if "already been outbid" in msg_l or (
+            "outbid" in msg_l and "bid received" not in msg_l
+        ):
+            return "outbid", msg or "Immediately outbid"
+
+        if any(
+            s in msg_l
+            for s in (
+                "too low",
+                "minimum bid",
+                "greater than",
+                "at least",
+                "higher than",
+                "invalid bid",
+                "must be",
+                "auction has closed",
+                "auction ended",
+            )
+        ):
+            return "rejected", msg or "Bid rejected"
+
+        # result codes sometimes used (e.g. -3 closed)
+        result = res.get("result")
+        if result is not None and result not in (0, "0", True, "true"):
+            try:
+                if int(result) < 0:
+                    return "rejected", msg or f"result={result}"
+            except (TypeError, ValueError):
+                pass
+
+        if msg:
+            return "unknown", msg
+        return "unknown", json.dumps(res)[:300]
 
     @staticmethod
     def _parse_mapped_cat_id(raw) -> Optional[int]:

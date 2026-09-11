@@ -609,9 +609,9 @@ export default function WatchlistPage() {
                 <p className="text-zinc-600 text-center py-8">No log entries yet — sniper will write here when it checks favorites or places a bid.</p>
               ) : (
                 logs.map((entry, i) => {
-                  const isError = /error|exception|failed/i.test(entry.line);
-                  const isBid = /placing bid|bid placed/i.test(entry.line);
-                  const isWarn = /warning/i.test(entry.line);
+                  const isError = /error|exception|failed|rejected|skipped|aborted/i.test(entry.line);
+                  const isBid = /bid accepted|placing bid|bid placed|high bidder/i.test(entry.line);
+                  const isWarn = /warning|immediately outbid|unclear|already above/i.test(entry.line);
                   const color = isError ? "text-red-400" : isBid ? "text-green-400" : isWarn ? "text-amber-400" : "text-zinc-500";
                   return (
                     <div key={i} className="flex gap-2">

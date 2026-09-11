@@ -237,7 +237,47 @@ class BidSniper:
             return None
 
         title = favorite.get("title", str(item_id))
-        self.logger.warning(f"{self.dry_run_msg}Placing bid on '{title}' for {max_bid}")
+        seller_id = favorite.get("sellerId")
+
+        # Live price / minimum bid so we don't claim success on a too-low max
+        current_price = None
+        minimum_bid = None
+        try:
+            bid_info = self.shopgoodwill_client.get_item_bid_info(item_id)
+            current_price = float(bid_info.get("currentPrice") or 0)
+            minimum_bid = float(bid_info.get("minimumBid") or current_price or 0)
+            if seller_id is None:
+                seller_id = bid_info.get("sellerId")
+        except Exception as e:
+            self.logger.warning(
+                f"Could not fetch live bid info for '{title}' before snipe: {e}"
+            )
+            try:
+                current_price = float(
+                    favorite.get("currentPrice") or favorite.get("currentBid") or 0
+                )
+            except (TypeError, ValueError):
+                current_price = None
+
+        if current_price is not None or minimum_bid is not None:
+            cur_s = f"${current_price:.2f}" if current_price is not None else "?"
+            min_s = f"${minimum_bid:.2f}" if minimum_bid is not None else "?"
+            self.logger.warning(
+                f"Snipe check '{title}': current {cur_s}, min bid {min_s}, "
+                f"our max ${max_bid:.2f}"
+            )
+
+        floor = minimum_bid if minimum_bid is not None else current_price
+        if floor is not None and max_bid + 1e-9 < floor:
+            self.logger.error(
+                f"Bid skipped for '{title}' — already above max "
+                f"(need ≥ ${floor:.2f}, our max ${max_bid:.2f})"
+            )
+            try:
+                db.update_watchlist_status(item_id, "error")
+            except Exception:
+                pass
+            return None
 
         if self.config.get("friend_list", list()):
             try:
@@ -246,45 +286,84 @@ class BidSniper:
                 if bid_summary:
                     bidder_name = bid_summary[0]["bidderName"]
                     if bidder_name in self.config.get("friend_list", list()):
-                        self.logger.info(f"Canceling bid due to friendship for item '{title}'")
+                        self.logger.info(
+                            f"Canceling bid due to friendship for item '{title}'"
+                        )
                         return None
             except BaseException as be:
                 self.logger.error(
                     f"{type(be).__name__} getting info for item ID '{item_id}' - continuing"
                 )
 
-        if not self.dry_run:
+        self.logger.warning(
+            f"{self.dry_run_msg}Placing bid on '{title}' for ${max_bid:.2f}"
+        )
+
+        if self.dry_run:
+            return None
+
+        if seller_id is None:
+            self.logger.error(f"Bid aborted for '{title}': missing sellerId")
+            self.bids_placed.discard(item_id)
+            return None
+
+        try:
+            bid_res = self.bid_shopgoodwill_client.place_bid(
+                item_id, max_bid, seller_id, quantity=1
+            )
+        except (Timeout, RequestException, HTTPError) as he:
+            self.bids_placed.discard(item_id)
+            self.logger.error(f"Bid failed on '{title}' - {type(he).__name__}: {he}")
+            return None
+
+        outcome, detail = shopgoodwill.Shopgoodwill.interpret_place_bid_response(bid_res)
+        short = (detail[:160] + "…") if len(detail) > 160 else detail
+
+        if outcome == "accepted":
+            self.logger.warning(
+                f"Bid accepted for '{title}' at max ${max_bid:.2f} — currently high bidder"
+            )
+        elif outcome == "outbid":
+            self.logger.warning(
+                f"Bid placed for '{title}' at max ${max_bid:.2f} but immediately outbid"
+                + (f" — {short}" if short else "")
+            )
+        elif outcome == "rejected":
+            self.logger.error(
+                f"Bid rejected for '{title}' at max ${max_bid:.2f}"
+                + (f" — {short}" if short else "")
+            )
             try:
-                self.bid_shopgoodwill_client.place_bid(
-                    item_id, max_bid, favorite["sellerId"], quantity=1
-                )
-            except (Timeout, RequestException, HTTPError) as he:
-                # Allow a single retry if auction still has time (don't leave a false "attempted")
-                self.bids_placed.discard(item_id)
-                self.logger.error(f"Bid failed on '{title}' - {type(he).__name__}: {he}")
-                return None
-            try:
-                db.update_watchlist_status(item_id, "bid_placed")
+                db.update_watchlist_status(item_id, "error")
             except Exception as e:
                 self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
+            return None
+        else:
+            self.logger.warning(
+                f"Bid response unclear for '{title}' at max ${max_bid:.2f}"
+                + (f" — {short}" if short else "")
+            )
 
-            # Schedule a win/loss check 2 minutes after auction end
-            end_time_str = favorite.get("endTime", "")
-            if end_time_str:
-                try:
-                    end_dt = self._parse_end_time(end_time_str)
-                    check_dt = end_dt + datetime.timedelta(minutes=2)
-                    self.event_loop.create_task(
-                        self.schedule_task(
-                            lambda i=item_id: self.check_win(i),
-                            check_dt,
-                            [self.task_err_handler],
-                        )
-                    ).add_done_callback(self.task_err_handler)
-                except Exception as e:
-                    self.logger.error(f"Could not schedule win check for {item_id}: {e}")
+        try:
+            db.update_watchlist_status(item_id, "bid_placed")
+        except Exception as e:
+            self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
-            self.logger.warning(f"Bid submitted for '{title}' at max ${max_bid}")
+        end_time_str = favorite.get("endTime", "")
+        if end_time_str:
+            try:
+                end_dt = self._parse_end_time(end_time_str)
+                check_dt = end_dt + datetime.timedelta(minutes=2)
+                self.event_loop.create_task(
+                    self.schedule_task(
+                        lambda i=item_id: self.check_win(i),
+                        check_dt,
+                        [self.task_err_handler],
+                    )
+                ).add_done_callback(self.task_err_handler)
+            except Exception as e:
+                self.logger.error(f"Could not schedule win check for {item_id}: {e}")
+
         return None
 
     async def check_win(self, item_id: int) -> None:
@@ -297,7 +376,15 @@ class BidSniper:
             ).lower()
             info = self.shopgoodwill_client.get_item_info(item_id)
 
-            # Final hammer price
+            our_max = None
+            try:
+                for w in db.get_watchlist():
+                    if int(w["item_id"]) == int(item_id):
+                        our_max = float(w.get("max_bid") or 0) or None
+                        break
+            except Exception:
+                our_max = None
+
             final_price = None
             final_shipping = None
             try:
@@ -311,7 +398,9 @@ class BidSniper:
 
             won = False
             try:
-                open_ids = {int(o["itemId"]) for o in self.shopgoodwill_client.get_open_orders()}
+                open_ids = {
+                    int(o["itemId"]) for o in self.shopgoodwill_client.get_open_orders()
+                }
                 if item_id in open_ids:
                     won = True
             except Exception as e:
@@ -322,23 +411,46 @@ class BidSniper:
                 bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
                 winner = bid_summary[0]["bidderName"] if bid_summary else None
                 w = (winner or "").strip().lower()
-                if w and username and (w == username or (
-                    "*" in w and len(w) == len(username) and w[0] == username[0] and w[-1] == username[-1]
-                )):
+                if w and username and (
+                    w == username
+                    or (
+                        "*" in w
+                        and len(w) == len(username)
+                        and w[0] == username[0]
+                        and w[-1] == username[-1]
+                    )
+                ):
                     won = True
 
             status = "won" if won else "lost"
             db.update_watchlist_result(item_id, status, final_price, final_shipping)
 
+            title = info.get("title", item_id)
             if won:
                 self.logger.warning(
-                    f"WON '{info.get('title', item_id)}' — "
+                    f"WON '{title}' — "
                     f"final ${final_price:.2f} + ${final_shipping:.2f} shipping"
+                    + (f" (our max ${our_max:.2f})" if our_max else "")
                 )
             else:
+                max_bit = f", our max ${our_max:.2f}" if our_max else ""
+                final_bit = f"${final_price:.2f}" if final_price is not None else "?"
+                note = ""
+                if (
+                    our_max is not None
+                    and final_price is not None
+                    and final_price > our_max + 1e-9
+                ):
+                    note = " — final above our max (outbid or bid never accepted)"
+                elif (
+                    our_max is not None
+                    and final_price is not None
+                    and final_price <= our_max + 1e-9
+                ):
+                    note = " — final ≤ our max (check if bid was accepted)"
                 self.logger.info(
-                    f"Lost '{info.get('title', item_id)}' — "
-                    f"winner: {winner or 'unknown'}"
+                    f"Lost '{title}' — final {final_bit}{max_bit}, "
+                    f"winner: {winner or 'unknown'}{note}"
                 )
         except Exception as e:
             self.logger.error(f"Win check failed for item {item_id}: {e}")
