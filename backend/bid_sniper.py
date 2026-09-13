@@ -274,7 +274,7 @@ class BidSniper:
                 f"(need ≥ ${floor:.2f}, our max ${max_bid:.2f})"
             )
             try:
-                db.update_watchlist_status(item_id, "error")
+                db.update_watchlist_status(item_id, "skipped")
             except Exception:
                 pass
             return None
@@ -334,7 +334,7 @@ class BidSniper:
                 + (f" — {short}" if short else "")
             )
             try:
-                db.update_watchlist_status(item_id, "error")
+                db.update_watchlist_status(item_id, "rejected")
             except Exception as e:
                 self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
             return None

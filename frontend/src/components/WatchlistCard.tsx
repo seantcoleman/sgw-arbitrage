@@ -47,7 +47,9 @@ const STATUS_LABEL: Record<string, string> = {
   shipped: "Shipped",
   lost: "Lost",
   ended: "Ended",
-  error: "Error",
+  skipped: "Above max",
+  rejected: "Bid rejected",
+  error: "Above max", // legacy rows from older sniper builds
 };
 
 const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "green" | "sky" | "neutral" | "red"> = {
@@ -58,14 +60,16 @@ const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "green" | "sky"
   shipped: "sky",
   lost: "neutral",
   ended: "neutral",
-  error: "red",
+  skipped: "amber",
+  rejected: "red",
+  error: "amber",
 };
 
 /** Max bid can change until the auction ends and before the sniper places a bid. */
 export function canEditMaxBid(item: Pick<WatchlistItem, "end_time" | "sniper_status">): boolean {
   if (auctionHasEnded(item.end_time)) return false;
   const status = displaySniperStatus(item.sniper_status, item.end_time);
-  return status === "scheduled" || status === "error";
+  return status === "scheduled";
 }
 
 export function EditableMaxBid({

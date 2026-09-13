@@ -263,7 +263,9 @@ def get_watchlist():
     # and otherwise goes stale vs Favorites / SGW.
     active = [
         w for w in items
-        if (w.get("sniper_status") or "").lower() in ("scheduled", "bid_placed", "error")
+        if (w.get("sniper_status") or "").lower() in (
+            "scheduled", "bid_placed", "error", "skipped", "rejected"
+        )
         and _watchlist_item_ended(w) is not True
     ]
     if active:
@@ -630,11 +632,15 @@ def _check_bid_results() -> None:
     watchlist = db.get_watchlist()
     pending = [
         w for w in watchlist
-        if w.get("sniper_status") in ("scheduled", "bid_placed")
+        if w.get("sniper_status") in (
+            "scheduled", "bid_placed", "error", "skipped", "rejected"
+        )
         and _watchlist_item_ended(w) is not False
     ]
     if pending:
-        logger.info(f"Win-check sweep: {len(pending)} ended item(s) still scheduled/bid_placed")
+        logger.info(
+            f"Win-check sweep: {len(pending)} ended item(s) still unresolved"
+        )
     for item in pending:
         item_id = item["item_id"]
         try:

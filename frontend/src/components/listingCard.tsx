@@ -17,9 +17,16 @@ export function auctionHasEnded(endTime: string | null): boolean {
 
 export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost", "ended"] as const;
 
-/** Ended scheduled items are not lost — we may still have won and not synced yet. */
+/** Ended scheduled items are not lost — we may still have won and not synced yet.
+ *  Skipped/rejected/error after close are losses (we never won). */
 export function displaySniperStatus(status: string, endTime: string | null): string {
   if (status === "scheduled" && auctionHasEnded(endTime)) return "ended";
+  if (
+    (status === "skipped" || status === "rejected" || status === "error")
+    && auctionHasEnded(endTime)
+  ) {
+    return "lost";
+  }
   return status;
 }
 

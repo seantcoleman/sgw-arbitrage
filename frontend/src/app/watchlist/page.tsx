@@ -76,7 +76,9 @@ const STATUS_LABEL: Record<string, string> = {
   shipped:            "Shipped",
   lost:               "Lost",
   ended:              "Ended",
-  error:              "Error",
+  skipped:            "Above max",
+  rejected:           "Bid rejected",
+  error:              "Above max", // legacy
 };
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
   scheduled:        { bg: "bg-blue-950/40 light:bg-blue-50",       text: "text-blue-300 light:text-blue-700",       dot: "bg-blue-500 animate-pulse" },
@@ -86,7 +88,9 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
   shipped:          { bg: "bg-sky-950/40 light:bg-sky-50",         text: "text-sky-300 light:text-sky-800",         dot: "bg-sky-400" },
   lost:             { bg: "bg-zinc-800/40",                       text: "text-zinc-500",                           dot: "bg-zinc-600" },
   ended:            { bg: "bg-zinc-800/40",                       text: "text-zinc-400",                           dot: "bg-zinc-500" },
-  error:            { bg: "bg-red-950/40 light:bg-red-50",         text: "text-red-400 light:text-red-700",         dot: "bg-red-500" },
+  skipped:          { bg: "bg-amber-950/40 light:bg-amber-50",     text: "text-amber-300 light:text-amber-800",     dot: "bg-amber-500" },
+  rejected:         { bg: "bg-red-950/40 light:bg-red-50",         text: "text-red-400 light:text-red-700",         dot: "bg-red-500" },
+  error:            { bg: "bg-amber-950/40 light:bg-amber-50",     text: "text-amber-300 light:text-amber-800",     dot: "bg-amber-500" },
 };
 
 export default function WatchlistPage() {
