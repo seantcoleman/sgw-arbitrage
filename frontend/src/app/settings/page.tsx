@@ -117,7 +117,7 @@ export default function SettingsPage() {
           value={settings.snipe_seconds_before ?? 30}
           onChange={v => setSettings(prev => ({ ...prev, snipe_seconds_before: v }))}
           onSave={v => save("snipe_seconds_before", v)}
-          suffix="sec" min={10} step={5}
+          suffix="sec" min={5} step={5}
         />
         <NumField
           label="eBay lookback" description="Days of eBay listing history to use for pricing"
