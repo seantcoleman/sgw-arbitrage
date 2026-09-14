@@ -5,7 +5,7 @@ SQLite database layer using plain sqlite3 — no ORM dependency.
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -102,12 +102,14 @@ def init_db():
                 ('scan_category_ids', '[]'),
                 ('ebay_fee_pct', '13'),
                 ('ebay_resale_shipping', '7'),
-                ('ebay_display_mode', '"net"');
+                ('ebay_display_mode', '"net"'),
+                ('auctions_only', 'true');
         """)
         # Seed resale-cost settings on DBs created before these keys existed
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_fee_pct', '13')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_resale_shipping', '7')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_display_mode', '\"net\"')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auctions_only', 'true')")
         # Migrate existing DBs that predate final_price / final_shipping columns
         existing = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
         for col, typedef in [
@@ -394,6 +396,30 @@ def expire_past_deals() -> int:
               AND REPLACE(REPLACE(end_time, ' ', 'T'), '+00:00', 'Z') <= ?
             """,
             (now,),
+        )
+        return cur.rowcount
+
+
+def end_long_horizon_deals(max_days: int = 14) -> int:
+    """End active deals whose end_time is farther out than a normal SGW auction.
+
+    Pure Buy Now listings often carry 30–150+ day listing expiry dates. When
+    auctions_only is on, drop those so Deals stays sniper-relevant.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) + timedelta(days=max_days)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE deals
+            SET status = 'ended'
+            WHERE status = 'active'
+              AND (keyword IS NULL OR keyword != ?)
+              AND end_time IS NOT NULL
+              AND REPLACE(REPLACE(end_time, ' ', 'T'), '+00:00', 'Z') > ?
+            """,
+            (FAVORITE_KEYWORD, cutoff),
         )
         return cur.rowcount
 

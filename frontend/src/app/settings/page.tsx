@@ -119,6 +119,33 @@ export default function SettingsPage() {
           onSave={v => save("snipe_seconds_before", v)}
           suffix="sec" min={5} step={5}
         />
+        <div className="flex items-center justify-between py-4 border-b border-zinc-800/60">
+          <div>
+            <div className="text-sm font-medium text-zinc-200">Auctions only</div>
+            <div className="text-xs text-zinc-600 mt-0.5">
+              Hide Pure Buy Now / fixed-price listings — sniper only works on timed auctions
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.auctions_only !== false}
+            onClick={() => {
+              const next = settings.auctions_only === false;
+              setSettings(prev => ({ ...prev, auctions_only: next }));
+              save("auctions_only", next);
+            }}
+            className={`relative w-11 h-6 rounded-full transition-colors ${
+              settings.auctions_only !== false ? "bg-green-600" : "bg-zinc-700"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                settings.auctions_only !== false ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
         <NumField
           label="eBay lookback" description="Days of eBay listing history to use for pricing"
           value={settings.ebay_days_back ?? 90}

@@ -229,6 +229,11 @@ def list_deals(
         expired = db.expire_past_deals()
         if expired:
             logger.info(f"Expired {expired} past-due deal(s)")
+        settings = db.get_settings()
+        if bool(settings.get("auctions_only", True)):
+            dropped = db.end_long_horizon_deals(max_days=14)
+            if dropped:
+                logger.info(f"Ended {dropped} buy-now / long-horizon deal(s)")
     deals = db.get_deals(
         min_profit=0,
         min_margin=0,

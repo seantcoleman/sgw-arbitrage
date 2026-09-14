@@ -59,6 +59,7 @@ class Scanner:
         self.days_back = int(settings.get("ebay_days_back", 90))
         self.max_items = min(int(settings.get("scan_max_items", 200)), 200)  # hard cap
         self.ebay_fee_pct, self.ebay_resale_shipping = profit_calc.fee_settings(settings)
+        self.auctions_only = bool(settings.get("auctions_only", True))
         self.keywords = settings.get(
             "scan_keywords",
             ["sony headphones", "apple watch", "canon camera"],
@@ -117,6 +118,11 @@ class Scanner:
                 "Site-wide browse: skipping stale-mark so prior filtered deals remain"
             )
             db.expire_past_deals()
+
+        if self.auctions_only:
+            dropped = db.end_long_horizon_deals(max_days=14)
+            if dropped:
+                logger.info(f"Ended {dropped} buy-now / long-horizon deal(s)")
 
         db.log_scan_finish(
             scan_id,
@@ -289,6 +295,7 @@ class Scanner:
             min_bid=self.min_bid_floor,
             max_bid=self.max_bid_cap,
             min_photos=1,
+            auctions_only=self.auctions_only,
         )
         if not passes:
             logger.debug(f"Pre-filter rejected '{title}': {reason}")

@@ -175,6 +175,7 @@ export interface Settings {
   ebay_fee_pct: number;
   ebay_resale_shipping: number;
   ebay_display_mode: "net" | "gross";
+  auctions_only: boolean;
 }
 
 export interface Category {

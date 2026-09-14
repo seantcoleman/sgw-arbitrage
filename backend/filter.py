@@ -86,11 +86,35 @@ _DANGLING_TAIL = re.compile(
 )
 
 
+def is_buy_now_listing(item: dict) -> bool:
+    """True for SGW Pure Buy Now / fixed-price listings (not snipable auctions)."""
+    if item.get("isAuction") is False:
+        return True
+    listing_type = item.get("listingType")
+    try:
+        if listing_type is not None and int(listing_type) == 1:
+            return True
+    except (TypeError, ValueError):
+        pass
+    # Search payloads sometimes omit isAuction; buyNowPrice > 0 with type 1 is definitive
+    try:
+        buy_now = float(item.get("buyNowPrice") or 0)
+    except (TypeError, ValueError):
+        buy_now = 0.0
+    if buy_now > 0 and listing_type is not None:
+        try:
+            return int(listing_type) == 1
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
 def pre_filter(
     item: dict,
     min_bid: float = 3.0,
     max_bid: float = 300.0,
     min_photos: int = 2,
+    auctions_only: bool = True,
 ) -> Tuple[bool, str]:
     """
     Returns (passes: bool, reason: str).
@@ -98,6 +122,9 @@ def pre_filter(
     """
     title = item.get("title", "")
     current_bid = float(item.get("currentPrice", item.get("current_bid", 0)) or 0)
+
+    if auctions_only and is_buy_now_listing(item):
+        return False, "buy-now listing (not an auction)"
 
     photo_count = int(item.get("numOfPhotos", item.get("photo_count", 0)) or 0)
     if photo_count == 0:
