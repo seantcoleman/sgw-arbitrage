@@ -326,7 +326,11 @@ export default function WatchlistPage() {
                     </div>
                   ) : displayStatus === "lost" ? (
                     <div className="mt-1.5 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
-                      <span>Outbid — max was ${item.max_bid.toFixed(2)}</span>
+                      <span>
+                        {item.final_price != null
+                          ? `Outbid — won at $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
+                          : `Outbid — max was $${item.max_bid.toFixed(2)}`}
+                      </span>
                       {item.ebay_median != null && (
                         <>
                           <span className="text-zinc-700">·</span>

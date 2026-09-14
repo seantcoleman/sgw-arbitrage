@@ -386,7 +386,9 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
           </div>
         ) : status === "lost" ? (
           <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
-            Outbid — max was ${item.max_bid.toFixed(2)}
+            {item.final_price != null
+              ? `Outbid — won at $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
+              : `Outbid — max was $${item.max_bid.toFixed(2)}`}
           </div>
         ) : status === "ended" ? (
           <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
