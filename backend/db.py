@@ -357,6 +357,28 @@ def mark_deals_stale(active_item_ids: List[int]) -> None:
         """, [FAVORITE_KEYWORD, *active_item_ids])
 
 
+def reactivate_prematurely_ended_deals() -> int:
+    """Re-open deals marked ended while their auction is still live.
+
+    Used to heal rows wiped by site-wide browse stale-marking (a sample of
+    listings incorrectly treated as the full active inventory).
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE deals
+            SET status = 'active'
+            WHERE status = 'ended'
+              AND (keyword IS NULL OR keyword != ?)
+              AND end_time IS NOT NULL
+              AND REPLACE(REPLACE(end_time, ' ', 'T'), '+00:00', 'Z') > ?
+            """,
+            (FAVORITE_KEYWORD, now),
+        )
+        return cur.rowcount
+
+
 def expire_past_deals() -> int:
     """Mark active deals whose end_time is in the past as ended."""
     with get_conn() as conn:

@@ -114,6 +114,13 @@ async def lifespan(app: FastAPI):
     if synced:
         logger.info(f"Synced ebay_search to full title on {synced} row(s)")
     settings = db.get_settings()
+    if not settings.get("healed_browse_stale_v1"):
+        restored = db.reactivate_prematurely_ended_deals()
+        db.update_setting("healed_browse_stale_v1", True)
+        if restored:
+            logger.info(
+                f"Restored {restored} still-live deal(s) previously wiped by browse stale-mark"
+            )
     interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
     _scheduler.add_job(

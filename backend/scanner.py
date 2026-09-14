@@ -106,7 +106,18 @@ class Scanner:
                 logger.error(f"Error scanning {label}: {e}")
                 errors.append(f"{label}: {e}")
 
-        db.mark_deals_stale(active_item_ids)
+        # Site-wide browse is only a sample of SGW (~200 listings), not a full
+        # inventory refresh. Stale-marking against that sample wipes better deals
+        # found by earlier keyword/category scans. Only mark stale when the scan
+        # has an explicit filter scope.
+        if self.keywords or self.category_ids:
+            db.mark_deals_stale(active_item_ids)
+        else:
+            logger.info(
+                "Site-wide browse: skipping stale-mark so prior filtered deals remain"
+            )
+            db.expire_past_deals()
+
         db.log_scan_finish(
             scan_id,
             total_scanned,
