@@ -542,15 +542,30 @@ export default function WatchlistPage() {
         </div>
       </div>
 
-      {/* Warning if sniper is offline but has active items */}
+      {/* Queued items can't be bid on without connected ShopGoodwill credentials */}
+      {hasSgw === false && activeItems.length > 0 && (
+        <div className="flex items-start gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 light:bg-amber-50 light:border-amber-200 light:text-amber-800 rounded-xl px-4 py-3 mb-5 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            No ShopGoodwill account connected, so your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} cannot be bid on.{" "}
+            <Link href="/account" className="underline font-medium">
+              Connect your account
+            </Link>
+            .
+          </span>
+        </div>
+      )}
+
+      {/* Warning if the bid service itself is down */}
       {!sniperRunning && activeItems.length > 0 && (
         <div className="flex items-start gap-3 bg-red-950/30 border border-red-800/40 text-red-300 light:bg-red-50 light:border-red-200 light:text-red-800 rounded-xl px-4 py-3 mb-5 text-sm">
           <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <span>
-            Sniper is offline — the backend may have restarted. Your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} will not be bid on until it reconnects.
-            Restart the backend server to restore the sniper.
+            The bid service is temporarily unavailable, so your {activeItems.length} queued item{activeItems.length !== 1 ? "s" : ""} may not be bid on. We&apos;re on it — your queue is saved and will resume automatically.
           </span>
         </div>
       )}

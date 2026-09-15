@@ -16,7 +16,7 @@ export default function SignupPage() {
     return (
       <div className="max-w-md mx-auto mt-16 text-center space-y-3">
         <h1 className="text-2xl font-black text-zinc-100">Auth not configured</h1>
-        <Link href="/" className="text-sm text-emerald-400 hover:underline">
+        <Link href="/deals" className="text-sm text-emerald-400 hover:underline">
           Back to app →
         </Link>
       </div>
@@ -37,7 +37,7 @@ export default function SignupPage() {
       if (error) throw error;
       if (data.session) {
         toast.success("Account created");
-        router.replace("/");
+        router.replace("/deals");
         router.refresh();
       } else {
         toast.success("Check your email to confirm your account");

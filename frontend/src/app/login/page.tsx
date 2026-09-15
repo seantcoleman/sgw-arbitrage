@@ -9,7 +9,7 @@ import { authConfigured, createClient } from "@/lib/supabase/client";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/";
+  const next = params.get("next") || "/deals";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +22,7 @@ function LoginForm() {
           Set <code className="text-zinc-300">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
           <code className="text-zinc-300">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable sign-in.
         </p>
-        <Link href="/" className="text-sm text-emerald-400 hover:underline">
+        <Link href="/deals" className="text-sm text-emerald-400 hover:underline">
           Continue without auth →
         </Link>
       </div>

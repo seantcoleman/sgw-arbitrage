@@ -150,6 +150,13 @@ async def lifespan(app: FastAPI):
         id="bid_result_check",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        db.prune_snipe_activity,
+        "interval",
+        hours=12,
+        id="prune_snipe_activity",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("Scheduler started")
     # Auto-start in-process sniper unless workers own bidding
@@ -716,19 +723,37 @@ def _bidder_is_us(winner: Optional[str], username: str) -> bool:
 
 
 def _check_bid_results() -> None:
+    """Resolve watchlist outcomes for every owner, each with their own SGW login."""
+    owners = db.list_watchlist_user_ids()
+    if not owners:
+        # Single-tenant / SQLite: one env-backed account owns the whole watchlist
+        _check_bid_results_for_owner(None)
+        return
+    for user_id in owners:
+        try:
+            _check_bid_results_for_owner(user_id)
+        except Exception as e:
+            logger.error(f"Win-check sweep failed for user {user_id}: {e}")
+
+
+def _check_bid_results_for_owner(user_id: Optional[str]) -> None:
     """
-    Resolve watchlist outcomes from ShopGoodwill:
+    Resolve one owner's watchlist outcomes from ShopGoodwill:
     1. Open/shipped orders are ground truth for a win (also heals false 'lost')
     2. Remaining ended scheduled/bid_placed items → won/lost from bid history
     """
-    watchlist = db.get_watchlist()
+    watchlist = db.get_watchlist(user_id)
     if not watchlist:
         return
+    if user_id is not None and not db.get_primary_sgw_account_id(user_id):
+        return  # nothing to check against until they connect ShopGoodwill
 
     try:
-        sgw = _get_sgw_client()
+        sgw = (
+            _get_sgw_client_for_user(user_id) if user_id is not None else _get_sgw_client()
+        )
     except Exception as e:
-        logger.error(f"Win-check: could not create SGW client: {e}")
+        logger.error(f"Win-check: could not create SGW client for {user_id or 'owner'}: {e}")
         return
 
     try:
@@ -738,7 +763,7 @@ def _check_bid_results() -> None:
         logger.error(f"Order fetch failed: {e}")
         open_orders, shipped_orders = {}, {}
 
-    username = os.getenv("SGW_USERNAME", "").lower()
+    username = (getattr(sgw, "username", "") or os.getenv("SGW_USERNAME", "")).lower()
 
     # ── Step 1: orders are the source of truth (fixes false Lost on wins) ────
     for item in watchlist:
@@ -772,7 +797,7 @@ def _check_bid_results() -> None:
             logger.error(f"Order sync failed for item {item_id}: {e}")
 
     # ── Step 2: bid-history win/loss for items not already in orders ─────────
-    watchlist = db.get_watchlist()
+    watchlist = db.get_watchlist(user_id)
     pending = [
         w for w in watchlist
         if w.get("sniper_status") in (
@@ -1061,59 +1086,31 @@ def _build_sniper_config() -> dict:
     }
 
 
-@app.post("/sniper/start")
-def start_sniper(user: RequireUser):
-    global _sniper_process
-    if _sniper_process and _sniper_process.poll() is None:
-        return {"running": True, "message": "Sniper already running"}
-
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    config = _build_sniper_config()
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-    logger.info("Wrote config.json from env/DB settings")
-
-    _sniper_process = subprocess.Popen(
-        [sys.executable, "bid_sniper.py", "--config", config_path],
-        cwd=os.path.dirname(__file__),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    threading.Thread(
-        target=_tail_sniper_output,
-        args=(_sniper_process,),
-        daemon=True,
-        name="sniper-tail",
-    ).start()
-    return {"running": True, "pid": _sniper_process.pid}
-
-
-@app.post("/sniper/stop")
-def stop_sniper(user: RequireUser):
-    global _sniper_process
-    if _sniper_process and _sniper_process.poll() is None:
-        _sniper_process.terminate()
-        return {"running": False, "message": "Sniper stopped"}
-    return {"running": False, "message": "Sniper was not running"}
-
-
 @app.get("/sniper/status")
 def sniper_status(user: RequireUser):
+    """Whether bidding is being serviced, plus this user's queue depth.
+
+    The bid service is infrastructure, not a per-user toggle: either the API
+    hosts it (SNIPER_IN_API) or the sgw-worker@ units do.
+    """
     global _sniper_process
-    running = _sniper_process is not None and _sniper_process.poll() is None
+    in_process = _sniper_process is not None and _sniper_process.poll() is None
+    external = os.getenv("SNIPER_IN_API", "1").lower() in ("0", "false", "no")
+    try:
+        pending = db.count_pending_snipe_jobs(user.id)
+    except Exception:
+        pending = 0
     return {
-        "running": running,
-        "pid": _sniper_process.pid if running else None,
+        "running": in_process or external,
+        "mode": "workers" if external else "in-process",
+        "pending_snipes": pending,
     }
 
 
 @app.get("/sniper/logs")
 def get_sniper_logs(user: RequireUser, n: int = Query(default=100, le=500)):
-    """Return the last n lines from the sniper's output."""
-    logs = list(_sniper_logs)
-    return {"logs": logs[-n:]}
+    """This user's snipe activity, oldest first."""
+    return {"logs": db.get_snipe_activity(user.id, limit=n)}
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
@@ -1147,15 +1144,13 @@ def _restart_sniper() -> None:
 def update_setting(req: SettingsUpdateRequest, user: RequireUser):
     db.ensure_user_profile(user.id, user.email)
     db.update_setting(req.key, req.value, user_id=user.id)
-    # Snipe timing is baked into sniper config at process start — restart to apply
-    # and recompute durable job fire times.
+    # Fire times live on the durable job rows, so only this user's queue moves.
     if req.key == "snipe_seconds_before":
         try:
             secs = int(req.value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             secs = 5
-        db.refresh_pending_snipe_times(secs)
-        _restart_sniper()
+        db.refresh_pending_snipe_times(secs, user_id=user.id)
     return {"success": True, "key": req.key, "value": req.value}
 
 

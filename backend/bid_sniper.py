@@ -126,6 +126,20 @@ class BidSniper:
             self.config.get("bid_sniper", {}).get("sgw_reverify_stale_hours", 24)
         )
 
+    def _user_log(self, job: Optional[Dict], line: str, item_id: Optional[int] = None) -> None:
+        """Mirror a sniper event into the owning user's activity feed."""
+        db.log_snipe_activity((job or {}).get("user_id"), line, item_id)
+
+    @staticmethod
+    def _outcome_message(outcome: Optional[str], title: str) -> str:
+        return {
+            "accepted": f"Bid placed on '{title}'",
+            "outbid": f"Outbid on '{title}' — someone had a higher max",
+            "rejected": f"Bid rejected by ShopGoodwill for '{title}'",
+            "skipped": f"Skipped '{title}' — current price is above your max",
+            "unclear": f"Bid submitted for '{title}', outcome unconfirmed",
+        }.get(outcome or "", f"No bid placed for '{title}'")
+
     async def _reverify_stale_sgw_accounts(self) -> None:
         """Re-login accounts whose last_verified_at is stale; mark invalid on failure."""
         now = time.time()
@@ -462,9 +476,10 @@ class BidSniper:
             try:
                 end_dt = self._parse_end_time(end_time_str)
                 check_dt = end_dt + datetime.timedelta(minutes=2)
+                owner = (job or {}).get("user_id")
                 self.event_loop.create_task(
                     self.schedule_task(
-                        lambda i=item_id: self.check_win(i),
+                        lambda i=item_id, u=owner: self.check_win(i, user_id=u),
                         check_dt,
                         [self.task_err_handler],
                     )
@@ -551,6 +566,7 @@ class BidSniper:
                     f"Armed snipe for '{title}' in {delay:.1f}s "
                     f"(job {job_id}, snipe_at {job.get('snipe_at')})"
                 )
+                self._user_log(job, f"Armed snipe for '{title}' in {delay:.0f}s", item_id)
                 await asyncio.sleep(delay)
 
         # Swap bid client for this account for the duration of place_bid
@@ -559,6 +575,7 @@ class BidSniper:
         self.shopgoodwill_client = self.bid_shopgoodwill_client
         try:
             outcome = await self.place_bid(item_id, job=job)
+            self._user_log(job, self._outcome_message(outcome, title), item_id)
             if outcome in ("accepted", "outbid", "unclear"):
                 db.mark_snipe_job_fired(job_id)
                 db.complete_snipe_job(job_id, status="done")
@@ -580,6 +597,7 @@ class BidSniper:
                     db.release_snipe_job(job_id, last_error="aborted: will retry", retry=True)
         except Exception as e:
             self.logger.error(f"Claimed job {job_id} failed: {e}")
+            self._user_log(job, f"Snipe failed for '{title}': {e}"[:300], item_id)
             attempts = int(job.get("attempt_count") or 1)
             self.bids_placed.discard(item_id)
             db.release_snipe_job(
@@ -592,7 +610,7 @@ class BidSniper:
             self.shopgoodwill_client = prev
             self.in_flight_jobs.discard(job_id)
 
-    async def check_win(self, item_id: int) -> None:
+    async def check_win(self, item_id: int, user_id: Optional[str] = None) -> None:
         """Check SGW ~2 min after auction end to see if we won."""
         try:
             username = (
@@ -604,7 +622,7 @@ class BidSniper:
 
             our_max = None
             try:
-                for w in db.get_watchlist():
+                for w in db.get_watchlist(user_id):
                     if int(w["item_id"]) == int(item_id):
                         our_max = float(w.get("max_bid") or 0) or None
                         break
@@ -674,6 +692,19 @@ class BidSniper:
             db.update_watchlist_result(item_id, status, final_price, final_shipping)
 
             title = info.get("title", item_id)
+            db.log_snipe_activity(
+                user_id,
+                {
+                    "won": f"Won '{title}'"
+                    + (f" at ${final_price:.2f}" if final_price is not None else ""),
+                    "missed": f"Missed '{title}' — no bid was placed",
+                }.get(
+                    status,
+                    f"Lost '{title}'"
+                    + (f" — sold for ${final_price:.2f}" if final_price is not None else ""),
+                ),
+                item_id,
+            )
             if won:
                 self.logger.warning(
                     f"WON '{title}' — "

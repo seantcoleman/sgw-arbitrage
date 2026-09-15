@@ -175,6 +175,17 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_snipe_jobs_pending_at
                 ON snipe_jobs(status, snipe_at);
+
+            CREATE TABLE IF NOT EXISTS snipe_activity (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id  TEXT,
+                item_id  INTEGER,
+                ts       TEXT DEFAULT (datetime('now')),
+                line     TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_snipe_activity_user_ts
+                ON snipe_activity(user_id, id DESC);
         """)
 
         # Seed default owner + env-backed SGW account
@@ -1119,14 +1130,23 @@ def cancel_snipe_job(item_id: int, user_id: Optional[UserId] = None) -> None:
         )
 
 
-def refresh_pending_snipe_times(snipe_seconds_before: Optional[int] = None) -> int:
-    """Recompute snipe_at for all pending jobs (e.g. after settings change)."""
+def refresh_pending_snipe_times(
+    snipe_seconds_before: Optional[int] = None,
+    user_id: Optional[UserId] = None,
+) -> int:
+    """Recompute snipe_at for pending jobs (e.g. after a settings change)."""
     if snipe_seconds_before is None:
-        snipe_seconds_before = int(get_settings().get("snipe_seconds_before", 5))
+        snipe_seconds_before = int(get_settings(user_id).get("snipe_seconds_before", 5))
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, end_time FROM snipe_jobs WHERE status = 'pending'"
-        ).fetchall()
+        if using_postgres() and user_id is not None:
+            rows = conn.execute(
+                "SELECT id, end_time FROM snipe_jobs WHERE status = 'pending' AND user_id = ?",
+                (str(user_id),),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, end_time FROM snipe_jobs WHERE status = 'pending'"
+            ).fetchall()
         n = 0
         for r in rows:
             snipe_at = compute_snipe_at(r["end_time"], int(snipe_seconds_before))
@@ -1179,6 +1199,34 @@ def soonest_pending_snipe_seconds() -> Optional[float]:
     if dt is None:
         return None
     return (dt - now).total_seconds()
+
+
+def list_watchlist_user_ids() -> List[str]:
+    """Distinct owners with watchlist rows (empty on SQLite single-tenant)."""
+    if not using_postgres():
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id FROM watchlist WHERE user_id IS NOT NULL"
+        ).fetchall()
+    return [str(r["user_id"]) for r in rows]
+
+
+def count_pending_snipe_jobs(user_id: Optional[UserId] = None) -> int:
+    with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM snipe_jobs
+                WHERE status IN ('pending', 'leased') AND user_id = ?
+                """,
+                (str(user_id),),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM snipe_jobs WHERE status IN ('pending', 'leased')"
+            ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def claim_due_snipe_jobs(
@@ -1555,6 +1603,92 @@ def get_primary_sgw_account_id(user_id: UserId) -> Optional[int]:
             (str(user_id) if using_postgres() else user_id,),
         ).fetchone()
     return int(row["id"]) if row else None
+
+
+def log_snipe_activity(
+    user_id: Optional[UserId],
+    line: str,
+    item_id: Optional[int] = None,
+) -> None:
+    """Append a user-visible sniper event. Never raises into the bid path."""
+    try:
+        with get_conn() as conn:
+            if using_postgres():
+                conn.execute(
+                    """
+                    INSERT INTO snipe_activity (user_id, item_id, line)
+                    VALUES (?, ?, ?)
+                    """,
+                    (str(user_id) if user_id is not None else None, item_id, line),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO snipe_activity (user_id, item_id, line)
+                    VALUES (?, ?, ?)
+                    """,
+                    (str(user_id) if user_id is not None else None, item_id, line),
+                )
+    except Exception:
+        pass
+
+
+def get_snipe_activity(user_id: Optional[UserId] = None, limit: int = 100) -> List[Dict]:
+    """Most recent activity rows for a user, oldest first for log display."""
+    limit = max(1, min(int(limit), 500))
+    with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            rows = conn.execute(
+                """
+                SELECT ts, line, item_id FROM snipe_activity
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (str(user_id), limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ts, line, item_id FROM snipe_activity ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    out = [
+        {"ts": _iso_utc(r["ts"]), "line": r["line"], "item_id": r["item_id"]}
+        for r in rows
+    ]
+    out.reverse()
+    return out
+
+
+def _iso_utc(ts: Any) -> str:
+    if ts is None:
+        return ""
+    if isinstance(ts, datetime):
+        dt = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    s = str(ts).strip()
+    if not s:
+        return ""
+    if s.endswith("Z") or "+" in s:
+        return s
+    return s.replace(" ", "T") + "Z"
+
+
+def prune_snipe_activity(keep_days: int = 30) -> None:
+    try:
+        with get_conn() as conn:
+            if using_postgres():
+                conn.execute(
+                    "DELETE FROM snipe_activity WHERE ts < now() - (? || ' days')::interval",
+                    (str(int(keep_days)),),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM snipe_activity WHERE ts < datetime('now', ?)",
+                    (f"-{int(keep_days)} days",),
+                )
+    except Exception:
+        pass
 
 
 def list_sgw_accounts_due_reverify(stale_hours: int = 24, limit: int = 20) -> List[Dict]:

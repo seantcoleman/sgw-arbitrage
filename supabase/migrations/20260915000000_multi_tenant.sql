@@ -173,6 +173,19 @@ create table if not exists public.snipe_jobs (
 create index if not exists idx_snipe_jobs_pending_at
   on public.snipe_jobs (status, snipe_at);
 
+-- ── Per-user snipe activity feed ────────────────────────────────────────────
+
+create table if not exists public.snipe_activity (
+  id       bigserial primary key,
+  user_id  uuid references public.profiles (id) on delete cascade,
+  item_id  bigint,
+  ts       timestamptz not null default now(),
+  line     text not null
+);
+
+create index if not exists idx_snipe_activity_user_ts
+  on public.snipe_activity (user_id, id desc);
+
 -- ── Scan log + search term cache + eBay price cache ─────────────────────────
 
 create table if not exists public.scan_log (
@@ -210,6 +223,7 @@ alter table public.user_settings enable row level security;
 alter table public.sgw_accounts enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.snipe_jobs enable row level security;
+alter table public.snipe_activity enable row level security;
 
 -- Shared tables: readable by authenticated users, writable only by service role
 alter table public.deals enable row level security;
@@ -240,6 +254,10 @@ create policy "watchlist_own" on public.watchlist
 
 drop policy if exists "snipe_jobs_own" on public.snipe_jobs;
 create policy "snipe_jobs_own" on public.snipe_jobs
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "snipe_activity_own" on public.snipe_activity;
+create policy "snipe_activity_own" on public.snipe_activity
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Shared read policies (writes go through service role from the Oracle backend)

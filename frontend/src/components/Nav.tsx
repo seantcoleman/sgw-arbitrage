@@ -14,9 +14,14 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  // null while unknown; auth-less deploys are treated as signed in
+  const [signedIn, setSignedIn] = useState<boolean | null>(
+    authConfigured() ? null : true
+  );
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (signedIn === false) return;
     const poll = async () => {
       const scan = await getScanStatus().catch(() => ({ running: false }));
       setScanRunning(scan.running);
@@ -24,7 +29,7 @@ export function Nav() {
     poll();
     const interval = setInterval(poll, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [signedIn]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -38,9 +43,11 @@ export function Nav() {
       try {
         const supabase = createClient();
         const { data } = await supabase.auth.getUser();
-        if (!cancelled) setEmail(data.user?.email ?? null);
+        if (cancelled) return;
+        setEmail(data.user?.email ?? null);
+        setSignedIn(Boolean(data.user));
       } catch {
-        /* ignore */
+        if (!cancelled) setSignedIn(false);
       }
     })();
     return () => {
@@ -65,7 +72,7 @@ export function Nav() {
   };
 
   const links = [
-    { href: "/", label: "Deals" },
+    { href: "/deals", label: "Deals" },
     { href: "/favorites", label: "Favorites" },
     { href: "/watchlist", label: "Watchlist" },
     { href: "/settings", label: "Settings" },
@@ -80,10 +87,16 @@ export function Nav() {
     }`;
   };
 
+  const loggedOut = signedIn === false;
+
   return (
     <nav className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4 min-w-0">
-        <Link href="/" className="flex items-center gap-2 shrink-0" onClick={() => setMenuOpen(false)}>
+        <Link
+          href={loggedOut ? "/" : "/deals"}
+          className="flex items-center gap-2 shrink-0"
+          onClick={() => setMenuOpen(false)}
+        >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md shadow-green-900/50">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -92,16 +105,18 @@ export function Nav() {
           <span className="hidden sm:inline font-bold text-sm text-zinc-100">SGW Arb</span>
         </Link>
 
-        <div className="hidden md:flex items-center gap-1 min-w-0">
-          {links.map(({ href, label }) => (
-            <Link key={href} href={href} className={linkClass(href)}>
-              {label}
-            </Link>
-          ))}
-        </div>
+        {!loggedOut && (
+          <div className="hidden md:flex items-center gap-1 min-w-0">
+            {links.map(({ href, label }) => (
+              <Link key={href} href={href} className={linkClass(href)}>
+                {label}
+              </Link>
+            ))}
+          </div>
+        )}
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {scanRunning && (
+          {scanRunning && !loggedOut && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span className="hidden sm:inline">Scanning</span>
@@ -125,7 +140,24 @@ export function Nav() {
             )}
           </button>
 
-          <div className="relative hidden md:block" ref={userMenuRef}>
+          {loggedOut && (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white transition-colors"
+              >
+                Get started
+              </Link>
+            </div>
+          )}
+
+          <div className={`relative ${loggedOut ? "hidden" : "hidden md:block"}`} ref={userMenuRef}>
             <button
               type="button"
               onClick={() => setUserMenuOpen((o) => !o)}
@@ -176,7 +208,7 @@ export function Nav() {
 
           <button
             type="button"
-            className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+            className={`${loggedOut ? "hidden" : "md:hidden flex"} items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900`}
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((o) => !o)}
@@ -194,7 +226,7 @@ export function Nav() {
         </div>
       </div>
 
-      {menuOpen && (
+      {menuOpen && !loggedOut && (
         <div className="md:hidden border-t border-zinc-800/80 px-3 py-2 flex flex-col gap-1">
           {links.map(({ href, label }) => (
             <Link key={href} href={href} className={`${linkClass(href)} w-full`}>

@@ -66,9 +66,7 @@ export const updateWatchlistMaxBid = (item_id: number, max_bid: number) =>
 export const triggerScan = () => apiFetch("/scan", { method: "POST" });
 export const getScanStatus = () => apiFetch<ScanStatus>("/scan/status");
 
-// Sniper
-export const startSniper = () => apiFetch("/sniper/start", { method: "POST" });
-export const stopSniper = () => apiFetch("/sniper/stop", { method: "POST" });
+// Sniper — bidding is always-on infrastructure, not a per-user toggle
 export const getSniperStatus = () => apiFetch<SniperStatus>("/sniper/status");
 export const getSniperLogs = (n = 100) =>
   apiFetch<{ logs: SniperLogEntry[] }>(`/sniper/logs?n=${n}`);
@@ -169,12 +167,14 @@ export interface ScanStatus {
 
 export interface SniperStatus {
   running: boolean;
-  pid: number | null;
+  mode: "workers" | "in-process";
+  pending_snipes: number;
 }
 
 export interface SniperLogEntry {
   ts: string;
   line: string;
+  item_id?: number | null;
 }
 
 export interface Settings {

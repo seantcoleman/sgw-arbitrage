@@ -35,17 +35,20 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/signup") ||
     path.startsWith("/reset-password") ||
     path.startsWith("/auth/");
+  // Marketing landing is the only public app page
+  const isPublicPage = path === "/";
 
-  if (!user && !isAuthPage) {
+  if (!user && !isAuthPage && !isPublicPage) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("next", path);
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && (path === "/login" || path === "/signup")) {
+  if (user && (isPublicPage || path === "/login" || path === "/signup")) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/";
+    redirectUrl.pathname = "/deals";
+    redirectUrl.search = "";
     return NextResponse.redirect(redirectUrl);
   }
 

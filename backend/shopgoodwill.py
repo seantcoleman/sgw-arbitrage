@@ -56,6 +56,8 @@ class Shopgoodwill:
         res.raise_for_status()
 
     def __init__(self, auth_info: Optional[Dict] = None):
+        # Bidder name this session acts as — used to recognize our own bids
+        self.username: str = ((auth_info or {}).get("username") or "").strip().lower()
         self.shopgoodwill_session = TimeoutSession()
         self.shopgoodwill_session.cookies = IgnoreBuyerApiCookieJar()
         self.shopgoodwill_session.headers = {
