@@ -869,6 +869,8 @@ def compute_snipe_at(end_time_str: Optional[str], snipe_seconds_before: int) -> 
 
 def get_default_owner() -> Dict[str, int]:
     """Return the seeded local owner user_id + env sgw_account_id."""
+    if using_postgres():
+        raise RuntimeError("get_default_owner is SQLite-only; pass user_id on Postgres")
     with get_conn() as conn:
         user = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
         if not user:
@@ -903,6 +905,21 @@ def get_sgw_account(account_id: int) -> Optional[Dict]:
 
 
 def _snipe_seconds_before_conn(conn) -> int:
+    if using_postgres():
+        row = conn.execute(
+            """
+            SELECT snipe_seconds_before
+            FROM user_settings
+            ORDER BY updated_at DESC NULLS LAST
+            LIMIT 1
+            """
+        ).fetchone()
+        if row and row["snipe_seconds_before"] is not None:
+            try:
+                return int(row["snipe_seconds_before"])
+            except (TypeError, ValueError):
+                return 5
+        return 5
     row = conn.execute(
         "SELECT value FROM settings WHERE key = 'snipe_seconds_before'"
     ).fetchone()
@@ -917,8 +934,73 @@ def _snipe_seconds_before_conn(conn) -> int:
             return 5
 
 
+def _backfill_snipe_jobs_postgres(conn) -> int:
+    """Create pending jobs for scheduled watchlist rows that lack one."""
+    rows = conn.execute(
+        """
+        SELECT w.id AS watchlist_id, w.item_id, w.max_bid, w.end_time,
+               w.user_id, w.sgw_account_id,
+               COALESCE(us.snipe_seconds_before, 5) AS snipe_seconds_before
+        FROM watchlist w
+        LEFT JOIN user_settings us ON us.user_id = w.user_id
+        WHERE LOWER(COALESCE(w.sniper_status, 'scheduled')) = 'scheduled'
+        """
+    ).fetchall()
+    created = 0
+    for w in rows:
+        snipe_at = compute_snipe_at(w["end_time"], int(w["snipe_seconds_before"] or 5))
+        if not snipe_at:
+            continue
+        existing = conn.execute(
+            "SELECT id, status FROM snipe_jobs WHERE watchlist_id = ?",
+            (w["watchlist_id"],),
+        ).fetchone()
+        if existing:
+            if existing["status"] in ("pending", "leased"):
+                conn.execute(
+                    """
+                    UPDATE snipe_jobs
+                    SET max_bid = ?, end_time = ?, snipe_at = ?,
+                        user_id = COALESCE(user_id, ?),
+                        sgw_account_id = COALESCE(sgw_account_id, ?),
+                        updated_at = now()
+                    WHERE id = ?
+                    """,
+                    (
+                        w["max_bid"],
+                        w["end_time"],
+                        snipe_at,
+                        str(w["user_id"]) if w["user_id"] else None,
+                        w["sgw_account_id"],
+                        existing["id"],
+                    ),
+                )
+            continue
+        conn.execute(
+            """
+            INSERT INTO snipe_jobs (
+                watchlist_id, item_id, user_id, sgw_account_id,
+                max_bid, end_time, snipe_at, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', now())
+            """,
+            (
+                w["watchlist_id"],
+                w["item_id"],
+                str(w["user_id"]),
+                w["sgw_account_id"],
+                w["max_bid"],
+                w["end_time"],
+                snipe_at,
+            ),
+        )
+        created += 1
+    return created
+
+
 def _backfill_snipe_jobs_conn(conn) -> int:
     """Create pending jobs for scheduled watchlist rows that lack one."""
+    if using_postgres():
+        return _backfill_snipe_jobs_postgres(conn)
     snipe_secs = _snipe_seconds_before_conn(conn)
     owner_user = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
     owner_acct = conn.execute(
