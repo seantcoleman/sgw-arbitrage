@@ -1,0 +1,15 @@
+[Unit]
+Description=SGW shared deal scanner
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/sgw-arbitrage/backend
+EnvironmentFile=/home/ubuntu/sgw-arbitrage/backend/.env
+ExecStart=/home/ubuntu/sgw-arbitrage/backend/venv/bin/python scanner_service.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

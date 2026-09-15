@@ -31,6 +31,7 @@ export function Nav() {
     { href: "/favorites", label: "Favorites" },
     { href: "/watchlist", label: "Watchlist" },
     { href: "/settings", label: "Settings" },
+    { href: "/account", label: "Account" },
   ];
 
   const linkClass = (href: string) => {

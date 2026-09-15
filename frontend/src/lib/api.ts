@@ -1,9 +1,27 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/backend";
 
+async function authHeaders(): Promise<Record<string, string>> {
+  try {
+    const { authConfigured, createClient } = await import("@/lib/supabase/client");
+    if (!authConfigured()) return {};
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(await authHeaders()),
+    ...init?.headers,
+  };
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -220,3 +238,35 @@ export interface FavoriteItem {
   ebay_fee_pct?: number;
   ebay_resale_shipping?: number;
 }
+
+export interface SgwAccountSummary {
+  id: number;
+  user_id: string;
+  label: string;
+  auth_source: string;
+  status: string;
+  last_verified_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface MeResponse {
+  id: string;
+  email: string | null;
+  sgw_accounts: SgwAccountSummary[];
+  has_sgw: boolean;
+  postgres: boolean;
+}
+
+export const getMe = () => apiFetch<MeResponse>("/me");
+export const listSgwAccounts = () =>
+  apiFetch<{ accounts: SgwAccountSummary[] }>("/account/sgw");
+export const connectSgwAccount = (username: string, password: string, label = "Default") =>
+  apiFetch<{ success: boolean; account: SgwAccountSummary }>("/account/sgw", {
+    method: "POST",
+    body: JSON.stringify({ username, password, label }),
+  });
+export const verifySgwAccount = (accountId: number) =>
+  apiFetch<{ success: boolean; status: string }>(`/account/sgw/${accountId}/verify`, {
+    method: "POST",
+  });
+

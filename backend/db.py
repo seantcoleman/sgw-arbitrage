@@ -1,33 +1,40 @@
 """
-SQLite database layer using plain sqlite3 — no ORM dependency.
+Database layer — SQLite locally, Postgres (Supabase) when DATABASE_URL is set.
 """
 
 import json
-import sqlite3
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-DB_PATH = Path(__file__).parent / "arbitrage.db"
+from db_conn import get_conn, using_postgres
 
-
-@contextmanager
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+UserId = Union[str, int]
 
 
 def init_db():
+    # Postgres schema is applied via supabase/migrations — only bootstrap SQLite.
+    if using_postgres():
+        with get_conn() as conn:
+            # Ensure shared app_settings seed exists
+            defaults = [
+                ("scan_keywords", "[]"),
+                ("scan_category_ids", "[]"),
+                ("min_profit_usd", "20"),
+                ("min_margin_pct", "30"),
+                ("min_sold_comps", "5"),
+                ("max_bid_cap", "300"),
+                ("min_bid_floor", "3"),
+                ("scan_interval_minutes", "120"),
+                ("max_scan_items", "200"),
+                ("auctions_only", "true"),
+            ]
+            for k, v in defaults:
+                conn.execute(
+                    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
+                    (k, v),
+                )
+        return
+
     with get_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS deals (
@@ -111,7 +118,7 @@ def init_db():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_display_mode', '\"net\"')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auctions_only', 'true')")
         # Migrate existing DBs that predate final_price / final_shipping columns
-        existing = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
         for col, typedef in [
             ("final_price",    "REAL"),
             ("final_shipping", "REAL"),
@@ -217,7 +224,7 @@ def init_db():
         """)
 
         # Migrate deals table to add skip_reason column
-        deals_cols = {r[1] for r in conn.execute("PRAGMA table_info(deals)").fetchall()}
+        deals_cols = {r["name"] for r in conn.execute("PRAGMA table_info(deals)").fetchall()}
         if "skip_reason" not in deals_cols:
             conn.execute("ALTER TABLE deals ADD COLUMN skip_reason TEXT")
 
@@ -417,11 +424,11 @@ def count_deals(
 ) -> int:
     with get_conn() as conn:
         row = conn.execute("""
-            SELECT COUNT(*) FROM deals
+            SELECT COUNT(*) AS n FROM deals
             WHERE profit >= ? AND margin >= ? AND status = ?
               AND (keyword IS NULL OR keyword != ?)
         """, (min_profit, min_margin, status, FAVORITE_KEYWORD)).fetchone()
-    return row[0] if row else 0
+    return int(row["n"]) if row else 0
 
 
 def mark_deals_stale(active_item_ids: List[int]) -> None:
@@ -510,6 +517,49 @@ def end_long_horizon_deals(max_days: int = 14) -> int:
 # ── Watchlist ───────────────────────────────────────────────────────────────
 
 def add_to_watchlist(item: Dict[str, Any]) -> None:
+    if using_postgres():
+        user_id = item.get("user_id")
+        if not user_id:
+            raise ValueError("user_id required")
+        sgw_account_id = item.get("sgw_account_id") or get_primary_sgw_account_id(user_id)
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO watchlist (
+                    user_id, item_id, sgw_account_id, title, max_bid, current_bid, end_time,
+                    sgw_url, image_url, ebay_median, profit, ebay_search
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                ON CONFLICT (user_id, item_id) DO UPDATE SET
+                    max_bid = EXCLUDED.max_bid,
+                    current_bid = EXCLUDED.current_bid,
+                    end_time = EXCLUDED.end_time,
+                    sgw_url = COALESCE(EXCLUDED.sgw_url, watchlist.sgw_url),
+                    image_url = COALESCE(EXCLUDED.image_url, watchlist.image_url),
+                    ebay_median = COALESCE(EXCLUDED.ebay_median, watchlist.ebay_median),
+                    profit = COALESCE(EXCLUDED.profit, watchlist.profit),
+                    ebay_search = COALESCE(EXCLUDED.ebay_search, watchlist.ebay_search),
+                    sgw_account_id = COALESCE(EXCLUDED.sgw_account_id, watchlist.sgw_account_id),
+                    sniper_status = 'scheduled'
+                """,
+                (
+                    str(user_id),
+                    item["item_id"],
+                    sgw_account_id,
+                    item["title"],
+                    item["max_bid"],
+                    item.get("current_bid"),
+                    item.get("end_time"),
+                    item.get("sgw_url"),
+                    item.get("image_url"),
+                    item.get("ebay_median"),
+                    item.get("profit"),
+                    item.get("ebay_search"),
+                ),
+            )
+        return
+
     owner = get_default_owner()
     payload = {
         **item,
@@ -591,16 +641,46 @@ def update_watchlist_pricing(
         )
 
 
-def get_watchlist() -> List[Dict]:
+def get_watchlist(user_id: Optional[UserId] = None) -> List[Dict]:
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM watchlist ORDER BY added_at DESC, item_id DESC"
-        ).fetchall()
+        if using_postgres() and user_id is not None:
+            rows = conn.execute(
+                """
+                SELECT * FROM watchlist
+                WHERE user_id = ?
+                ORDER BY added_at DESC, item_id DESC
+                """,
+                (str(user_id),),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM watchlist ORDER BY added_at DESC, item_id DESC"
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
-def remove_from_watchlist(item_id: int) -> None:
+def remove_from_watchlist(item_id: int, user_id: Optional[UserId] = None) -> None:
     with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            wl = conn.execute(
+                "SELECT id FROM watchlist WHERE user_id = ? AND item_id = ?",
+                (str(user_id), item_id),
+            ).fetchone()
+            if wl:
+                conn.execute(
+                    """
+                    UPDATE snipe_jobs
+                    SET status = 'cancelled', updated_at = now(),
+                        lease_owner = NULL, lease_until = NULL
+                    WHERE watchlist_id = ? AND status IN ('pending', 'leased')
+                    """,
+                    (wl["id"],),
+                )
+                conn.execute(
+                    "DELETE FROM watchlist WHERE id = ?",
+                    (wl["id"],),
+                )
+            return
         conn.execute(
             """
             UPDATE snipe_jobs
@@ -613,23 +693,34 @@ def remove_from_watchlist(item_id: int) -> None:
         conn.execute("DELETE FROM watchlist WHERE item_id = ?", (item_id,))
 
 
-def update_watchlist_max_bid(item_id: int, max_bid: float) -> None:
+def update_watchlist_max_bid(item_id: int, max_bid: float, user_id: Optional[UserId] = None) -> None:
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE watchlist SET max_bid = ? WHERE item_id = ?",
-            (max_bid, item_id),
-        )
-        row = conn.execute(
-            "SELECT end_time, user_id, sgw_account_id FROM watchlist WHERE item_id = ?",
-            (item_id,),
-        ).fetchone()
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                "UPDATE watchlist SET max_bid = ? WHERE user_id = ? AND item_id = ?",
+                (max_bid, str(user_id), item_id),
+            )
+            row = conn.execute(
+                "SELECT id, end_time, user_id, sgw_account_id FROM watchlist WHERE user_id = ? AND item_id = ?",
+                (str(user_id), item_id),
+            ).fetchone()
+        else:
+            conn.execute(
+                "UPDATE watchlist SET max_bid = ? WHERE item_id = ?",
+                (max_bid, item_id),
+            )
+            row = conn.execute(
+                "SELECT end_time, user_id, sgw_account_id FROM watchlist WHERE item_id = ?",
+                (item_id,),
+            ).fetchone()
     if row:
         upsert_snipe_job(
             item_id,
             max_bid,
             row["end_time"],
             user_id=row["user_id"],
-            sgw_account_id=row["sgw_account_id"],
+            sgw_account_id=row.get("sgw_account_id"),
+            watchlist_id=row.get("id"),
         )
 
 
@@ -664,20 +755,42 @@ def update_watchlist_live_bid(
         )
 
 
-def update_watchlist_status(item_id: int, status: str) -> None:
+def update_watchlist_status(item_id: int, status: str, user_id: Optional[UserId] = None) -> None:
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE watchlist SET sniper_status = ? WHERE item_id = ?",
-            (status, item_id),
-        )
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                "UPDATE watchlist SET sniper_status = ? WHERE user_id = ? AND item_id = ?",
+                (status, str(user_id), item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET sniper_status = ? WHERE item_id = ?",
+                (status, item_id),
+            )
 
 
-def update_watchlist_result(item_id: int, status: str, final_price: Optional[float], final_shipping: Optional[float]) -> None:
+def update_watchlist_result(
+    item_id: int,
+    status: str,
+    final_price: Optional[float],
+    final_shipping: Optional[float],
+    user_id: Optional[UserId] = None,
+) -> None:
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE watchlist SET sniper_status = ?, final_price = ?, final_shipping = ? WHERE item_id = ?",
-            (status, final_price, final_shipping, item_id),
-        )
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                """
+                UPDATE watchlist
+                SET sniper_status = ?, final_price = ?, final_shipping = ?
+                WHERE user_id = ? AND item_id = ?
+                """,
+                (status, final_price, final_shipping, str(user_id), item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET sniper_status = ?, final_price = ?, final_shipping = ? WHERE item_id = ?",
+                (status, final_price, final_shipping, item_id),
+            )
 
 
 def update_watchlist_order(
@@ -868,11 +981,73 @@ def upsert_snipe_job(
     item_id: int,
     max_bid: float,
     end_time: Optional[str],
-    user_id: Optional[int] = None,
+    user_id: Optional[UserId] = None,
     sgw_account_id: Optional[int] = None,
     snipe_seconds_before: Optional[int] = None,
+    watchlist_id: Optional[int] = None,
 ) -> Optional[int]:
     """Create or refresh a pending snipe job for a watchlist item."""
+    if using_postgres():
+        if user_id is None:
+            raise ValueError("user_id required on Postgres")
+        if snipe_seconds_before is None:
+            settings = get_settings(user_id)
+            snipe_seconds_before = int(settings.get("snipe_seconds_before", 5))
+        snipe_at = compute_snipe_at(end_time, int(snipe_seconds_before))
+        if not snipe_at:
+            return None
+        if sgw_account_id is None:
+            sgw_account_id = get_primary_sgw_account_id(user_id)
+        with get_conn() as conn:
+            if watchlist_id is None:
+                wl = conn.execute(
+                    "SELECT id, sgw_account_id FROM watchlist WHERE user_id = ? AND item_id = ?",
+                    (str(user_id), item_id),
+                ).fetchone()
+                if not wl:
+                    return None
+                watchlist_id = wl["id"]
+                sgw_account_id = sgw_account_id or wl.get("sgw_account_id")
+            existing = conn.execute(
+                "SELECT id, status FROM snipe_jobs WHERE watchlist_id = ?",
+                (watchlist_id,),
+            ).fetchone()
+            if existing and existing["status"] in ("fired", "done"):
+                return existing["id"]
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE snipe_jobs SET
+                        max_bid = ?, end_time = ?, snipe_at = ?,
+                        user_id = ?, sgw_account_id = ?, item_id = ?,
+                        status = CASE
+                            WHEN status = 'cancelled' THEN 'pending'
+                            WHEN status = 'leased' THEN status
+                            ELSE 'pending'
+                        END,
+                        last_error = NULL,
+                        updated_at = now()
+                    WHERE id = ?
+                    """,
+                    (
+                        max_bid, end_time, snipe_at,
+                        str(user_id), sgw_account_id, item_id,
+                        existing["id"],
+                    ),
+                )
+                return existing["id"]
+            row = conn.execute(
+                """
+                INSERT INTO snipe_jobs (
+                    watchlist_id, item_id, user_id, sgw_account_id,
+                    max_bid, end_time, snipe_at, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', now())
+                RETURNING id
+                """,
+                (watchlist_id, item_id, str(user_id), sgw_account_id, max_bid, end_time, snipe_at),
+            ).fetchone()
+            return int(row["id"])
+
     owner = get_default_owner()
     user_id = user_id or owner["user_id"]
     sgw_account_id = sgw_account_id or owner["sgw_account_id"]
@@ -889,7 +1064,6 @@ def upsert_snipe_job(
             (item_id,),
         ).fetchone()
         if existing and existing["status"] in ("fired", "done"):
-            # Already fired — don't reopen
             return existing["id"]
         if existing:
             conn.execute(
@@ -921,8 +1095,19 @@ def upsert_snipe_job(
         return cur.lastrowid
 
 
-def cancel_snipe_job(item_id: int) -> None:
+def cancel_snipe_job(item_id: int, user_id: Optional[UserId] = None) -> None:
     with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                """
+                UPDATE snipe_jobs
+                SET status = 'cancelled', updated_at = now(),
+                    lease_owner = NULL, lease_until = NULL
+                WHERE item_id = ? AND user_id = ? AND status IN ('pending', 'leased')
+                """,
+                (item_id, str(user_id)),
+            )
+            return
         conn.execute(
             """
             UPDATE snipe_jobs
@@ -1053,6 +1238,9 @@ def claim_due_snipe_jobs(
                 job["lease_owner"] = worker_id
                 job["lease_until"] = lease_until
                 job["attempt_count"] = int(r["attempt_count"] or 0) + 1
+                # Normalize SGW item id across SQLite (watchlist_item_id) and Postgres (item_id)
+                if job.get("item_id") is None and job.get("watchlist_item_id") is not None:
+                    job["item_id"] = job["watchlist_item_id"]
                 claimed.append(job)
     return claimed
 
@@ -1111,34 +1299,332 @@ def mark_snipe_job_fired(job_id: int) -> None:
         )
 
 
-def get_snipe_job_for_item(item_id: int) -> Optional[Dict]:
+def get_snipe_job_for_item(item_id: int, user_id: Optional[UserId] = None) -> Optional[Dict]:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM snipe_jobs WHERE watchlist_item_id = ?",
-            (item_id,),
-        ).fetchone()
+        if using_postgres():
+            if user_id is not None:
+                row = conn.execute(
+                    "SELECT * FROM snipe_jobs WHERE item_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                    (item_id, str(user_id)),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM snipe_jobs WHERE item_id = ? ORDER BY id DESC LIMIT 1",
+                    (item_id,),
+                ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM snipe_jobs WHERE watchlist_item_id = ?",
+                (item_id,),
+            ).fetchone()
     return dict(row) if row else None
 
 
 # ── Settings ────────────────────────────────────────────────────────────────
 
-def get_settings() -> Dict[str, Any]:
+_USER_SETTING_KEYS = {
+    "snipe_seconds_before",
+    "your_zip_code",
+    "ebay_fee_pct",
+    "ebay_resale_shipping",
+    "ebay_display_mode",
+    "ebay_days_back",
+}
+
+
+def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
+    """Merge app-wide + per-user settings (Postgres) or legacy settings table (SQLite)."""
+    result: Dict[str, Any] = {}
     with get_conn() as conn:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    result = {}
-    for row in rows:
-        try:
-            result[row["key"]] = json.loads(row["value"])
-        except (json.JSONDecodeError, TypeError):
-            result[row["key"]] = row["value"]
+        if using_postgres():
+            rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+            for row in rows:
+                try:
+                    result[row["key"]] = json.loads(row["value"])
+                except (json.JSONDecodeError, TypeError):
+                    result[row["key"]] = row["value"]
+            if user_id is not None:
+                us = conn.execute(
+                    "SELECT * FROM user_settings WHERE user_id = ?",
+                    (str(user_id),),
+                ).fetchone()
+                if us:
+                    for k in _USER_SETTING_KEYS:
+                        if k in us and us[k] is not None:
+                            result[k] = us[k]
+                else:
+                    # defaults
+                    result.setdefault("snipe_seconds_before", 5)
+                    result.setdefault("your_zip_code", "90210")
+                    result.setdefault("ebay_fee_pct", 13)
+                    result.setdefault("ebay_resale_shipping", 7)
+                    result.setdefault("ebay_display_mode", "net")
+                    result.setdefault("ebay_days_back", 90)
+        else:
+            rows = conn.execute("SELECT key, value FROM settings").fetchall()
+            for row in rows:
+                try:
+                    result[row["key"]] = json.loads(row["value"])
+                except (json.JSONDecodeError, TypeError):
+                    result[row["key"]] = row["value"]
     return result
 
 
-def update_setting(key: str, value: Any) -> None:
+def update_setting(key: str, value: Any, user_id: Optional[UserId] = None) -> None:
+    with get_conn() as conn:
+        if using_postgres():
+            if key in _USER_SETTING_KEYS:
+                if user_id is None:
+                    raise ValueError(f"{key} requires user_id")
+                # Ensure row exists
+                conn.execute(
+                    "INSERT INTO user_settings (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING",
+                    (str(user_id),),
+                )
+                conn.execute(
+                    f"UPDATE user_settings SET {key} = ?, updated_at = now() WHERE user_id = ?",
+                    (value, str(user_id)),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO app_settings (key, value) VALUES (?, ?)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                    """,
+                    (key, json.dumps(value)),
+                )
+        else:
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
+
+
+def ensure_user_profile(user_id: UserId, email: Optional[str] = None) -> None:
+    """Idempotent profile + settings bootstrap (service role)."""
+    if not using_postgres():
+        return
     with get_conn() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            (key, json.dumps(value)),
+            """
+            INSERT INTO profiles (id, email) VALUES (?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              email = COALESCE(EXCLUDED.email, profiles.email),
+              updated_at = now()
+            """,
+            (str(user_id), email),
+        )
+        conn.execute(
+            "INSERT INTO user_settings (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING",
+            (str(user_id),),
+        )
+
+
+# ── SGW accounts (encrypted) ────────────────────────────────────────────────
+
+def list_sgw_accounts(user_id: UserId) -> List[Dict]:
+    with get_conn() as conn:
+        if using_postgres():
+            rows = conn.execute(
+                """
+                SELECT id, user_id, label, auth_source, status, last_verified_at,
+                       last_error, key_version, created_at, updated_at
+                FROM sgw_accounts WHERE user_id = ? ORDER BY id
+                """,
+                (str(user_id),),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, user_id, label, auth_source, status, created_at
+                FROM sgw_accounts WHERE user_id = ? ORDER BY id
+                """,
+                (user_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_sgw_account_secrets(account_id: int) -> Optional[Dict]:
+    """Service-role only — includes ciphertext fields."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sgw_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_user_sgw_account(
+    user_id: UserId,
+    *,
+    label: str,
+    encrypted_username: str,
+    encrypted_password: str,
+    nonce: str,
+    key_version: int,
+    status: str = "pending",
+    last_error: Optional[str] = None,
+) -> int:
+    with get_conn() as conn:
+        if using_postgres():
+            existing = conn.execute(
+                "SELECT id FROM sgw_accounts WHERE user_id = ? AND auth_source = 'user' ORDER BY id LIMIT 1",
+                (str(user_id),),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE sgw_accounts SET
+                      label = ?, encrypted_username = ?, encrypted_password = ?,
+                      nonce = ?, key_version = ?, status = ?, last_error = ?,
+                      updated_at = now()
+                    WHERE id = ?
+                    """,
+                    (
+                        label, encrypted_username, encrypted_password,
+                        nonce, key_version, status, last_error, existing["id"],
+                    ),
+                )
+                return int(existing["id"])
+            row = conn.execute(
+                """
+                INSERT INTO sgw_accounts (
+                  user_id, label, auth_source, encrypted_username, encrypted_password,
+                  nonce, key_version, status, last_error
+                ) VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                (
+                    str(user_id), label, encrypted_username, encrypted_password,
+                    nonce, key_version, status, last_error,
+                ),
+            ).fetchone()
+            return int(row["id"])
+        # SQLite fallback (dev)
+        existing = conn.execute(
+            "SELECT id FROM sgw_accounts WHERE user_id = ? ORDER BY id LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE sgw_accounts SET label = ?, encrypted_username = ?,
+                  encrypted_password = ?, status = ?
+                WHERE id = ?
+                """,
+                (label, encrypted_username, encrypted_password, status, existing["id"]),
+            )
+            return int(existing["id"])
+        cur = conn.execute(
+            """
+            INSERT INTO sgw_accounts (user_id, label, auth_source, encrypted_username, encrypted_password, status)
+            VALUES (?, ?, 'user', ?, ?, ?)
+            """,
+            (user_id, label, encrypted_username, encrypted_password, status),
+        )
+        return int(cur.lastrowid)
+
+
+def mark_sgw_account_verified(account_id: int, ok: bool, error: Optional[str] = None) -> None:
+    with get_conn() as conn:
+        if using_postgres():
+            conn.execute(
+                """
+                UPDATE sgw_accounts SET
+                  status = ?, last_verified_at = CASE WHEN ? THEN now() ELSE last_verified_at END,
+                  last_error = ?, updated_at = now()
+                WHERE id = ?
+                """,
+                ("active" if ok else "invalid", ok, error, account_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE sgw_accounts SET status = ? WHERE id = ?",
+                ("active" if ok else "invalid", account_id),
+            )
+
+
+def get_primary_sgw_account_id(user_id: UserId) -> Optional[int]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM sgw_accounts
+            WHERE user_id = ? AND status IN ('active', 'pending')
+            ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id
+            LIMIT 1
+            """,
+            (str(user_id) if using_postgres() else user_id,),
+        ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def list_sgw_accounts_due_reverify(stale_hours: int = 24, limit: int = 20) -> List[Dict]:
+    """User-stored accounts that need a fresh login check."""
+    with get_conn() as conn:
+        if using_postgres():
+            rows = conn.execute(
+                """
+                SELECT id, user_id, label, status, last_verified_at
+                FROM sgw_accounts
+                WHERE auth_source = 'user'
+                  AND encrypted_username IS NOT NULL
+                  AND status IN ('active', 'pending')
+                  AND (
+                    last_verified_at IS NULL
+                    OR last_verified_at < now() - (? || ' hours')::interval
+                  )
+                ORDER BY last_verified_at NULLS FIRST
+                LIMIT ?
+                """,
+                (str(int(stale_hours)), limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, user_id, label, status, created_at AS last_verified_at
+                FROM sgw_accounts
+                WHERE auth_source = 'user'
+                  AND encrypted_username IS NOT NULL
+                  AND status IN ('active', 'pending')
+                ORDER BY id
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── eBay price cache (Postgres) ─────────────────────────────────────────────
+
+def ebay_cache_get(cache_key: str) -> Optional[Dict]:
+    if not using_postgres():
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT payload FROM ebay_price_cache
+            WHERE cache_key = ? AND expires_at > now()
+            """,
+            (cache_key,),
+        ).fetchone()
+    if not row:
+        return None
+    payload = row["payload"]
+    return payload if isinstance(payload, dict) else json.loads(payload)
+
+
+def ebay_cache_set(cache_key: str, payload: Dict, ttl_seconds: int = 14400) -> None:
+    if not using_postgres():
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO ebay_price_cache (cache_key, payload, expires_at)
+            VALUES (?, ?::jsonb, now() + (? || ' seconds')::interval)
+            ON CONFLICT (cache_key) DO UPDATE SET
+              payload = EXCLUDED.payload,
+              expires_at = EXCLUDED.expires_at
+            """,
+            (cache_key, json.dumps(payload), str(int(ttl_seconds))),
         )
 
 
@@ -1146,6 +1632,11 @@ def update_setting(key: str, value: Any) -> None:
 
 def log_scan_start() -> int:
     with get_conn() as conn:
+        if using_postgres():
+            row = conn.execute(
+                "INSERT INTO scan_log (started_at) VALUES (now()) RETURNING id"
+            ).fetchone()
+            return int(row["id"])
         cur = conn.execute(
             "INSERT INTO scan_log (started_at) VALUES (datetime('now'))"
         )
@@ -1170,3 +1661,4 @@ def get_recent_scans(limit: int = 10) -> List[Dict]:
             "SELECT * FROM scan_log ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(r) for r in rows]
+

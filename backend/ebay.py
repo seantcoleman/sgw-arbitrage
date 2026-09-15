@@ -166,7 +166,27 @@ def get_sold_prices(
 
     # Bust cache when matching / partial-comps logic changes
     cache_key = (search_term.lower().strip(), days_back, "v3-partial-comps")
+    cache_key_str = f"{cache_key[0]}|{cache_key[1]}|{cache_key[2]}"
     now = time.time()
+
+    # Shared Postgres cache (multi-worker)
+    try:
+        import db as _db
+        cached_payload = _db.ebay_cache_get(cache_key_str)
+        if cached_payload is not None:
+            _cache_hits += 1
+            if cached_payload.get("_null"):
+                return None
+            return EbayPriceResult(
+                search_term=cached_payload["ebay_search"],
+                median=cached_payload["ebay_median"],
+                low=cached_payload["ebay_low"],
+                high=cached_payload["ebay_high"],
+                sold_count=cached_payload["ebay_sold_count"],
+                prices=cached_payload.get("prices") or [],
+            )
+    except Exception:
+        pass
 
     if cache_key in _cache:
         result, expires_at = _cache[cache_key]
@@ -177,10 +197,19 @@ def get_sold_prices(
     _cache_misses += 1
     result = _fetch_sold_prices(search_term, days_back, max_results, min_comps)
     _cache[cache_key] = (result, now + _CACHE_TTL)
-
+    try:
+        import db as _db
+        if result is None:
+            _db.ebay_cache_set(cache_key_str, {"_null": True}, _CACHE_TTL)
+        else:
+            payload = result.to_dict()
+            payload["prices"] = list(result.prices or [])
+            _db.ebay_cache_set(cache_key_str, payload, _CACHE_TTL)
+    except Exception:
+        pass
+    # Prevent unbounded growth
     if _cache_misses % 500 == 0:
         _cache.clear()
-
     return result
 
 

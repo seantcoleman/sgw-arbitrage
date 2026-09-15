@@ -1,0 +1,16 @@
+[Unit]
+Description=SGW sniper worker %i
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/sgw-arbitrage/backend
+EnvironmentFile=/home/ubuntu/sgw-arbitrage/backend/.env
+Environment=WORKER_ID=sgw-worker-%i
+ExecStart=/home/ubuntu/sgw-arbitrage/backend/venv/bin/python bid_sniper.py --config /home/ubuntu/sgw-arbitrage/backend/config.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

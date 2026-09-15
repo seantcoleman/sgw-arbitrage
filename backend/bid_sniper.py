@@ -18,6 +18,7 @@ import logging
 import logging.config
 import os
 import socket
+import time
 from json.decoder import JSONDecodeError
 from typing import Any, Callable, Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
@@ -111,7 +112,38 @@ class BidSniper:
         # Once we've attempted a real bid for an item, never bid again this session
         self.bids_placed: set[int] = set()
         self.in_flight_jobs: set[int] = set()
-        self.worker_id = f"{socket.gethostname()}:{os.getpid()}"
+        self.worker_id = os.getenv("WORKER_ID") or f"{socket.gethostname()}:{os.getpid()}"
+        # Per-account SGW client cache: account_id -> (client, expires_at)
+        self._account_clients: Dict[int, tuple] = {}
+        self._account_client_ttl = int(
+            self.config.get("bid_sniper", {}).get("account_session_ttl_seconds", 900)
+        )
+        self._last_reverify_sweep = 0.0
+        self._reverify_interval = int(
+            self.config.get("bid_sniper", {}).get("sgw_reverify_interval_seconds", 3600)
+        )
+        self._reverify_stale_hours = int(
+            self.config.get("bid_sniper", {}).get("sgw_reverify_stale_hours", 24)
+        )
+
+    async def _reverify_stale_sgw_accounts(self) -> None:
+        """Re-login accounts whose last_verified_at is stale; mark invalid on failure."""
+        now = time.time()
+        if now - self._last_reverify_sweep < self._reverify_interval:
+            return
+        self._last_reverify_sweep = now
+        due = db.list_sgw_accounts_due_reverify(stale_hours=self._reverify_stale_hours, limit=5)
+        for acct in due:
+            account_id = int(acct["id"])
+            try:
+                client = self._client_for_job({"sgw_account_id": account_id})
+                client.get_favorites()
+                db.mark_sgw_account_verified(account_id, True)
+                self.logger.info(f"Re-verified SGW account {account_id}")
+            except Exception as e:
+                db.mark_sgw_account_verified(account_id, False, str(e)[:300])
+                self.logger.error(f"SGW account {account_id} re-verify failed: {e}")
+                self._account_clients.pop(account_id, None)
 
     def update_favorites_cache(self, max_cache_time: int) -> None:
         age = (
@@ -442,22 +474,78 @@ class BidSniper:
 
         return outcome
 
+    def _client_for_job(self, job: Optional[Dict] = None):
+        """Resolve bid client for a job's sgw_account_id with session caching."""
+        account_id = None
+        if job:
+            try:
+                account_id = int(job["sgw_account_id"]) if job.get("sgw_account_id") is not None else None
+            except (TypeError, ValueError):
+                account_id = None
+        if account_id is None:
+            return self.bid_shopgoodwill_client
+
+        now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+        cached = self._account_clients.get(account_id)
+        if cached and cached[1] > now:
+            return cached[0]
+
+        try:
+            import crypto_creds
+            acct = db.get_sgw_account_secrets(account_id)
+            if not acct or acct.get("auth_source") == "env" or not acct.get("encrypted_username"):
+                client = self.bid_shopgoodwill_client
+            else:
+                raw = crypto_creds.decrypt_secret(
+                    acct["encrypted_username"],
+                    acct["nonce"],
+                    int(acct.get("key_version") or 1),
+                )
+                if raw.strip().startswith("{"):
+                    data = json.loads(raw)
+                    auth = {"username": data["username"], "password": data["password"]}
+                else:
+                    auth = {
+                        "username": raw,
+                        "password": crypto_creds.decrypt_secret(
+                            acct["encrypted_password"],
+                            acct["nonce"],
+                            int(acct.get("key_version") or 1),
+                        ),
+                    }
+                client = shopgoodwill.Shopgoodwill(auth)
+                client.shopgoodwill_session.hooks["response"] = self.outage_check_hook
+            self._account_clients[account_id] = (client, now + self._account_client_ttl)
+            return client
+        except Exception as e:
+            self.logger.error(f"Could not load SGW client for account {account_id}: {e}")
+            return self.bid_shopgoodwill_client
+
     async def _run_claimed_job(self, job: Dict) -> None:
         """Sleep until snipe_at (if needed), place bid, complete the durable job."""
         job_id = int(job["id"])
-        item_id = int(job["watchlist_item_id"])
+        item_id = int(job.get("item_id") or job.get("watchlist_item_id"))
         title = str(item_id)
         try:
-            for w in db.get_watchlist():
+            for w in db.get_watchlist(job.get("user_id")):
                 if int(w["item_id"]) == item_id:
                     title = w.get("title") or title
                     break
         except Exception:
             pass
 
+        # Pre-warm SGW session ~60s before fire when we claimed early
         snipe_at = db.parse_end_time_utc(job.get("snipe_at"))
         if snipe_at is not None:
             delay = (snipe_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            if delay > 65:
+                await asyncio.sleep(delay - 60)
+                try:
+                    self._client_for_job(job)
+                    self.logger.info(f"Pre-warmed SGW session for job {job_id}")
+                except Exception as e:
+                    self.logger.warning(f"Pre-warm failed for job {job_id}: {e}")
+                delay = (snipe_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
             if delay > 0:
                 self.logger.info(
                     f"Armed snipe for '{title}' in {delay:.1f}s "
@@ -465,13 +553,16 @@ class BidSniper:
                 )
                 await asyncio.sleep(delay)
 
+        # Swap bid client for this account for the duration of place_bid
+        prev = self.bid_shopgoodwill_client
+        self.bid_shopgoodwill_client = self._client_for_job(job)
+        self.shopgoodwill_client = self.bid_shopgoodwill_client
         try:
             outcome = await self.place_bid(item_id, job=job)
             if outcome in ("accepted", "outbid", "unclear"):
                 db.mark_snipe_job_fired(job_id)
                 db.complete_snipe_job(job_id, status="done")
             elif outcome is None:
-                # dry-run or legacy no-op success path
                 db.mark_snipe_job_fired(job_id)
                 db.complete_snipe_job(job_id, status="done")
             elif outcome == "skipped":
@@ -479,7 +570,6 @@ class BidSniper:
             elif outcome == "rejected":
                 db.complete_snipe_job(job_id, status="done", last_error="rejected by SGW")
             else:
-                # aborted / transient — retry if attempts low
                 attempts = int(job.get("attempt_count") or 1)
                 self.bids_placed.discard(item_id)
                 if attempts >= 3:
@@ -498,6 +588,8 @@ class BidSniper:
                 retry=attempts < 3,
             )
         finally:
+            self.bid_shopgoodwill_client = prev
+            self.shopgoodwill_client = prev
             self.in_flight_jobs.discard(job_id)
 
     async def check_win(self, item_id: int) -> None:
@@ -664,7 +756,7 @@ class BidSniper:
                     job_id = int(job["id"])
                     if job_id in self.in_flight_jobs:
                         continue
-                    item_id = int(job["watchlist_item_id"])
+                    item_id = int(job.get("item_id") or job.get("watchlist_item_id"))
                     if item_id in self.bids_placed:
                         db.complete_snipe_job(
                             job_id, status="done", last_error="already bid this session"
@@ -676,6 +768,12 @@ class BidSniper:
                     ).add_done_callback(self.task_err_handler)
             except Exception as e:
                 self.logger.error(f"Snipe job claim loop error: {e}")
+
+            # Periodic SGW credential re-verify (surfaces breakage before snipes fail)
+            try:
+                await self._reverify_stale_sgw_accounts()
+            except Exception as e:
+                self.logger.warning(f"SGW re-verify sweep failed: {e}")
 
             soonest = db.soonest_pending_snipe_seconds()
             if soonest is not None and soonest <= near_end_window:

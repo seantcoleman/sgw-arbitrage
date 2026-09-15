@@ -20,15 +20,20 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import auth
+import crypto_creds
 import db
 import ebay
 import profit as profit_calc
 import search_term
 import shopgoodwill
+from auth import RequireUser
+from db_conn import using_postgres
+from rate_limit import check_rate_limit
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -132,8 +137,12 @@ async def lifespan(app: FastAPI):
     reclaimed = db.reclaim_expired_snipe_leases()
     if reclaimed:
         logger.info(f"Reclaimed {reclaimed} expired snipe lease(s) on startup")
-    interval = 120  # scan every 2 hours — deals last days, no need to scan more often
-    _schedule_scan(interval)
+    # When EXTERNAL_SCANNER=1, a dedicated scanner_service owns the interval.
+    if os.getenv("EXTERNAL_SCANNER", "").lower() not in ("1", "true", "yes"):
+        interval = 120
+        _schedule_scan(interval)
+    else:
+        logger.info("EXTERNAL_SCANNER set — API will not schedule auto-scans")
     _scheduler.add_job(
         _check_bid_results,
         "interval",
@@ -143,9 +152,12 @@ async def lifespan(app: FastAPI):
     )
     _scheduler.start()
     logger.info("Scheduler started")
-    # Auto-start sniper and keep it alive
-    _ensure_sniper_running()
-    _start_sniper_watchdog()
+    # Auto-start in-process sniper unless workers own bidding
+    if os.getenv("SNIPER_IN_API", "1").lower() not in ("0", "false", "no"):
+        _ensure_sniper_running()
+        _start_sniper_watchdog()
+    else:
+        logger.info("SNIPER_IN_API disabled — use sgw-worker@ units")
     # Run an immediate win-check sweep on startup
     threading.Thread(target=_check_bid_results, daemon=True, name="bid-result-startup").start()
     yield
@@ -229,6 +241,7 @@ app.add_middleware(
 
 @app.get("/deals")
 def list_deals(
+    user: RequireUser,
     min_profit: float = Query(0),
     min_margin: float = Query(0),
     status: str = Query("active"),
@@ -240,7 +253,7 @@ def list_deals(
         expired = db.expire_past_deals()
         if expired:
             logger.info(f"Expired {expired} past-due deal(s)")
-        settings = db.get_settings()
+        settings = db.get_settings(user.id)
         if bool(settings.get("auctions_only", True)):
             dropped = db.end_long_horizon_deals(max_days=14)
             if dropped:
@@ -252,7 +265,7 @@ def list_deals(
         limit=500,
         offset=0,
     )
-    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings(user.id))
     min_m = min_margin / 100 if min_margin > 1 else min_margin
     annotated = []
     for d in deals:
@@ -278,9 +291,9 @@ class WatchlistAddRequest(BaseModel):
 
 
 @app.get("/watchlist")
-def get_watchlist():
-    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
-    items = [dict(w) for w in db.get_watchlist()]
+def get_watchlist(user: RequireUser):
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings(user.id))
+    items = [dict(w) for w in db.get_watchlist(user.id)]
 
     # Keep live auction prices in sync — current_bid was snapshotted at add time
     # and otherwise goes stale vs Favorites / SGW.
@@ -293,7 +306,7 @@ def get_watchlist():
     ]
     if active:
         try:
-            favs = _get_sgw_client().get_favorites()
+            favs = _get_sgw_client_for_user(user.id).get_favorites()
             for w in active:
                 fav = favs.get(int(w["item_id"]))
                 if not fav:
@@ -336,7 +349,8 @@ def _sgw_item_image_url(item_info: dict) -> Optional[str]:
 
 
 @app.post("/watchlist")
-def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks):
+def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks, user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
     # Prefer any deal row (active/ended/skipped) so ended auctions keep image + eBay comps
     matches = db.get_deals_by_ids([req.item_id])
     deal = matches[0] if matches else None
@@ -344,7 +358,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
     if deal is None:
         # Item may be a favorite not yet in the deals table — fetch basic info from SGW
         try:
-            sgw = _get_sgw_client()
+            sgw = _get_sgw_client_for_user(user.id)
             item_info = sgw.get_item_info(req.item_id)
             deal = {
                 "item_id": req.item_id,
@@ -371,7 +385,15 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
     if end_time and not (str(end_time).endswith("Z") or "+" in str(end_time)[10:]):
         end_time = _sgw_to_utc(str(end_time)) or end_time
 
-    owner = db.get_default_owner()
+    sgw_account_id = db.get_primary_sgw_account_id(user.id)
+    if using_postgres() and not sgw_account_id:
+        # Fall back to env-seeded account only in single-tenant SQLite mode;
+        # on Postgres require a connected SGW account to enqueue snipes.
+        raise HTTPException(
+            status_code=400,
+            detail="Connect your ShopGoodwill account before adding snipes",
+        )
+
     db.add_to_watchlist({
         "item_id": req.item_id,
         "title": deal["title"],
@@ -383,27 +405,27 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         "ebay_median": deal["ebay_median"],
         "profit": deal["profit"],
         "ebay_search": deal.get("ebay_search"),
-        "user_id": owner["user_id"],
-        "sgw_account_id": owner["sgw_account_id"],
+        "user_id": user.id,
+        "sgw_account_id": sgw_account_id,
     })
     db.upsert_snipe_job(
         req.item_id,
         req.max_bid,
         end_time,
-        user_id=owner["user_id"],
-        sgw_account_id=owner["sgw_account_id"],
+        user_id=user.id,
+        sgw_account_id=sgw_account_id,
     )
 
-    background_tasks.add_task(_add_sgw_favorite, req.item_id, req.max_bid)
+    background_tasks.add_task(_add_sgw_favorite_for_user, user.id, req.item_id, req.max_bid)
 
     return {"success": True, "item_id": req.item_id, "max_bid": req.max_bid}
 
 
 @app.delete("/watchlist/{item_id}")
-def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks):
-    db.cancel_snipe_job(item_id)
-    db.remove_from_watchlist(item_id)
-    background_tasks.add_task(_remove_sgw_favorite, item_id)
+def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks, user: RequireUser):
+    db.cancel_snipe_job(item_id, user_id=user.id)
+    db.remove_from_watchlist(item_id, user_id=user.id)
+    background_tasks.add_task(_remove_sgw_favorite_for_user, user.id, item_id)
     return {"success": True}
 
 
@@ -412,9 +434,9 @@ class WatchlistMaxBidRequest(BaseModel):
 
 
 @app.patch("/watchlist/{item_id}")
-def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, background_tasks: BackgroundTasks):
+def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, background_tasks: BackgroundTasks, user: RequireUser):
     """Update sniper max bid for a live, not-yet-sniped watchlist item."""
-    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
+    watch = next((w for w in db.get_watchlist(user.id) if w["item_id"] == item_id), None)
     if not watch:
         raise HTTPException(status_code=404, detail="Item not on watchlist")
 
@@ -422,7 +444,7 @@ def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, backgrou
         raise HTTPException(status_code=400, detail="Auction has already ended")
 
     status = (watch.get("sniper_status") or "scheduled").lower()
-    if status in ("won", "awaiting_payment", "shipped", "lost", "ended"):
+    if status in ("won", "awaiting_payment", "shipped", "lost", "ended", "missed"):
         raise HTTPException(status_code=400, detail=f"Cannot edit max bid when status is '{status}'")
     if status == "bid_placed":
         raise HTTPException(status_code=400, detail="Bid already placed — max bid can no longer be changed")
@@ -434,8 +456,8 @@ def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, backgrou
             detail=f"Max bid must be greater than current bid of ${current:.2f}",
         )
 
-    db.update_watchlist_max_bid(item_id, req.max_bid)
-    background_tasks.add_task(_update_sgw_favorite_max_bid, item_id, req.max_bid)
+    db.update_watchlist_max_bid(item_id, req.max_bid, user_id=user.id)
+    background_tasks.add_task(_update_sgw_favorite_max_bid_for_user, user.id, item_id, req.max_bid)
     return {"success": True, "item_id": item_id, "max_bid": req.max_bid}
 
 
@@ -444,13 +466,14 @@ class RepriceRequest(BaseModel):
 
 
 @app.post("/items/{item_id}/reprice")
-def reprice_item(item_id: int, req: RepriceRequest):
+def reprice_item(item_id: int, req: RepriceRequest, user: RequireUser):
     """Re-run eBay lookup with a user-supplied search term and update deal/watchlist pricing."""
+    check_rate_limit(user.id, "reprice", limit=30, window_seconds=3600)
     term = (req.search_term or "").strip()
     if not term:
         raise HTTPException(status_code=400, detail="search_term is required")
 
-    settings = db.get_settings()
+    settings = db.get_settings(user.id)
     days_back = int(settings.get("ebay_days_back", 90))
     fee_pct, resale_ship = profit_calc.fee_settings(settings)
 
@@ -535,8 +558,12 @@ def reprice_item(item_id: int, req: RepriceRequest):
 
 
 def _add_sgw_favorite(item_id: int, max_bid: float):
+    _add_sgw_favorite_for_user(None, item_id, max_bid)
+
+
+def _add_sgw_favorite_for_user(user_id, item_id: int, max_bid: float):
     try:
-        sgw = _get_sgw_client()
+        sgw = _get_sgw_client_for_user(user_id) if user_id else _get_sgw_client()
         note = json.dumps({"max_bid": max_bid})
         sgw.add_favorite(item_id, note=note)
         # Verify the note stuck — empty notes are why snipes get silently skipped
@@ -576,9 +603,13 @@ def _relabel_missed_losses() -> int:
 
 
 def _update_sgw_favorite_max_bid(item_id: int, max_bid: float):
+    _update_sgw_favorite_max_bid_for_user(None, item_id, max_bid)
+
+
+def _update_sgw_favorite_max_bid_for_user(user_id, item_id: int, max_bid: float):
     """Update the favorite note the sniper reads for max_bid."""
     try:
-        sgw = _get_sgw_client()
+        sgw = _get_sgw_client_for_user(user_id) if user_id else _get_sgw_client()
         note = json.dumps({"max_bid": max_bid})
         try:
             sgw.add_favorite_note(item_id, note)
@@ -591,8 +622,12 @@ def _update_sgw_favorite_max_bid(item_id: int, max_bid: float):
 
 
 def _remove_sgw_favorite(item_id: int):
+    _remove_sgw_favorite_for_user(None, item_id)
+
+
+def _remove_sgw_favorite_for_user(user_id, item_id: int):
     try:
-        sgw = _get_sgw_client()
+        sgw = _get_sgw_client_for_user(user_id) if user_id else _get_sgw_client()
         sgw.remove_favorite(item_id)
         logger.info(f"Removed item {item_id} from SGW favorites")
     except Exception as e:
@@ -783,10 +818,144 @@ def _get_sgw_client() -> shopgoodwill.Shopgoodwill:
     return shopgoodwill.Shopgoodwill(auth_info)
 
 
+def _get_sgw_client_for_account(account_id: int) -> shopgoodwill.Shopgoodwill:
+    """Build a client from an encrypted sgw_accounts row (or env fallback)."""
+    acct = db.get_sgw_account_secrets(account_id)
+    if not acct:
+        raise HTTPException(status_code=404, detail="SGW account not found")
+    if acct.get("auth_source") == "env" or not acct.get("encrypted_username"):
+        return _get_sgw_client()
+    try:
+        raw = crypto_creds.decrypt_secret(
+            acct["encrypted_username"],
+            acct["nonce"],
+            int(acct.get("key_version") or 1),
+        )
+        # Blob mode: JSON {"username","password"}; legacy: separate fields
+        if raw.strip().startswith("{"):
+            data = json.loads(raw)
+            username, password = data["username"], data["password"]
+        else:
+            username = raw
+            password = crypto_creds.decrypt_secret(
+                acct["encrypted_password"],
+                acct["nonce"],
+                int(acct.get("key_version") or 1),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not decrypt SGW credentials: {e}")
+    return shopgoodwill.Shopgoodwill({"username": username, "password": password})
+
+
+def _get_sgw_client_for_user(user_id) -> shopgoodwill.Shopgoodwill:
+    account_id = db.get_primary_sgw_account_id(user_id)
+    if account_id:
+        try:
+            return _get_sgw_client_for_account(account_id)
+        except HTTPException:
+            pass
+    # Single-tenant / bootstrap fallback
+    if not using_postgres():
+        return _get_sgw_client()
+    raise HTTPException(
+        status_code=400,
+        detail="Connect your ShopGoodwill account in Account settings first",
+    )
+
+
+# ── Account / SGW credentials ───────────────────────────────────────────────
+
+class SgwConnectRequest(BaseModel):
+    username: str
+    password: str
+    label: str = "Default"
+
+
+@app.get("/me")
+def get_me(user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    accounts = db.list_sgw_accounts(user.id)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "sgw_accounts": accounts,
+        "has_sgw": any(a.get("status") == "active" for a in accounts),
+        "postgres": using_postgres(),
+    }
+
+
+@app.get("/account/sgw")
+def list_my_sgw_accounts(user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    return {"accounts": db.list_sgw_accounts(user.id)}
+
+
+@app.post("/account/sgw")
+def connect_sgw_account(req: SgwConnectRequest, user: RequireUser):
+    """Encrypt + store SGW credentials after a live test login."""
+    check_rate_limit(user.id, "sgw_connect", limit=5, window_seconds=3600)
+    db.ensure_user_profile(user.id, user.email)
+    username = (req.username or "").strip()
+    password = req.password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+
+    # Test login before storing
+    try:
+        client = shopgoodwill.Shopgoodwill({"username": username, "password": password})
+        # Cheap authenticated call
+        client.get_favorites()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"ShopGoodwill login failed: {e}")
+
+    try:
+        # Single ciphertext blob keeps one nonce for the credential pair
+        blob, nonce, key_ver = crypto_creds.encrypt_secret(
+            json.dumps({"username": username, "password": password})
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Encryption failed: {e}")
+
+    account_id = db.upsert_user_sgw_account(
+        user.id,
+        label=req.label or "Default",
+        encrypted_username=blob,  # full JSON blob
+        encrypted_password="",    # unused when blob mode
+        nonce=nonce,
+        key_version=key_ver,
+        status="active",
+    )
+    db.mark_sgw_account_verified(account_id, True)
+    return {
+        "success": True,
+        "account": next(
+            (a for a in db.list_sgw_accounts(user.id) if a["id"] == account_id),
+            {"id": account_id},
+        ),
+    }
+
+
+@app.post("/account/sgw/{account_id}/verify")
+def verify_sgw_account(account_id: int, user: RequireUser):
+    check_rate_limit(user.id, "sgw_verify", limit=10, window_seconds=3600)
+    accounts = {a["id"]: a for a in db.list_sgw_accounts(user.id)}
+    if account_id not in accounts:
+        raise HTTPException(status_code=404, detail="Account not found")
+    try:
+        client = _get_sgw_client_for_account(account_id)
+        client.get_favorites()
+        db.mark_sgw_account_verified(account_id, True)
+        return {"success": True, "status": "active"}
+    except Exception as e:
+        db.mark_sgw_account_verified(account_id, False, str(e)[:300])
+        raise HTTPException(status_code=400, detail=f"Verification failed: {e}")
+
+
 # ── Scanner ─────────────────────────────────────────────────────────────────
 
 @app.post("/scan")
-def trigger_scan(background_tasks: BackgroundTasks):
+def trigger_scan(background_tasks: BackgroundTasks, user: RequireUser):
+    check_rate_limit(user.id, "scan", limit=3, window_seconds=3600)
     global _scan_running
     if _scan_running:
         return {"message": "Scan already running"}
@@ -795,7 +964,7 @@ def trigger_scan(background_tasks: BackgroundTasks):
 
 
 @app.get("/scan/status")
-def scan_status():
+def scan_status(user: RequireUser):
     recent = db.get_recent_scans(limit=5)
     return {"running": _scan_running, "recent_scans": recent}
 
@@ -855,7 +1024,7 @@ def _build_sniper_config() -> dict:
 
 
 @app.post("/sniper/start")
-def start_sniper():
+def start_sniper(user: RequireUser):
     global _sniper_process
     if _sniper_process and _sniper_process.poll() is None:
         return {"running": True, "message": "Sniper already running"}
@@ -869,12 +1038,22 @@ def start_sniper():
     _sniper_process = subprocess.Popen(
         [sys.executable, "bid_sniper.py", "--config", config_path],
         cwd=os.path.dirname(__file__),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
+    threading.Thread(
+        target=_tail_sniper_output,
+        args=(_sniper_process,),
+        daemon=True,
+        name="sniper-tail",
+    ).start()
     return {"running": True, "pid": _sniper_process.pid}
 
 
 @app.post("/sniper/stop")
-def stop_sniper():
+def stop_sniper(user: RequireUser):
     global _sniper_process
     if _sniper_process and _sniper_process.poll() is None:
         _sniper_process.terminate()
@@ -883,7 +1062,7 @@ def stop_sniper():
 
 
 @app.get("/sniper/status")
-def sniper_status():
+def sniper_status(user: RequireUser):
     global _sniper_process
     running = _sniper_process is not None and _sniper_process.poll() is None
     return {
@@ -893,7 +1072,7 @@ def sniper_status():
 
 
 @app.get("/sniper/logs")
-def get_sniper_logs(n: int = Query(default=100, le=500)):
+def get_sniper_logs(user: RequireUser, n: int = Query(default=100, le=500)):
     """Return the last n lines from the sniper's output."""
     logs = list(_sniper_logs)
     return {"logs": logs[-n:]}
@@ -902,8 +1081,9 @@ def get_sniper_logs(n: int = Query(default=100, le=500)):
 # ── Settings ─────────────────────────────────────────────────────────────────
 
 @app.get("/settings")
-def get_settings():
-    return db.get_settings()
+def get_settings(user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    return db.get_settings(user.id)
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -926,13 +1106,14 @@ def _restart_sniper() -> None:
 
 
 @app.put("/settings")
-def update_setting(req: SettingsUpdateRequest):
-    db.update_setting(req.key, req.value)
+def update_setting(req: SettingsUpdateRequest, user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    db.update_setting(req.key, req.value, user_id=user.id)
     # Snipe timing is baked into sniper config at process start — restart to apply
     # and recompute durable job fire times.
     if req.key == "snipe_seconds_before":
         try:
-            secs = int(req.value)
+            secs = int(req.value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             secs = 5
         db.refresh_pending_snipe_times(secs)
@@ -954,17 +1135,19 @@ _favorites_lock = threading.Lock()
 
 
 @app.get("/favorites")
-def get_all_favorites():
+def get_all_favorites(user: RequireUser):
     """Return all SGW favorites with enrichment from the deals table where available."""
     try:
-        sgw = _get_sgw_client()
+        sgw = _get_sgw_client_for_user(user.id)
         raw_favorites = sgw.get_favorites()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch SGW favorites: {e}")
         raise HTTPException(status_code=502, detail=f"Could not reach SGW: {e}")
 
     records = {d["item_id"]: d for d in db.get_deals_by_ids(list(raw_favorites.keys()))}
-    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings())
+    fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings(user.id))
 
     result = []
     for item_id, fav in raw_favorites.items():
@@ -1005,7 +1188,8 @@ def get_all_favorites():
 
 
 @app.post("/favorites/scan")
-def trigger_favorites_scan(background_tasks: BackgroundTasks):
+def trigger_favorites_scan(background_tasks: BackgroundTasks, user: RequireUser):
+    check_rate_limit(user.id, "favorites_scan", limit=5, window_seconds=3600)
     global _favorites_running
     if _favorites_running:
         return {"message": "Favorites scan already running"}
@@ -1014,7 +1198,7 @@ def trigger_favorites_scan(background_tasks: BackgroundTasks):
 
 
 @app.get("/favorites/status")
-def favorites_scan_status():
+def favorites_scan_status(user: RequireUser):
     return {"running": _favorites_running}
 
 
@@ -1034,8 +1218,9 @@ def _run_favorites_scan():
 # ── Categories ────────────────────────────────────────────────────────────────
 
 @app.get("/categories")
-def get_categories():
+def get_categories(user: RequireUser):
     try:
+        # Shared catalog — env client is fine for category tree
         sgw = _get_sgw_client()
         return {"categories": sgw.get_categories()}
     except Exception as e:
@@ -1045,6 +1230,7 @@ def get_categories():
 
 @app.get("/browse")
 def browse_category(
+    user: RequireUser,
     category_ids: str = Query("", description="Comma-separated scids"),
     page: int = Query(1, ge=1),
 ):
