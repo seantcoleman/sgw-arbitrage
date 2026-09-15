@@ -48,11 +48,14 @@ def main():
     with psycopg.connect(DATABASE_URL, row_factory=dict_row) as pg:
         # Profile
         email_row = sq.execute("SELECT email FROM users ORDER BY id LIMIT 1").fetchone()
-        email = (email_row["email"] if email_row else None) or "owner@migrated.local"
+        sqlite_email = (email_row["email"] if email_row else None) or ""
+        # Prefer the live Auth email; never clobber a real signup with owner@local.
+        email = sqlite_email if sqlite_email and sqlite_email != "owner@local" else None
         pg.execute(
             """
             INSERT INTO profiles (id, email) VALUES (%s, %s)
-            ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
+            ON CONFLICT (id) DO UPDATE SET
+              email = COALESCE(profiles.email, EXCLUDED.email)
             """,
             (OWNER_USER_ID, email),
         )

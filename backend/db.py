@@ -1679,7 +1679,9 @@ def get_primary_sgw_account_id(user_id: UserId) -> Optional[int]:
             """
             SELECT id FROM sgw_accounts
             WHERE user_id = ? AND status IN ('active', 'pending')
-            ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id
+            ORDER BY CASE auth_source WHEN 'user' THEN 0 ELSE 1 END,
+                     CASE status WHEN 'active' THEN 0 ELSE 1 END,
+                     id
             LIMIT 1
             """,
             (str(user_id) if using_postgres() else user_id,),
