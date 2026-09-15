@@ -237,6 +237,44 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = time.perf_counter()
+    user_id = "-"
+    auth_header = request.headers.get("authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        try:
+            from jose import jwt as jose_jwt
+            token = auth_header.split(" ", 1)[1]
+            secret = os.getenv("SUPABASE_JWT_SECRET") or ""
+            if secret:
+                claims = jose_jwt.decode(
+                    token, secret, algorithms=["HS256"], audience="authenticated"
+                )
+                user_id = str(claims.get("sub") or "-")
+            else:
+                # Dev / AUTH_DISABLED: best-effort payload peek for logs only
+                parts = token.split(".")
+                if len(parts) >= 2:
+                    import base64
+                    pad = "=" * (-len(parts[1]) % 4)
+                    payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+                    user_id = str(payload.get("sub") or "-")
+        except Exception:
+            user_id = "-"
+    response = await call_next(request)
+    ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "request method=%s path=%s status=%s user_id=%s duration_ms=%.1f",
+        request.method,
+        request.url.path,
+        response.status_code,
+        user_id,
+        ms,
+    )
+    return response
+
+
 # ── Deals ──────────────────────────────────────────────────────────────────
 
 @app.get("/deals")

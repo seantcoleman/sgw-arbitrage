@@ -90,11 +90,18 @@ Optional: stop spawning an in-process sniper from the API (`SNIPER_IN_API=0`) on
 
 Oracle Cloud → Compute → instance → Edit → shape **VM.Standard.A1.Flex** to **4 OCPU / 24 GB**.
 
-## 7. Vercel env
+## 8. Observability (optional)
 
+Structured request logs already include `user_id` when a JWT is present.
+
+For Sentry:
+
+```bash
+# backend .env
+SENTRY_DSN=https://...@o....ingest.sentry.io/...
+
+# Vercel env
+NEXT_PUBLIC_SENTRY_DSN=  # or use @sentry/nextjs when you wire it
 ```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_API_URL=/backend
-BACKEND_URL=https://api.yourdomain.com
-```
+
+Install later with `pip install sentry-sdk[fastapi]` and init in `api.py` when you have a DSN.

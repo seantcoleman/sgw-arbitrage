@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getScanStatus } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
+import { authConfigured, createClient } from "@/lib/supabase/client";
 
 export function Nav() {
   const path = usePathname();
   const { theme, toggleTheme } = useTheme();
   const [scanRunning, setScanRunning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const poll = async () => {
@@ -24,14 +28,47 @@ export function Nav() {
 
   useEffect(() => {
     setMenuOpen(false);
+    setUserMenuOpen(false);
   }, [path]);
+
+  useEffect(() => {
+    if (!authConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        if (!cancelled) setEmail(data.user?.email ?? null);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!userMenuRef.current?.contains(e.target as Node)) setUserMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [userMenuOpen]);
+
+  const signOut = async () => {
+    if (!authConfigured()) return;
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
 
   const links = [
     { href: "/", label: "Deals" },
     { href: "/favorites", label: "Favorites" },
     { href: "/watchlist", label: "Watchlist" },
     { href: "/settings", label: "Settings" },
-    { href: "/account", label: "Account" },
   ];
 
   const linkClass = (href: string) => {
@@ -46,7 +83,6 @@ export function Nav() {
   return (
     <nav className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4 min-w-0">
-        {/* Brand */}
         <Link href="/" className="flex items-center gap-2 shrink-0" onClick={() => setMenuOpen(false)}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md shadow-green-900/50">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -56,7 +92,6 @@ export function Nav() {
           <span className="hidden sm:inline font-bold text-sm text-zinc-100">SGW Arb</span>
         </Link>
 
-        {/* Desktop links */}
         <div className="hidden md:flex items-center gap-1 min-w-0">
           {links.map(({ href, label }) => (
             <Link key={href} href={href} className={linkClass(href)}>
@@ -65,7 +100,6 @@ export function Nav() {
           ))}
         </div>
 
-        {/* Right */}
         <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
           {scanRunning && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
@@ -90,12 +124,62 @@ export function Nav() {
               </svg>
             )}
           </button>
+
+          <div className="relative hidden md:block" ref={userMenuRef}>
+            <button
+              type="button"
+              onClick={() => setUserMenuOpen((o) => !o)}
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"
+            >
+              <span className="w-6 h-6 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center text-xs font-semibold">
+                {(email?.[0] || "U").toUpperCase()}
+              </span>
+              <span className="max-w-[9rem] truncate hidden lg:inline">{email || "Account"}</span>
+            </button>
+            {userMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-1.5 w-48 rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl py-1 z-50"
+              >
+                <Link
+                  href="/account"
+                  role="menuitem"
+                  className="block px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  Account
+                </Link>
+                {authConfigured() ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={signOut}
+                    className="w-full text-left px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+                  >
+                    Sign out
+                  </button>
+                ) : (
+                  <Link
+                    href="/login"
+                    role="menuitem"
+                    className="block px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(o => !o)}
+            onClick={() => setMenuOpen((o) => !o)}
           >
             {menuOpen ? (
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -117,6 +201,18 @@ export function Nav() {
               {label}
             </Link>
           ))}
+          <Link href="/account" className={`${linkClass("/account")} w-full`}>
+            Account
+          </Link>
+          {authConfigured() && (
+            <button
+              type="button"
+              onClick={signOut}
+              className="px-3 py-1.5 rounded-lg text-sm text-left text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       )}
     </nav>

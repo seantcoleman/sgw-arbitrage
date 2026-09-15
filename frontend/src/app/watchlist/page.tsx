@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { EditableMaxBid, WatchlistCard } from "@/components/WatchlistCard";
@@ -10,7 +11,17 @@ import {
   isTerminalSniperStatus,
   parseEndTime,
 } from "@/components/listingCard";
-import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
+import {
+  getMe,
+  getSettings,
+  getSniperLogs,
+  getSniperStatus,
+  getWatchlist,
+  removeFromWatchlist,
+  repriceItem,
+  SniperLogEntry,
+  WatchlistItem,
+} from "@/lib/api";
 
 function endTimeMs(endTime: string | null): number {
   if (!endTime) return Number.POSITIVE_INFINITY;
@@ -117,6 +128,7 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
 };
 
 export default function WatchlistPage() {
+  const [hasSgw, setHasSgw] = useState<boolean | null>(null);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [sniperRunning, setSniperRunning] = useState(false);
   const [snipeSeconds, setSnipeSeconds] = useState<number | null>(null);
@@ -135,14 +147,16 @@ export default function WatchlistPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [wl, sniper, settings] = await Promise.all([
+      const [wl, sniper, settings, me] = await Promise.all([
         getWatchlist().catch(() => ({ watchlist: [] })),
         getSniperStatus().catch(() => ({ running: false })),
         getSettings().catch(() => null),
+        getMe().catch(() => null),
       ]);
       setWatchlist(wl.watchlist);
       setSniperRunning(sniper.running);
       if (settings) setSnipeSeconds(Number(settings.snipe_seconds_before));
+      if (me) setHasSgw(!!me.has_sgw);
       setLoading(false);
     };
     load();
@@ -564,9 +578,23 @@ export default function WatchlistPage() {
             </svg>
           </div>
           <h2 className="text-base font-semibold text-zinc-300 mb-1">No items queued</h2>
-          <p className="text-sm text-zinc-600 max-w-xs">
-            Go to Deals or Favorites and click "+ Add to Sniper" on any auction you want to bid on.
-          </p>
+          {hasSgw === false ? (
+            <>
+              <p className="text-sm text-zinc-600 max-w-sm mb-4">
+                Connect your ShopGoodwill account before sniping — we place bids on your behalf at the last seconds.
+              </p>
+              <Link
+                href="/account"
+                className="inline-flex items-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2.5 transition-colors"
+              >
+                Connect ShopGoodwill
+              </Link>
+            </>
+          ) : (
+            <p className="text-sm text-zinc-600 max-w-xs">
+              Go to Deals or Favorites and click &quot;+ Add to Sniper&quot; on any auction you want to bid on.
+            </p>
+          )}
         </div>
       ) : viewMode === "cards" ? (
         <div className="space-y-8">
