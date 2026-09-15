@@ -122,9 +122,89 @@ def init_db():
             ("shipper_name",   "TEXT"),
             ("due_date",       "TEXT"),
             ("ebay_search",    "TEXT"),
+            ("user_id",        "INTEGER"),
+            ("sgw_account_id", "INTEGER"),
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typedef}")
+
+        # Multi-tenant foundations (Phase 1 seeds a single local owner + env SGW account)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                email      TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS sgw_accounts (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id         INTEGER NOT NULL,
+                label           TEXT,
+                auth_source     TEXT NOT NULL DEFAULT 'env',
+                encrypted_username TEXT,
+                encrypted_password TEXT,
+                status          TEXT NOT NULL DEFAULT 'active',
+                created_at      TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS snipe_jobs (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                watchlist_item_id  INTEGER NOT NULL,
+                user_id            INTEGER,
+                sgw_account_id     INTEGER,
+                max_bid            REAL NOT NULL,
+                end_time           TEXT,
+                snipe_at           TEXT NOT NULL,
+                status             TEXT NOT NULL DEFAULT 'pending',
+                lease_owner        TEXT,
+                lease_until        TEXT,
+                attempt_count      INTEGER NOT NULL DEFAULT 0,
+                last_error         TEXT,
+                updated_at         TEXT DEFAULT (datetime('now')),
+                created_at         TEXT DEFAULT (datetime('now')),
+                UNIQUE(watchlist_item_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_snipe_jobs_pending_at
+                ON snipe_jobs(status, snipe_at);
+        """)
+
+        # Seed default owner + env-backed SGW account
+        row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            cur = conn.execute(
+                "INSERT INTO users (email) VALUES (?)",
+                ("owner@local",),
+            )
+            user_id = cur.lastrowid
+        else:
+            user_id = row["id"]
+
+        acct = conn.execute(
+            "SELECT id FROM sgw_accounts WHERE user_id = ? AND auth_source = 'env' LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if not acct:
+            cur = conn.execute(
+                """
+                INSERT INTO sgw_accounts (user_id, label, auth_source, status)
+                VALUES (?, 'Default (env)', 'env', 'active')
+                """,
+                (user_id,),
+            )
+            account_id = cur.lastrowid
+        else:
+            account_id = acct["id"]
+
+        conn.execute(
+            """
+            UPDATE watchlist
+            SET user_id = COALESCE(user_id, ?),
+                sgw_account_id = COALESCE(sgw_account_id, ?)
+            """,
+            (user_id, account_id),
+        )
 
         # Backfill ebay_search onto watchlist from deals where missing
         conn.execute("""
@@ -179,6 +259,9 @@ def init_db():
                     VALUES (?, ?, 'seed', 1, datetime('now'), datetime('now'))
                     ON CONFLICT(cache_key) DO NOTHING
                 """, (pkey, term))
+
+        # Backfill durable snipe jobs for still-scheduled watchlist rows
+        _backfill_snipe_jobs_conn(conn)
 
 
 # ── Search term cache ──────────────────────────────────────────────────────
@@ -427,16 +510,24 @@ def end_long_horizon_deals(max_days: int = 14) -> int:
 # ── Watchlist ───────────────────────────────────────────────────────────────
 
 def add_to_watchlist(item: Dict[str, Any]) -> None:
+    owner = get_default_owner()
+    payload = {
+        **item,
+        "user_id": item.get("user_id") or owner["user_id"],
+        "sgw_account_id": item.get("sgw_account_id") or owner["sgw_account_id"],
+    }
     with get_conn() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO watchlist (
                 item_id, title, max_bid, current_bid, end_time,
-                sgw_url, image_url, ebay_median, profit, ebay_search
+                sgw_url, image_url, ebay_median, profit, ebay_search,
+                user_id, sgw_account_id
             ) VALUES (
                 :item_id, :title, :max_bid, :current_bid, :end_time,
-                :sgw_url, :image_url, :ebay_median, :profit, :ebay_search
+                :sgw_url, :image_url, :ebay_median, :profit, :ebay_search,
+                :user_id, :sgw_account_id
             )
-        """, item)
+        """, payload)
 
 
 def backfill_watchlist_from_deals() -> int:
@@ -510,6 +601,15 @@ def get_watchlist() -> List[Dict]:
 
 def remove_from_watchlist(item_id: int) -> None:
     with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = 'cancelled', updated_at = datetime('now'),
+                lease_owner = NULL, lease_until = NULL
+            WHERE watchlist_item_id = ? AND status IN ('pending', 'leased')
+            """,
+            (item_id,),
+        )
         conn.execute("DELETE FROM watchlist WHERE item_id = ?", (item_id,))
 
 
@@ -518,6 +618,18 @@ def update_watchlist_max_bid(item_id: int, max_bid: float) -> None:
         conn.execute(
             "UPDATE watchlist SET max_bid = ? WHERE item_id = ?",
             (max_bid, item_id),
+        )
+        row = conn.execute(
+            "SELECT end_time, user_id, sgw_account_id FROM watchlist WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+    if row:
+        upsert_snipe_job(
+            item_id,
+            max_bid,
+            row["end_time"],
+            user_id=row["user_id"],
+            sgw_account_id=row["sgw_account_id"],
         )
 
 
@@ -538,6 +650,18 @@ def update_watchlist_live_bid(
                 "UPDATE watchlist SET current_bid = ? WHERE item_id = ?",
                 (current_bid, item_id),
             )
+        row = conn.execute(
+            "SELECT max_bid, end_time, user_id, sgw_account_id, sniper_status FROM watchlist WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+    if row and (row["sniper_status"] or "scheduled").lower() == "scheduled":
+        upsert_snipe_job(
+            item_id,
+            float(row["max_bid"]),
+            row["end_time"],
+            user_id=row["user_id"],
+            sgw_account_id=row["sgw_account_id"],
+        )
 
 
 def update_watchlist_status(item_id: int, status: str) -> None:
@@ -584,6 +708,416 @@ def update_watchlist_order(
         """, (status, order_id, final_price, final_shipping,
               handling_price, tax, tracking_number, shipper_name,
               due_date, item_id))
+
+
+# ── Multi-tenant seed + durable snipe jobs ──────────────────────────────────
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_end_time_utc(end_time_str: Optional[str]) -> Optional[datetime]:
+    """Parse watchlist/job end times (UTC ISO or naive Pacific) to aware UTC."""
+    if not end_time_str:
+        return None
+    raw = str(end_time_str).strip()
+    try:
+        if raw.endswith("Z") or "+" in raw[10:] or raw.endswith("-00:00"):
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        # Naive → treat as America/Los_Angeles (SGW favorite style)
+        from zoneinfo import ZoneInfo
+        fmt = "%Y-%m-%dT%H:%M:%S"
+        if "." in raw:
+            fmt += ".%f"
+        dt = datetime.strptime(raw, fmt).replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def compute_snipe_at(end_time_str: Optional[str], snipe_seconds_before: int) -> Optional[str]:
+    end_dt = parse_end_time_utc(end_time_str)
+    if end_dt is None:
+        return None
+    snipe_at = end_dt - timedelta(seconds=max(1, int(snipe_seconds_before)))
+    return snipe_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def get_default_owner() -> Dict[str, int]:
+    """Return the seeded local owner user_id + env sgw_account_id."""
+    with get_conn() as conn:
+        user = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        if not user:
+            cur = conn.execute("INSERT INTO users (email) VALUES (?)", ("owner@local",))
+            user_id = cur.lastrowid
+        else:
+            user_id = user["id"]
+        acct = conn.execute(
+            "SELECT id FROM sgw_accounts WHERE user_id = ? AND auth_source = 'env' LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if not acct:
+            cur = conn.execute(
+                """
+                INSERT INTO sgw_accounts (user_id, label, auth_source, status)
+                VALUES (?, 'Default (env)', 'env', 'active')
+                """,
+                (user_id,),
+            )
+            account_id = cur.lastrowid
+        else:
+            account_id = acct["id"]
+    return {"user_id": int(user_id), "sgw_account_id": int(account_id)}
+
+
+def get_sgw_account(account_id: int) -> Optional[Dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sgw_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _snipe_seconds_before_conn(conn) -> int:
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'snipe_seconds_before'"
+    ).fetchone()
+    if not row:
+        return 5
+    try:
+        return int(json.loads(row["value"]))
+    except Exception:
+        try:
+            return int(row["value"])
+        except Exception:
+            return 5
+
+
+def _backfill_snipe_jobs_conn(conn) -> int:
+    """Create pending jobs for scheduled watchlist rows that lack one."""
+    snipe_secs = _snipe_seconds_before_conn(conn)
+    owner_user = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    owner_acct = conn.execute(
+        "SELECT id FROM sgw_accounts WHERE auth_source = 'env' ORDER BY id LIMIT 1"
+    ).fetchone()
+    user_id = owner_user["id"] if owner_user else None
+    account_id = owner_acct["id"] if owner_acct else None
+    rows = conn.execute(
+        """
+        SELECT item_id, max_bid, end_time, user_id, sgw_account_id, sniper_status
+        FROM watchlist
+        WHERE LOWER(COALESCE(sniper_status, 'scheduled')) = 'scheduled'
+        """
+    ).fetchall()
+    created = 0
+    for w in rows:
+        existing = conn.execute(
+            "SELECT id, status FROM snipe_jobs WHERE watchlist_item_id = ?",
+            (w["item_id"],),
+        ).fetchone()
+        snipe_at = compute_snipe_at(w["end_time"], snipe_secs)
+        if not snipe_at:
+            continue
+        if existing:
+            if existing["status"] in ("pending", "leased"):
+                conn.execute(
+                    """
+                    UPDATE snipe_jobs
+                    SET max_bid = ?, end_time = ?, snipe_at = ?,
+                        user_id = COALESCE(user_id, ?),
+                        sgw_account_id = COALESCE(sgw_account_id, ?),
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (
+                        w["max_bid"],
+                        w["end_time"],
+                        snipe_at,
+                        w["user_id"] or user_id,
+                        w["sgw_account_id"] or account_id,
+                        existing["id"],
+                    ),
+                )
+            continue
+        conn.execute(
+            """
+            INSERT INTO snipe_jobs (
+                watchlist_item_id, user_id, sgw_account_id,
+                max_bid, end_time, snipe_at, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+            """,
+            (
+                w["item_id"],
+                w["user_id"] or user_id,
+                w["sgw_account_id"] or account_id,
+                w["max_bid"],
+                w["end_time"],
+                snipe_at,
+            ),
+        )
+        created += 1
+    return created
+
+
+def backfill_snipe_jobs() -> int:
+    with get_conn() as conn:
+        return _backfill_snipe_jobs_conn(conn)
+
+
+def upsert_snipe_job(
+    item_id: int,
+    max_bid: float,
+    end_time: Optional[str],
+    user_id: Optional[int] = None,
+    sgw_account_id: Optional[int] = None,
+    snipe_seconds_before: Optional[int] = None,
+) -> Optional[int]:
+    """Create or refresh a pending snipe job for a watchlist item."""
+    owner = get_default_owner()
+    user_id = user_id or owner["user_id"]
+    sgw_account_id = sgw_account_id or owner["sgw_account_id"]
+    if snipe_seconds_before is None:
+        settings = get_settings()
+        snipe_seconds_before = int(settings.get("snipe_seconds_before", 5))
+    snipe_at = compute_snipe_at(end_time, int(snipe_seconds_before))
+    if not snipe_at:
+        return None
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT id, status FROM snipe_jobs WHERE watchlist_item_id = ?",
+            (item_id,),
+        ).fetchone()
+        if existing and existing["status"] in ("fired", "done"):
+            # Already fired — don't reopen
+            return existing["id"]
+        if existing:
+            conn.execute(
+                """
+                UPDATE snipe_jobs SET
+                    max_bid = ?, end_time = ?, snipe_at = ?,
+                    user_id = ?, sgw_account_id = ?,
+                    status = CASE
+                        WHEN status = 'cancelled' THEN 'pending'
+                        WHEN status = 'leased' THEN status
+                        ELSE 'pending'
+                    END,
+                    last_error = NULL,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (max_bid, end_time, snipe_at, user_id, sgw_account_id, existing["id"]),
+            )
+            return existing["id"]
+        cur = conn.execute(
+            """
+            INSERT INTO snipe_jobs (
+                watchlist_item_id, user_id, sgw_account_id,
+                max_bid, end_time, snipe_at, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+            """,
+            (item_id, user_id, sgw_account_id, max_bid, end_time, snipe_at),
+        )
+        return cur.lastrowid
+
+
+def cancel_snipe_job(item_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = 'cancelled', updated_at = datetime('now'),
+                lease_owner = NULL, lease_until = NULL
+            WHERE watchlist_item_id = ? AND status IN ('pending', 'leased')
+            """,
+            (item_id,),
+        )
+
+
+def refresh_pending_snipe_times(snipe_seconds_before: Optional[int] = None) -> int:
+    """Recompute snipe_at for all pending jobs (e.g. after settings change)."""
+    if snipe_seconds_before is None:
+        snipe_seconds_before = int(get_settings().get("snipe_seconds_before", 5))
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, end_time FROM snipe_jobs WHERE status = 'pending'"
+        ).fetchall()
+        n = 0
+        for r in rows:
+            snipe_at = compute_snipe_at(r["end_time"], int(snipe_seconds_before))
+            if not snipe_at:
+                continue
+            conn.execute(
+                """
+                UPDATE snipe_jobs SET snipe_at = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (snipe_at, r["id"]),
+            )
+            n += 1
+    return n
+
+
+def reclaim_expired_snipe_leases() -> int:
+    """Return leased jobs whose lease expired back to pending."""
+    now = _utcnow_iso()
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = 'pending', lease_owner = NULL, lease_until = NULL,
+                updated_at = datetime('now')
+            WHERE status = 'leased'
+              AND lease_until IS NOT NULL
+              AND lease_until < ?
+            """,
+            (now,),
+        )
+        return cur.rowcount
+
+
+def soonest_pending_snipe_seconds() -> Optional[float]:
+    """Seconds until the soonest pending snipe_at (None if none)."""
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT snipe_at FROM snipe_jobs
+            WHERE status = 'pending'
+            ORDER BY snipe_at ASC
+            LIMIT 1
+            """
+        ).fetchone()
+    if not row or not row["snipe_at"]:
+        return None
+    dt = parse_end_time_utc(row["snipe_at"])
+    if dt is None:
+        return None
+    return (dt - now).total_seconds()
+
+
+def claim_due_snipe_jobs(
+    worker_id: str,
+    lease_seconds: int = 60,
+    look_ahead_seconds: int = 2,
+    limit: int = 10,
+) -> List[Dict]:
+    """
+    Atomically claim pending jobs whose snipe_at is due (or within look_ahead).
+    Returns claimed job dicts.
+    """
+    now = datetime.now(timezone.utc)
+    due_before = (now + timedelta(seconds=look_ahead_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lease_until = (now + timedelta(seconds=lease_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    claimed: List[Dict] = []
+
+    with get_conn() as conn:
+        # Reclaim stale leases first
+        conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = 'pending', lease_owner = NULL, lease_until = NULL,
+                updated_at = datetime('now')
+            WHERE status = 'leased'
+              AND lease_until IS NOT NULL
+              AND lease_until < ?
+            """,
+            (_utcnow_iso(),),
+        )
+        rows = conn.execute(
+            """
+            SELECT * FROM snipe_jobs
+            WHERE status = 'pending'
+              AND snipe_at <= ?
+            ORDER BY snipe_at ASC
+            LIMIT ?
+            """,
+            (due_before, limit),
+        ).fetchall()
+        for r in rows:
+            cur = conn.execute(
+                """
+                UPDATE snipe_jobs
+                SET status = 'leased',
+                    lease_owner = ?,
+                    lease_until = ?,
+                    attempt_count = attempt_count + 1,
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'pending'
+                """,
+                (worker_id, lease_until, r["id"]),
+            )
+            if cur.rowcount:
+                job = dict(r)
+                job["status"] = "leased"
+                job["lease_owner"] = worker_id
+                job["lease_until"] = lease_until
+                job["attempt_count"] = int(r["attempt_count"] or 0) + 1
+                claimed.append(job)
+    return claimed
+
+
+def complete_snipe_job(
+    job_id: int,
+    status: str = "done",
+    last_error: Optional[str] = None,
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = ?, last_error = ?, lease_owner = NULL, lease_until = NULL,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (status, last_error, job_id),
+        )
+
+
+def release_snipe_job(job_id: int, last_error: Optional[str] = None, retry: bool = True) -> None:
+    """Release a lease — retry as pending or mark done with error."""
+    with get_conn() as conn:
+        if retry:
+            conn.execute(
+                """
+                UPDATE snipe_jobs
+                SET status = 'pending', last_error = ?, lease_owner = NULL,
+                    lease_until = NULL, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (last_error, job_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE snipe_jobs
+                SET status = 'done', last_error = ?, lease_owner = NULL,
+                    lease_until = NULL, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (last_error, job_id),
+            )
+
+
+def mark_snipe_job_fired(job_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE snipe_jobs
+            SET status = 'fired', updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+
+
+def get_snipe_job_for_item(item_id: int) -> Optional[Dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM snipe_jobs WHERE watchlist_item_id = ?",
+            (item_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 # ── Settings ────────────────────────────────────────────────────────────────

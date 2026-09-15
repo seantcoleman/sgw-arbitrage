@@ -6,10 +6,8 @@ Usage:
     python bid_sniper.py --config config.json
     python bid_sniper.py --config config.json --dry-run
 
-To set a max bid for an item, add it to your SGW favorites,
-then set the note to: {"max_bid": 45.00}
-The sniper will place a bid for that amount shortly before auction end
-(controlled by bid_snipe_time_delta in the config).
+Durable snipe jobs live in SQLite (snipe_jobs). Watchlist max_bid / end_time
+are the schedule source of truth; SGW favorites sync is best-effort only.
 """
 
 import argparse
@@ -19,9 +17,8 @@ import json
 import logging
 import logging.config
 import os
-import queue
+import socket
 from json.decoder import JSONDecodeError
-from logging.handlers import QueueHandler, QueueListener
 from typing import Any, Callable, Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
 
@@ -113,6 +110,8 @@ class BidSniper:
         self.scheduled_tasks = set()
         # Once we've attempted a real bid for an item, never bid again this session
         self.bids_placed: set[int] = set()
+        self.in_flight_jobs: set[int] = set()
+        self.worker_id = f"{socket.gethostname()}:{os.getpid()}"
 
     def update_favorites_cache(self, max_cache_time: int) -> None:
         age = (
@@ -267,20 +266,17 @@ class BidSniper:
         title = favorite["title"] if favorite else str(item_id)
         self.logger.info(f"Upcoming snipe for '{title}' in {when_label}")
 
-    async def place_bid(self, item_id: int) -> None:
+    async def place_bid(self, item_id: int, job: Optional[Dict] = None) -> Optional[str]:
+        """
+        Place a snipe bid using watchlist/job max_bid (favorites optional).
+        Returns outcome: accepted|outbid|rejected|skipped|aborted|None
+        """
         # Hard idempotency: at most one in-flight / completed bid attempt per item
         if item_id in self.bids_placed:
             self.logger.info(f"Skipping duplicate bid attempt for item {item_id}")
-            return None
+            return "aborted"
         self.bids_placed.add(item_id)
 
-        self.logger.warning(f"Snipe firing for item {item_id} — refreshing favorites…")
-        try:
-            self.update_favorites_cache(0)  # always fresh at bid time
-        except Exception as e:
-            self.logger.error(f"Favorites refresh failed before bid on {item_id}: {e}")
-
-        favorite = self.favorites_cache["favorites"].get(item_id, None)
         watch = None
         try:
             watch = next(
@@ -290,50 +286,44 @@ class BidSniper:
         except Exception:
             watch = None
 
-        max_bid = self._resolve_max_bid(item_id, favorite)
-        title = (
-            (favorite or {}).get("title")
-            or (watch or {}).get("title")
-            or str(item_id)
-        )
+        max_bid = None
+        if job and job.get("max_bid") is not None:
+            try:
+                max_bid = float(job["max_bid"])
+            except (TypeError, ValueError):
+                max_bid = None
+        if max_bid is None and watch:
+            try:
+                max_bid = float(watch.get("max_bid") or 0) or None
+            except (TypeError, ValueError):
+                max_bid = None
 
+        title = (watch or {}).get("title") or str(item_id)
         if max_bid is None:
-            self.logger.error(
-                f"Snipe aborted for '{title}': no max_bid in favorites note or watchlist"
-            )
-            return None
+            self.logger.error(f"Snipe aborted for '{title}': no max_bid on job/watchlist")
+            self.bids_placed.discard(item_id)
+            return "aborted"
 
-        # Favorites can drift (missing item / empty note). Local watchlist is source of truth.
-        if favorite is None or self._favorite_max_bid(favorite) is None:
-            self.logger.warning(
-                f"Favorite missing/incomplete for '{title}' — syncing from watchlist "
-                f"max ${max_bid:.2f}"
-            )
+        # Best-effort favorite sync for SGW UI — never required to fire
+        try:
             self._ensure_favorite_note(item_id, max_bid, title)
-            favorite = self.favorites_cache["favorites"].get(item_id, favorite)
+        except Exception:
+            pass
 
-        seller_id = (favorite or {}).get("sellerId")
-
-        # Live price / minimum bid so we don't claim success on a too-low max
+        seller_id = None
         current_price = None
         minimum_bid = None
         try:
             bid_info = self.shopgoodwill_client.get_item_bid_info(item_id)
             current_price = float(bid_info.get("currentPrice") or 0)
             minimum_bid = float(bid_info.get("minimumBid") or current_price or 0)
-            if seller_id is None:
-                seller_id = bid_info.get("sellerId")
+            seller_id = bid_info.get("sellerId")
         except Exception as e:
             self.logger.warning(
                 f"Could not fetch live bid info for '{title}' before snipe: {e}"
             )
             try:
-                current_price = float(
-                    (favorite or {}).get("currentPrice")
-                    or (favorite or {}).get("currentBid")
-                    or (watch or {}).get("current_bid")
-                    or 0
-                )
+                current_price = float((watch or {}).get("current_bid") or 0) or None
             except (TypeError, ValueError):
                 current_price = None
 
@@ -362,7 +352,7 @@ class BidSniper:
                 db.update_watchlist_status(item_id, "skipped")
             except Exception:
                 pass
-            return None
+            return "skipped"
 
         if self.config.get("friend_list", list()):
             try:
@@ -374,7 +364,8 @@ class BidSniper:
                         self.logger.info(
                             f"Canceling bid due to friendship for item '{title}'"
                         )
-                        return None
+                        self.bids_placed.discard(item_id)
+                        return "aborted"
             except BaseException as be:
                 self.logger.error(
                     f"{type(be).__name__} getting info for item ID '{item_id}' - continuing"
@@ -385,12 +376,12 @@ class BidSniper:
         )
 
         if self.dry_run:
-            return None
+            return "accepted"
 
         if seller_id is None:
             self.logger.error(f"Bid aborted for '{title}': missing sellerId")
             self.bids_placed.discard(item_id)
-            return None
+            return "aborted"
 
         try:
             bid_res = self.bid_shopgoodwill_client.place_bid(
@@ -399,7 +390,7 @@ class BidSniper:
         except (Timeout, RequestException, HTTPError) as he:
             self.bids_placed.discard(item_id)
             self.logger.error(f"Bid failed on '{title}' - {type(he).__name__}: {he}")
-            return None
+            return "aborted"
 
         outcome, detail = shopgoodwill.Shopgoodwill.interpret_place_bid_response(bid_res)
         short = (detail[:160] + "…") if len(detail) > 160 else detail
@@ -422,7 +413,7 @@ class BidSniper:
                 db.update_watchlist_status(item_id, "rejected")
             except Exception as e:
                 self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
-            return None
+            return "rejected"
         else:
             self.logger.warning(
                 f"Bid response unclear for '{title}' at max ${max_bid:.2f}"
@@ -434,7 +425,7 @@ class BidSniper:
         except Exception as e:
             self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
-        end_time_str = (favorite or {}).get("endTime") or (watch or {}).get("end_time") or ""
+        end_time_str = (job or {}).get("end_time") or (watch or {}).get("end_time") or ""
         if end_time_str:
             try:
                 end_dt = self._parse_end_time(end_time_str)
@@ -449,7 +440,65 @@ class BidSniper:
             except Exception as e:
                 self.logger.error(f"Could not schedule win check for {item_id}: {e}")
 
-        return None
+        return outcome
+
+    async def _run_claimed_job(self, job: Dict) -> None:
+        """Sleep until snipe_at (if needed), place bid, complete the durable job."""
+        job_id = int(job["id"])
+        item_id = int(job["watchlist_item_id"])
+        title = str(item_id)
+        try:
+            for w in db.get_watchlist():
+                if int(w["item_id"]) == item_id:
+                    title = w.get("title") or title
+                    break
+        except Exception:
+            pass
+
+        snipe_at = db.parse_end_time_utc(job.get("snipe_at"))
+        if snipe_at is not None:
+            delay = (snipe_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            if delay > 0:
+                self.logger.info(
+                    f"Armed snipe for '{title}' in {delay:.1f}s "
+                    f"(job {job_id}, snipe_at {job.get('snipe_at')})"
+                )
+                await asyncio.sleep(delay)
+
+        try:
+            outcome = await self.place_bid(item_id, job=job)
+            if outcome in ("accepted", "outbid", "unclear"):
+                db.mark_snipe_job_fired(job_id)
+                db.complete_snipe_job(job_id, status="done")
+            elif outcome is None:
+                # dry-run or legacy no-op success path
+                db.mark_snipe_job_fired(job_id)
+                db.complete_snipe_job(job_id, status="done")
+            elif outcome == "skipped":
+                db.complete_snipe_job(job_id, status="done", last_error="skipped: above max")
+            elif outcome == "rejected":
+                db.complete_snipe_job(job_id, status="done", last_error="rejected by SGW")
+            else:
+                # aborted / transient — retry if attempts low
+                attempts = int(job.get("attempt_count") or 1)
+                self.bids_placed.discard(item_id)
+                if attempts >= 3:
+                    db.complete_snipe_job(
+                        job_id, status="done", last_error=f"aborted after {attempts} attempts"
+                    )
+                else:
+                    db.release_snipe_job(job_id, last_error="aborted: will retry", retry=True)
+        except Exception as e:
+            self.logger.error(f"Claimed job {job_id} failed: {e}")
+            attempts = int(job.get("attempt_count") or 1)
+            self.bids_placed.discard(item_id)
+            db.release_snipe_job(
+                job_id,
+                last_error=str(e)[:300],
+                retry=attempts < 3,
+            )
+        finally:
+            self.in_flight_jobs.discard(job_id)
 
     async def check_win(self, item_id: int) -> None:
         """Check SGW ~2 min after auction end to see if we won."""
@@ -579,141 +628,56 @@ class BidSniper:
         near_end_window = int(self.config["bid_sniper"].get("near_end_window_seconds", 600))
         mid_refresh = int(self.config["bid_sniper"].get("mid_refresh_seconds", 30))
         mid_end_window = int(self.config["bid_sniper"].get("mid_end_window_seconds", 3600))
-        favorites_cache_max_seconds = int(
-            self.config["bid_sniper"].get("favorites_max_cache_seconds", 60)
+        # Claim early enough to sleep until snipe_at; lease must cover that wait.
+        look_ahead = int(
+            self.config["bid_sniper"].get("job_look_ahead_seconds", max(120, near_end_window))
         )
-        min_scheduling_timedelta = sorted(self.alert_time_deltas + [self.bid_time_delta])[::-1][0]
+        lease_seconds = int(
+            self.config["bid_sniper"].get("job_lease_seconds", look_ahead + 90)
+        )
+
+        # Restart safety: reclaim stale leases and ensure jobs exist for scheduled rows
+        try:
+            reclaimed = db.reclaim_expired_snipe_leases()
+            if reclaimed:
+                self.logger.warning(f"Reclaimed {reclaimed} expired snipe lease(s) on startup")
+            backfilled = db.backfill_snipe_jobs()
+            if backfilled:
+                self.logger.warning(f"Backfilled {backfilled} snipe job(s) from watchlist")
+        except Exception as e:
+            self.logger.error(f"Startup lease reclaim / backfill failed: {e}")
+
+        self.logger.info(
+            f"Sniper worker {self.worker_id} polling durable snipe_jobs "
+            f"(look_ahead={look_ahead}s, lease={lease_seconds}s)"
+        )
 
         while True:
-            now = datetime.datetime.now(datetime.timezone.utc)
-            soonest = self._soonest_seconds_remaining(now)
-            cache_ttl = (
-                5
-                if soonest is not None and soonest <= near_end_window
-                else favorites_cache_max_seconds
-            )
-            self.update_favorites_cache(cache_ttl)
-
-            # Schedule from favorites notes AND local watchlist. Watchlist max_bid is
-            # source of truth — empty/missing favorite notes used to silently skip snipes.
-            watch_snipes = self._watchlist_snipe_rows()
-            schedule_candidates: Dict[int, Dict] = {}
-
-            for item_id, favorite_info in self.favorites_cache["favorites"].items():
-                max_bid = self._favorite_max_bid(favorite_info)
-                if max_bid is None and item_id not in watch_snipes:
-                    continue
-                if max_bid is None and item_id in watch_snipes:
-                    max_bid = float(watch_snipes[item_id]["max_bid"])
-                    self._ensure_favorite_note(
-                        item_id, max_bid, watch_snipes[item_id].get("title", "")
-                    )
-                schedule_candidates[item_id] = {
-                    "title": favorite_info.get("title") or str(item_id),
-                    "end_raw": favorite_info.get("endTime"),
-                    "max_bid": max_bid,
-                    "source": "favorite",
-                }
-
-            for item_id, watch in watch_snipes.items():
-                if item_id in schedule_candidates:
-                    # Prefer watchlist end_time if favorite is missing one
-                    if not schedule_candidates[item_id].get("end_raw") and watch.get("end_time"):
-                        schedule_candidates[item_id]["end_raw"] = watch.get("end_time")
-                    continue
-                self.logger.warning(
-                    f"Watchlist snipe '{watch.get('title', item_id)}' missing from "
-                    f"SGW favorites — scheduling from local watchlist"
+            try:
+                claimed = db.claim_due_snipe_jobs(
+                    worker_id=self.worker_id,
+                    lease_seconds=lease_seconds,
+                    look_ahead_seconds=look_ahead,
+                    limit=10,
                 )
-                self._ensure_favorite_note(
-                    item_id, float(watch["max_bid"]), watch.get("title", "")
-                )
-                schedule_candidates[item_id] = {
-                    "title": watch.get("title") or str(item_id),
-                    "end_raw": watch.get("end_time"),
-                    "max_bid": float(watch["max_bid"]),
-                    "source": "watchlist",
-                }
-
-            for item_id, cand in schedule_candidates.items():
-                if item_id in self.scheduled_tasks or item_id in self.bids_placed:
-                    continue
-
-                end_raw = cand.get("end_raw")
-                if not end_raw:
-                    continue
-                try:
-                    end_time = self._parse_end_time(end_raw)
-                except Exception as e:
-                    self.logger.error(f"Could not parse endTime for item {item_id}: {e}")
-                    continue
-
-                # Only schedule when we're within the look-ahead horizon
-                look_ahead = datetime.timedelta(seconds=max(refresh_seconds * 3, near_end_window * 2))
-                if (end_time - min_scheduling_timedelta) > now + look_ahead:
-                    continue
-
-                if end_time <= now:
-                    self.scheduled_tasks.add(item_id)
-                    continue
-
-                for alert_time_delta in self.alert_time_deltas:
-                    execution_datetime = end_time - alert_time_delta
-                    if execution_datetime < now:
+                for job in claimed:
+                    job_id = int(job["id"])
+                    if job_id in self.in_flight_jobs:
                         continue
-                    # Alerts are reminders only — never place_bid
-                    alert_id = item_id
-                    alert_label = str(alert_time_delta)
-                    self.event_loop.create_task(
-                        self.schedule_task(
-                            lambda i=alert_id, lab=alert_label: self.alert_upcoming(i, lab),
-                            execution_datetime,
-                            [self.task_err_handler],
+                    item_id = int(job["watchlist_item_id"])
+                    if item_id in self.bids_placed:
+                        db.complete_snipe_job(
+                            job_id, status="done", last_error="already bid this session"
                         )
-                    ).add_done_callback(self.task_err_handler)
-
-                bid_execution_datetime = end_time - self.bid_time_delta
-                if bid_execution_datetime < now:
-                    # Ideal snipe moment missed, but auction still live — bid now
-                    secs_left = int((end_time - now).total_seconds())
-                    late_by = int((now - bid_execution_datetime).total_seconds())
-                    self.logger.warning(
-                        f"Snipe window missed for '{cand['title']}' "
-                        f"({late_by}s late) — bidding immediately ({secs_left}s left)"
-                    )
-                    bid_id = item_id
+                        continue
+                    self.in_flight_jobs.add(job_id)
                     self.event_loop.create_task(
-                        self.place_bid(bid_id)
+                        self._run_claimed_job(job)
                     ).add_done_callback(self.task_err_handler)
-                    self.scheduled_tasks.add(item_id)
-                    continue
+            except Exception as e:
+                self.logger.error(f"Snipe job claim loop error: {e}")
 
-                bid_id = item_id
-                self.event_loop.create_task(
-                    self.schedule_task(
-                        lambda i=bid_id: self.place_bid(i),
-                        bid_execution_datetime,
-                        [self.task_err_handler],
-                    )
-                ).add_done_callback(self.task_err_handler)
-
-                via = f" (via {cand['source']})" if cand.get("source") == "watchlist" else ""
-                self.logger.info(
-                    f"Scheduled snipe for '{cand['title']}' at "
-                    f"{bid_execution_datetime.isoformat()}{via}"
-                )
-                self.scheduled_tasks.add(item_id)
-
-            # Ensure favorites that lack notes still get the default note template
-            for item_id, favorite_info in list(self.favorites_cache["favorites"].items()):
-                if self.default_note and not favorite_info.get("notes", ""):
-                    try:
-                        self.shopgoodwill_client.add_favorite(item_id, note=self.default_note)
-                    except Exception as e:
-                        self.logger.error(f"Failed to set default note on {item_id}: {e}")
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            soonest = self._soonest_seconds_remaining(now)
+            soonest = db.soonest_pending_snipe_seconds()
             if soonest is not None and soonest <= near_end_window:
                 sleep_secs = near_end_refresh
             elif soonest is not None and soonest <= mid_end_window:

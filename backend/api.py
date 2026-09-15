@@ -126,6 +126,12 @@ async def lifespan(app: FastAPI):
         db.update_setting("healed_missed_losses_v1", True)
         if n:
             logger.info(f"Relabeled {n} no-bid loss(es) as missed")
+    jobs = db.backfill_snipe_jobs()
+    if jobs:
+        logger.info(f"Backfilled {jobs} durable snipe job(s) from watchlist")
+    reclaimed = db.reclaim_expired_snipe_leases()
+    if reclaimed:
+        logger.info(f"Reclaimed {reclaimed} expired snipe lease(s) on startup")
     interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
     _scheduler.add_job(
@@ -360,18 +366,33 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
             detail=f"Max bid must be greater than current bid of ${deal.get('current_bid', 0):.2f}",
         )
 
+    end_time = deal["end_time"]
+    # Normalize SGW Pacific times to UTC for durable scheduling
+    if end_time and not (str(end_time).endswith("Z") or "+" in str(end_time)[10:]):
+        end_time = _sgw_to_utc(str(end_time)) or end_time
+
+    owner = db.get_default_owner()
     db.add_to_watchlist({
         "item_id": req.item_id,
         "title": deal["title"],
         "max_bid": req.max_bid,
         "current_bid": deal["current_bid"],
-        "end_time": deal["end_time"],
+        "end_time": end_time,
         "sgw_url": deal["sgw_url"],
         "image_url": deal["image_url"],
         "ebay_median": deal["ebay_median"],
         "profit": deal["profit"],
         "ebay_search": deal.get("ebay_search"),
+        "user_id": owner["user_id"],
+        "sgw_account_id": owner["sgw_account_id"],
     })
+    db.upsert_snipe_job(
+        req.item_id,
+        req.max_bid,
+        end_time,
+        user_id=owner["user_id"],
+        sgw_account_id=owner["sgw_account_id"],
+    )
 
     background_tasks.add_task(_add_sgw_favorite, req.item_id, req.max_bid)
 
@@ -380,6 +401,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
 
 @app.delete("/watchlist/{item_id}")
 def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks):
+    db.cancel_snipe_job(item_id)
     db.remove_from_watchlist(item_id)
     background_tasks.add_task(_remove_sgw_favorite, item_id)
     return {"success": True}
@@ -907,7 +929,13 @@ def _restart_sniper() -> None:
 def update_setting(req: SettingsUpdateRequest):
     db.update_setting(req.key, req.value)
     # Snipe timing is baked into sniper config at process start — restart to apply
+    # and recompute durable job fire times.
     if req.key == "snipe_seconds_before":
+        try:
+            secs = int(req.value)
+        except (TypeError, ValueError):
+            secs = 5
+        db.refresh_pending_snipe_times(secs)
         _restart_sniper()
     return {"success": True, "key": req.key, "value": req.value}
 
