@@ -183,6 +183,14 @@ export function Nav() {
                 >
                   Account
                 </Link>
+                <Link
+                  href="/pricing"
+                  role="menuitem"
+                  className="block px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  Billing
+                </Link>
                 {authConfigured() ? (
                   <button
                     type="button"
@@ -235,6 +243,9 @@ export function Nav() {
           ))}
           <Link href="/account" className={`${linkClass("/account")} w-full`}>
             Account
+          </Link>
+          <Link href="/pricing" className={`${linkClass("/pricing")} w-full`}>
+            Billing
           </Link>
           {authConfigured() && (
             <button

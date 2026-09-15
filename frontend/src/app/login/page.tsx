@@ -46,15 +46,6 @@ function LoginForm() {
     }
   };
 
-  const google = async () => {
-    const supabase = createClient();
-    const origin = window.location.origin;
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}` },
-    });
-  };
-
   return (
     <div className="max-w-md mx-auto mt-12">
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">Sign in</h1>
@@ -94,18 +85,6 @@ function LoginForm() {
           {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
-      <div className="my-6 flex items-center gap-3 text-xs text-zinc-600">
-        <div className="flex-1 h-px bg-zinc-800" />
-        or
-        <div className="flex-1 h-px bg-zinc-800" />
-      </div>
-      <button
-        type="button"
-        onClick={google}
-        className="w-full bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-200 font-medium rounded-xl py-2.5 text-sm transition-colors"
-      >
-        Continue with Google
-      </button>
       <p className="mt-6 text-center text-xs text-zinc-600">
         <Link href="/reset-password" className="hover:text-zinc-400">
           Forgot password?

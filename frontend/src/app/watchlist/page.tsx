@@ -296,6 +296,12 @@ export default function WatchlistPage() {
                           </>
                         )}
                       </div>
+                      {item.success_fee_cents != null && item.success_fee_cents > 0 && (
+                        <div className="text-amber-400/90">
+                          Success fee ${(item.success_fee_cents / 100).toFixed(2)}
+                          {item.success_fee_status ? ` · ${item.success_fee_status}` : ""}
+                        </div>
+                      )}
                       <a
                         href="https://shopgoodwill.com/shopgoodwill/open-orders"
                         target="_blank"

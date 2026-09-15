@@ -351,6 +351,21 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
               <div className="font-bold text-zinc-100 text-[15px]">${item.final_price?.toFixed(2) ?? "—"}</div>
               <div className="text-[10px] text-zinc-600 mt-0.5">+ shipping/tax at checkout</div>
             </div>
+            {item.success_fee_cents != null && item.success_fee_status !== "waived" && (
+              <p className="text-amber-400/90 text-[11px]">
+                Success fee ${(item.success_fee_cents / 100).toFixed(2)}
+                {item.success_fee_status === "pending"
+                  ? " (pending)"
+                  : item.success_fee_status === "paid"
+                    ? " (paid)"
+                    : item.success_fee_status === "invoiced"
+                      ? " (invoiced)"
+                      : ""}
+              </p>
+            )}
+            {item.success_fee_status === "waived" && (
+              <p className="text-emerald-500/80 text-[11px]">Success fee waived (Pro)</p>
+            )}
             {item.due_date && (
               <p className="text-red-400 text-[11px]">
                 Pay by {new Date(item.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -377,6 +392,12 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
                 {item.tax ? ` + $${item.tax.toFixed(2)} tax` : ""}
               </div>
             </div>
+            {item.success_fee_cents != null && item.success_fee_status !== "waived" && (
+              <p className="text-amber-400/90 text-[11px]">
+                Success fee ${(item.success_fee_cents / 100).toFixed(2)}
+                {item.success_fee_status ? ` · ${item.success_fee_status}` : ""}
+              </p>
+            )}
             {item.tracking_number && (
               <a
                 href={trackingUrl(item.shipper_name, item.tracking_number)}

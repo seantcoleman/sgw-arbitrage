@@ -25,7 +25,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "API error");
+    const message = err.detail ?? "API error";
+    const error = new Error(typeof message === "string" ? message : JSON.stringify(message));
+    (error as Error & { status?: number }).status = res.status;
+    throw error;
   }
   return res.json();
 }
@@ -151,6 +154,8 @@ export interface WatchlistItem {
   shipper_name: string | null;
   due_date: string | null;
   added_at: string;
+  success_fee_cents?: number | null;
+  success_fee_status?: string | null;
 }
 
 export interface ScanStatus {
@@ -249,12 +254,35 @@ export interface SgwAccountSummary {
   last_error?: string | null;
 }
 
+export interface BillingInfo {
+  plan: string;
+  has_payment_method: boolean;
+  billing_blocked: boolean;
+  stripe_subscription_status: string | null;
+  tos_accepted_at: string | null;
+  can_snipe: boolean;
+  can_snipe_reason: string | null;
+  success_fee_pct: number;
+}
+
+export interface WinFee {
+  id: number;
+  item_id: number;
+  hammer_cents: number;
+  fee_cents: number;
+  status: string;
+  stripe_invoice_id?: string | null;
+  created_at?: string;
+}
+
 export interface MeResponse {
   id: string;
   email: string | null;
   sgw_accounts: SgwAccountSummary[];
   has_sgw: boolean;
   postgres: boolean;
+  billing?: BillingInfo;
+  win_fees?: WinFee[];
 }
 
 export const getMe = () => apiFetch<MeResponse>("/me");

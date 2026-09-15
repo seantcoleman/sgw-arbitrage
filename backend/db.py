@@ -1550,6 +1550,165 @@ def ensure_user_profile(user_id: UserId, email: Optional[str] = None) -> None:
         )
 
 
+def get_billing_profile(user_id: UserId) -> Optional[Dict]:
+    if not using_postgres():
+        return {
+            "id": str(user_id),
+            "plan": "standard",
+            "has_payment_method": True,
+            "billing_blocked": False,
+            "stripe_subscription_status": None,
+            "stripe_customer_id": None,
+        }
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id, email, plan, stripe_customer_id, stripe_subscription_id,
+                   stripe_subscription_status, has_payment_method, billing_blocked,
+                   tos_accepted_at
+            FROM profiles WHERE id = ?
+            """,
+            (str(user_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def accept_tos(user_id: UserId) -> None:
+    if not using_postgres():
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE profiles
+            SET tos_accepted_at = COALESCE(tos_accepted_at, now()),
+                updated_at = now()
+            WHERE id = ?
+            """,
+            (str(user_id),),
+        )
+
+
+def user_can_snipe(user_id: UserId) -> Dict[str, Any]:
+    """Whether this user may queue a *new* snipe. Existing jobs keep firing."""
+    if not using_postgres():
+        return {"ok": True, "reason": None}
+    profile = get_billing_profile(user_id)
+    if not profile:
+        return {"ok": False, "reason": "Complete billing setup at /pricing"}
+    if profile.get("billing_blocked"):
+        return {"ok": False, "reason": "Payment past due — update billing at /pricing"}
+    plan = (profile.get("plan") or "standard").lower()
+    sub = (profile.get("stripe_subscription_status") or "").lower()
+    if plan == "pro" and sub in ("active", "trialing"):
+        return {"ok": True, "reason": None}
+    if profile.get("has_payment_method"):
+        return {"ok": True, "reason": None}
+    return {
+        "ok": False,
+        "reason": "Add a payment method or upgrade to Pro before queuing snipes",
+    }
+
+
+def upsert_win_fee(
+    *,
+    user_id: UserId,
+    item_id: int,
+    hammer_cents: int,
+    fee_cents: int,
+    status: str,
+) -> Optional[Dict]:
+    if not using_postgres():
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO win_fees (user_id, item_id, hammer_cents, fee_cents, status)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, item_id) DO UPDATE SET
+              hammer_cents = EXCLUDED.hammer_cents,
+              -- never increase a waived/paid row back to pending
+              fee_cents = CASE
+                WHEN win_fees.status IN ('paid', 'waived', 'invoiced')
+                THEN win_fees.fee_cents
+                ELSE EXCLUDED.fee_cents
+              END,
+              status = CASE
+                WHEN win_fees.status IN ('paid', 'waived', 'invoiced')
+                THEN win_fees.status
+                ELSE EXCLUDED.status
+              END,
+              updated_at = now()
+            RETURNING *
+            """,
+            (str(user_id), item_id, hammer_cents, fee_cents, status),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_pending_win_fees(user_id: UserId) -> List[Dict]:
+    if not using_postgres():
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM win_fees
+            WHERE user_id = ? AND status = 'pending'
+            ORDER BY id
+            """,
+            (str(user_id),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_win_fees(user_id: UserId, limit: int = 50) -> List[Dict]:
+    if not using_postgres():
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM win_fees
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (str(user_id), limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_win_fee_for_item(user_id: UserId, item_id: int) -> Optional[Dict]:
+    if not using_postgres():
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM win_fees WHERE user_id = ? AND item_id = ?",
+            (str(user_id), item_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_win_fee_invoiced(
+    fee_id: int,
+    *,
+    stripe_invoice_id: str,
+    stripe_invoice_item_id: Optional[str] = None,
+) -> None:
+    if not using_postgres():
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE win_fees
+            SET status = 'invoiced',
+                stripe_invoice_id = ?,
+                stripe_invoice_item_id = COALESCE(?, stripe_invoice_item_id),
+                updated_at = now()
+            WHERE id = ? AND status = 'pending'
+            """,
+            (stripe_invoice_id, stripe_invoice_item_id, fee_id),
+        )
+
+
 # ── SGW accounts (encrypted) ────────────────────────────────────────────────
 
 def list_sgw_accounts(user_id: UserId) -> List[Dict]:

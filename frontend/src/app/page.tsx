@@ -59,17 +59,17 @@ export default function LandingPage() {
             href="/signup"
             className="w-full sm:w-auto rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition-colors hover:bg-emerald-500"
           >
-            Create free account
+            Get started
           </Link>
           <Link
-            href="/login"
+            href="/pricing"
             className="w-full sm:w-auto rounded-xl border border-zinc-800 bg-zinc-900 px-6 py-3 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700"
           >
-            Sign in
+            See pricing
           </Link>
         </div>
         <p className="mt-4 text-xs text-zinc-600">
-          Free to start. You bid with your own ShopGoodwill account.
+          Pay only when you win. You bid with your own ShopGoodwill account.
         </p>
       </section>
 
@@ -112,6 +112,47 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section id="pricing" className="border-t border-zinc-800/80 py-16">
+        <h2 className="text-center text-2xl font-black tracking-tight text-zinc-100">
+          Pay only when you win
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-center text-sm text-zinc-500">
+          Standard charges 2% of the hammer only on wins. Pro is $15/month with 0% commission.
+        </p>
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+            <h3 className="font-semibold text-zinc-100">Standard</h3>
+            <p className="mt-1 text-xs text-zinc-500">2% success fee · No monthly fee</p>
+            <p className="mt-4 text-3xl font-black text-zinc-100">2%</p>
+            <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">
+              <li>Pay only when you win</li>
+              <li>Unlimited snipes</li>
+              <li>No win, no charge</li>
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-emerald-800/50 bg-zinc-900 p-6">
+            <h3 className="font-semibold text-zinc-100">Pro</h3>
+            <p className="mt-1 text-xs text-zinc-500">0% success fee · Monthly</p>
+            <p className="mt-4 text-3xl font-black text-zinc-100">
+              $15<span className="text-base font-medium text-zinc-500">/mo</span>
+            </p>
+            <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">
+              <li>0% commission on wins</li>
+              <li>Unlimited snipes</li>
+              <li>Cancel anytime</li>
+            </ul>
+          </div>
+        </div>
+        <div className="mt-8 text-center">
+          <Link
+            href="/pricing"
+            className="inline-block rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-500"
+          >
+            Choose a plan
+          </Link>
+        </div>
+      </section>
+
       <section className="border-t border-zinc-800/80 py-20 text-center">
         <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-100">
           Start finding deals tonight
@@ -124,8 +165,17 @@ export default function LandingPage() {
           href="/signup"
           className="mt-8 inline-block rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition-colors hover:bg-emerald-500"
         >
-          Create free account
+          Get started
         </Link>
+        <p className="mt-8 text-xs text-zinc-600">
+          <Link href="/terms" className="hover:text-zinc-400">
+            Terms
+          </Link>
+          {" · "}
+          <Link href="/privacy" className="hover:text-zinc-400">
+            Privacy
+          </Link>
+        </p>
       </section>
     </div>
   );

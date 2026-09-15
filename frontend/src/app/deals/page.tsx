@@ -239,6 +239,12 @@ export default function DealsPage() {
       setWatchedIds(prev => new Set(prev).add(deal.item_id));
       toast.success(`Queued! Sniper will bid up to $${maxBid.toFixed(2)}`);
     } catch (e: unknown) {
+      const status = e && typeof e === "object" && "status" in e ? (e as { status?: number }).status : undefined;
+      if (status === 402) {
+        toast.error(e instanceof Error ? e.message : "Billing required");
+        window.location.href = "/pricing";
+        return;
+      }
       toast.error(e instanceof Error ? e.message : "Error adding to watchlist");
     }
   };

@@ -361,6 +361,16 @@ def get_watchlist(user: RequireUser):
             logger.warning(f"Watchlist live-bid sync skipped: {e}")
 
     items = [profit_calc.annotate_deal(w, fee_pct, resale_ship) for w in items]
+    # Attach success-fee ledger rows for won/awaiting/shipped items
+    try:
+        fees = {int(f["item_id"]): f for f in db.list_win_fees(user.id, limit=500)}
+        for w in items:
+            fee = fees.get(int(w["item_id"]))
+            if fee:
+                w["success_fee_cents"] = fee.get("fee_cents")
+                w["success_fee_status"] = fee.get("status")
+    except Exception as e:
+        logger.warning(f"Win-fee annotate skipped: {e}")
     return {"watchlist": items}
 
 
@@ -385,6 +395,9 @@ def _sgw_item_image_url(item_info: dict) -> Optional[str]:
 @app.post("/watchlist")
 def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks, user: RequireUser):
     db.ensure_user_profile(user.id, user.email)
+    can = db.user_can_snipe(user.id)
+    if not can.get("ok"):
+        raise HTTPException(status_code=402, detail=can.get("reason") or "Billing required")
     # Prefer any deal row (active/ended/skipped) so ended auctions keep image + eBay comps
     matches = db.get_deals_by_ids([req.item_id])
     deal = matches[0] if matches else None
@@ -771,6 +784,17 @@ def _check_bid_results_for_owner(user_id: Optional[str]) -> None:
                     tracking_number=o.get("trackingNumber") or None,
                     shipper_name=o.get("shipperName") or None,
                 )
+                if user_id is not None and o.get("price") is not None:
+                    try:
+                        import billing as billing_mod
+                        billing_mod.record_and_maybe_invoice(
+                            user_id=str(user_id),
+                            item_id=item_id,
+                            final_price=float(o["price"]),
+                            title=item.get("title"),
+                        )
+                    except Exception as fee_err:
+                        logger.error(f"Win-fee record failed for {item_id}: {fee_err}")
                 logger.info(f"Order shipped: '{item.get('title', item_id)}' — tracking {o.get('trackingNumber')}")
             elif item_id in open_orders:
                 o = open_orders[item_id]
@@ -781,6 +805,17 @@ def _check_bid_results_for_owner(user_id: Optional[str]) -> None:
                     final_price=o.get("price"),
                     due_date=o.get("pastDueEndDate"),
                 )
+                if user_id is not None and o.get("price") is not None:
+                    try:
+                        import billing as billing_mod
+                        billing_mod.record_and_maybe_invoice(
+                            user_id=str(user_id),
+                            item_id=item_id,
+                            final_price=float(o["price"]),
+                            title=item.get("title"),
+                        )
+                    except Exception as fee_err:
+                        logger.error(f"Win-fee record failed for {item_id}: {fee_err}")
                 logger.info(f"Open order: '{item.get('title', item_id)}' — pay by {o.get('pastDueEndDate', '')[:10]}")
         except Exception as e:
             logger.error(f"Order sync failed for item {item_id}: {e}")
@@ -927,13 +962,51 @@ class SgwConnectRequest(BaseModel):
 def get_me(user: RequireUser):
     db.ensure_user_profile(user.id, user.email)
     accounts = db.list_sgw_accounts(user.id)
+    billing = db.get_billing_profile(user.id) or {}
+    can = db.user_can_snipe(user.id)
     return {
         "id": user.id,
         "email": user.email,
         "sgw_accounts": accounts,
         "has_sgw": any(a.get("status") == "active" for a in accounts),
         "postgres": using_postgres(),
+        "billing": {
+            "plan": billing.get("plan") or "standard",
+            "has_payment_method": bool(billing.get("has_payment_method")),
+            "billing_blocked": bool(billing.get("billing_blocked")),
+            "stripe_subscription_status": billing.get("stripe_subscription_status"),
+            "tos_accepted_at": (
+                billing.get("tos_accepted_at").isoformat()
+                if hasattr(billing.get("tos_accepted_at"), "isoformat")
+                else billing.get("tos_accepted_at")
+            ),
+            "can_snipe": bool(can.get("ok")),
+            "can_snipe_reason": can.get("reason"),
+            "success_fee_pct": 0 if (
+                (billing.get("plan") or "") == "pro"
+                and (billing.get("stripe_subscription_status") or "") in ("active", "trialing")
+            ) else 2,
+        },
+        "win_fees": db.list_win_fees(user.id, limit=20),
     }
+
+
+class TosAcceptRequest(BaseModel):
+    accepted: bool = True
+
+
+@app.post("/me/tos")
+def accept_tos(req: TosAcceptRequest, user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    if req.accepted:
+        db.accept_tos(user.id)
+    return {"success": True}
+
+
+@app.get("/billing/fees")
+def list_billing_fees(user: RequireUser):
+    db.ensure_user_profile(user.id, user.email)
+    return {"fees": db.list_win_fees(user.id, limit=100)}
 
 
 @app.get("/account/sgw")

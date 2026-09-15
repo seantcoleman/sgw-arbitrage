@@ -35,8 +35,13 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/signup") ||
     path.startsWith("/reset-password") ||
     path.startsWith("/auth/");
-  // Marketing landing is the only public app page
-  const isPublicPage = path === "/";
+  // Public marketing / legal pages (signed-in users keep access to pricing/legal)
+  const isPublicPage =
+    path === "/" ||
+    path === "/pricing" ||
+    path === "/terms" ||
+    path === "/privacy" ||
+    path.startsWith("/api/stripe/webhook");
 
   if (!user && !isAuthPage && !isPublicPage) {
     const redirectUrl = request.nextUrl.clone();
@@ -45,7 +50,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && (isPublicPage || path === "/login" || path === "/signup")) {
+  // Only bounce signed-in users away from marketing home + auth forms
+  if (user && (path === "/" || path === "/login" || path === "/signup")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/deals";
     redirectUrl.search = "";
