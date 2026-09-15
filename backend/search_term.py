@@ -3,7 +3,7 @@ Resolve eBay search terms for SGW titles.
 
 Pipeline:
   1. Learned cache (exact title, then brand+model fingerprint)
-  2. Heuristic / GPT candidates + spelling variants + shortenings
+  2. AI Gateway / regex short candidates + full-title fallback
   3. Validate each candidate against eBay comps; pick first that meets
      min_comps, else the best partial result
   4. Remember successful terms for next time
@@ -27,7 +27,7 @@ class ResolvedSearch:
     term: str
     price_result: Optional[ebay.EbayPriceResult]
     confidence: float
-    source: str  # cache_title | cache_product | heuristic | manual
+    source: str  # cache_title | cache_product | ai | regex | full_title | manual | none
     candidates_tried: int
 
 
@@ -48,25 +48,39 @@ def resolve_ebay_search(
     Pick the best eBay search term for a title and fetch comps.
 
     preferred_term: force that term first (manual reprice / Wrong item?).
-    Default search is the full listing title — short auto-extracted terms
-    were dropping brands like "Nintendo Switch".
+    Otherwise reuse cached manual/ai short terms, or call AI Gateway once
+    on cache miss. Full title remains a fallback candidate.
     """
-    # Only honor manual / explicit preferred terms. Ignore auto cache that
-    # learned truncated queries.
-    seed_preferred = preferred_term
+    seed_preferred = (preferred_term or "").strip() or None
+    cache_db_source: Optional[str] = None
+
     if not seed_preferred:
-        cached_term, cache_source = _lookup_cache(title)
-        if cache_source == "manual" or (cached_term and cache_source):
-            # Only reuse cache when it looks like a full title (not a stub)
+        cached_term, cache_db_source = _lookup_cache(title)
+        if cached_term and cache_db_source in ("manual", "ai"):
+            seed_preferred = cached_term
+        elif cached_term and cache_db_source:
+            # Legacy auto/seed entries: only reuse when they look complete
             full = item_filter._normalize_full_title(title) or ""
-            if cached_term and (
-                cache_source == "manual"
-                or len(cached_term.split()) >= max(4, len(full.split()) - 3)
-            ):
+            if len(cached_term.split()) >= max(4, len(full.split()) - 3):
                 seed_preferred = cached_term
 
-    primary, confidence = item_filter.propose_search_term(title)
-    candidates = item_filter.generate_search_candidates(title, preferred=seed_preferred)
+    # Call Gateway only on cache miss (no preferred / cached short term yet)
+    short_term: Optional[str] = None
+    short_source = ""
+    if not seed_preferred:
+        short_term, short_source = item_filter.shorten_search_term(title)
+
+    lead = seed_preferred or short_term
+    if lead:
+        confidence = item_filter._confidence_for_term(lead)
+    else:
+        _primary, confidence = item_filter.propose_search_term(title)
+
+    candidates = item_filter.generate_search_candidates(
+        title,
+        preferred=seed_preferred,
+        short_term=short_term,
+    )
     if not candidates:
         return ResolvedSearch(
             term=preferred_term or "",
@@ -79,6 +93,15 @@ def resolve_ebay_search(
     if preferred_term:
         source = "manual"
         confidence = max(confidence, 0.95)
+    elif cache_db_source in ("manual", "ai") and seed_preferred:
+        source = "ai" if cache_db_source == "ai" else "manual"
+        confidence = max(confidence, 0.9)
+    elif short_source == "ai":
+        source = "ai"
+        confidence = max(confidence, 0.85)
+    elif short_source == "regex":
+        source = "regex"
+        confidence = max(confidence, 0.75)
     elif seed_preferred:
         source = "cache_title"
         confidence = max(confidence, 0.85)
@@ -112,10 +135,18 @@ def resolve_ebay_search(
     if learn and best is not None and (
         preferred_term or best.sold_count >= min_comps or confidence >= 0.85
     ):
+        remember_source = _remember_source(
+            preferred_term=preferred_term,
+            best_term=best_term,
+            short_term=short_term,
+            short_source=short_source,
+            cache_db_source=cache_db_source,
+            seed_preferred=seed_preferred,
+        )
         remember_search_term(
             title,
             preferred_term or best_term,
-            source="manual" if preferred_term else "auto",
+            source=remember_source,
         )
 
     return ResolvedSearch(
@@ -125,6 +156,27 @@ def resolve_ebay_search(
         source=source,
         candidates_tried=tried,
     )
+
+
+def _remember_source(
+    *,
+    preferred_term: Optional[str],
+    best_term: str,
+    short_term: Optional[str],
+    short_source: str,
+    cache_db_source: Optional[str],
+    seed_preferred: Optional[str],
+) -> str:
+    if preferred_term:
+        return "manual"
+    best_key = best_term.lower().strip()
+    if short_source == "ai" and short_term and short_term.lower().strip() == best_key:
+        return "ai"
+    if cache_db_source == "ai" and seed_preferred and seed_preferred.lower().strip() == best_key:
+        return "ai"
+    if cache_db_source == "manual":
+        return "manual"
+    return "auto"
 
 
 def remember_search_term(title: str, search_term: str, source: str = "auto") -> None:
@@ -146,17 +198,18 @@ def remember_search_term(title: str, search_term: str, source: str = "auto") -> 
 
 
 def _lookup_cache(title: str) -> tuple[Optional[str], Optional[str]]:
+    """Return (search_term, db_source) from title or product fingerprint cache."""
     row = db.get_search_term_cache(title_cache_key(title))
     if row and _cache_term_usable(title, row):
         db.touch_search_term_cache(row["cache_key"])
-        return row["search_term"], "cache_title"
+        return row["search_term"], (row.get("source") or "auto").lower()
 
     fingerprint = item_filter.product_fingerprint(title)
     if fingerprint:
         row = db.get_search_term_cache(f"product:{fingerprint}")
         if row and _cache_term_usable(title, row):
             db.touch_search_term_cache(row["cache_key"])
-            return row["search_term"], "cache_product"
+            return row["search_term"], (row.get("source") or "auto").lower()
 
     return None, None
 
@@ -167,7 +220,8 @@ def _cache_term_usable(title: str, row: dict) -> bool:
     if not term:
         return False
     source = (row.get("source") or "").lower()
-    if source == "manual":
+    # Manual and AI-shortened terms are intentional — always reusable
+    if source in ("manual", "ai"):
         return True
 
     heuristic = item_filter._clean_with_regex(title)

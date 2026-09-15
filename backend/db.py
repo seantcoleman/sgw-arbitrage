@@ -307,6 +307,8 @@ def upsert_search_term_cache(cache_key: str, search_term: str, source: str = "au
                 source      = CASE
                     WHEN excluded.source = 'manual' THEN 'manual'
                     WHEN search_term_cache.source = 'manual' THEN search_term_cache.source
+                    WHEN excluded.source = 'ai' THEN 'ai'
+                    WHEN search_term_cache.source = 'ai' THEN search_term_cache.source
                     ELSE excluded.source
                 END,
                 hit_count   = search_term_cache.hit_count + 1,

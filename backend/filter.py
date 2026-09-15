@@ -6,18 +6,24 @@ Stage 1 — Pre-filter (instant, no API calls):
   - Bid range filter
   - Minimum photo count
 
-Stage 2 — Title cleaning (GPT-4o-mini when OPENAI_API_KEY is set):
+Stage 2 — Title cleaning (Vercel AI Gateway when AI_GATEWAY_API_KEY is set):
   - Brand + model when a model token exists
   - Longer descriptive phrases when it does not
-  - Regex heuristic fallback when GPT is unavailable
+  - Regex heuristic fallback when AI is unavailable
 
 Stage 3 — eBay confidence check (handled in scanner / search_term):
   - Requires min_comps matched listings
 """
 
+import logging
 import os
 import re
 from typing import List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+AI_GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions"
+AI_GATEWAY_DEFAULT_MODEL = "openai/gpt-5-mini"
 
 JUNK_WORDS = [
     "lot of", "as is", "as-is", "for parts", "untested", "broken",
@@ -151,15 +157,39 @@ def clean_title_for_ebay(sgw_title: str) -> Optional[str]:
     return primary
 
 
+def shorten_search_term(sgw_title: str) -> Tuple[Optional[str], str]:
+    """
+    Return (term, source) where source is 'ai' | 'regex' | ''.
+
+    Tries Vercel AI Gateway first when AI_GATEWAY_API_KEY is set, then regex.
+    """
+    if not sgw_title or not sgw_title.strip():
+        return None, ""
+
+    api_key = (os.getenv("AI_GATEWAY_API_KEY") or "").strip()
+    if api_key:
+        term = _clean_with_gateway(sgw_title, api_key)
+        if term:
+            return term, "ai"
+
+    term = _clean_with_regex(sgw_title)
+    if term:
+        return term, "regex"
+    return None, ""
+
+
 def propose_search_term(sgw_title: str) -> Tuple[Optional[str], float]:
     """
     Return (term, confidence 0..1).
 
-    Prefer the full listing title (lightly normalized). Aggressive brand/model
-    extraction was dropping key words like "Nintendo Switch".
+    Prefer a short AI/regex query; fall back to the full listing title.
     """
     if not sgw_title or not sgw_title.strip():
         return None, 0.0
+
+    short, _source = shorten_search_term(sgw_title)
+    if short:
+        return short, _confidence_for_term(short)
 
     full = _normalize_full_title(sgw_title)
     if full:
@@ -181,11 +211,16 @@ def title_has_model(sgw_title: str) -> bool:
     return product_fingerprint(sgw_title) is not None
 
 
-def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) -> List[str]:
+def generate_search_candidates(
+    sgw_title: str,
+    preferred: Optional[str] = None,
+    short_term: Optional[str] = None,
+) -> List[str]:
     """
     Ordered unique search-term variants to try against eBay.
 
-    Default: the full title only. Manual "Wrong item?" terms go first when set.
+    Order: preferred (manual / cached) → short AI/regex term → regex → full title.
+    Pass short_term from the caller when AI was already resolved (or skipped on cache hit).
     """
     out: List[str] = []
     seen = set()
@@ -204,6 +239,9 @@ def generate_search_candidates(sgw_title: str, preferred: Optional[str] = None) 
         out.append(n)
 
     add(preferred, full=False)
+    add(short_term, full=False)
+    # Always offer deterministic regex as an alternate (may match preferred/short)
+    add(_clean_with_regex(sgw_title), full=False)
     add(sgw_title, full=True)
     return out
 
@@ -289,16 +327,19 @@ def _is_model_token(tok: str) -> bool:
     return any(c.isdigit() for c in raw) and any(c.isalpha() for c in raw) and 2 <= len(raw) <= 16
 
 
-def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
-    """Extract a clean eBay search term using GPT-4o-mini."""
+def _clean_with_gateway(title: str, api_key: str) -> Optional[str]:
+    """Extract a clean eBay search term via Vercel AI Gateway."""
     import httpx
 
+    model = (os.getenv("AI_GATEWAY_MODEL") or AI_GATEWAY_DEFAULT_MODEL).strip()
     prompt = (
         "You are an eBay search expert. Turn this auction title into a good eBay search.\n\n"
         f"Title: {title}\n\n"
         "Rules:\n"
         "- Return ONLY the search term, nothing else\n"
         "- If there is a brand + model number, return just those (e.g. \"Casio SK-5\", \"Yamaha DX7\")\n"
+        "- Prefer brand + model + product type when helpful "
+        "(e.g. \"Hitachi V-212 Oscilloscope\")\n"
         "- If there is NO model number (furniture, art, decor), keep the distinctive product "
         "words (region/style, motif, material, object) — about 5–8 words "
         "(e.g. \"Chinese Qing Dynasty dragon armchair marble\")\n"
@@ -310,10 +351,10 @@ def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
 
     try:
         resp = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
+            AI_GATEWAY_URL,
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": "gpt-4o-mini",
+                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 40,
                 "temperature": 0,
@@ -323,7 +364,8 @@ def _clean_with_gpt(title: str, api_key: str) -> Optional[str]:
         resp.raise_for_status()
         result = resp.json()["choices"][0]["message"]["content"].strip()
         return _normalize_search_term(result)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"AI Gateway title clean failed: {e}")
         return None
 
 
