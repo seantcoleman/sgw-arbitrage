@@ -253,20 +253,9 @@ async def log_requests(request: Request, call_next):
         try:
             from jose import jwt as jose_jwt
             token = auth_header.split(" ", 1)[1]
-            secret = os.getenv("SUPABASE_JWT_SECRET") or ""
-            if secret:
-                claims = jose_jwt.decode(
-                    token, secret, algorithms=["HS256"], audience="authenticated"
-                )
-                user_id = str(claims.get("sub") or "-")
-            else:
-                # Dev / AUTH_DISABLED: best-effort payload peek for logs only
-                parts = token.split(".")
-                if len(parts) >= 2:
-                    import base64
-                    pad = "=" * (-len(parts[1]) % 4)
-                    payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
-                    user_id = str(payload.get("sub") or "-")
+            # Logs only — do not treat this as authentication.
+            claims = jose_jwt.get_unverified_claims(token)
+            user_id = str(claims.get("sub") or "-")
         except Exception:
             user_id = "-"
     response = await call_next(request)
