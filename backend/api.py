@@ -1083,8 +1083,8 @@ def trigger_scan(background_tasks: BackgroundTasks, user: RequireUser):
     global _scan_running
     if _scan_running:
         raise HTTPException(status_code=409, detail="Scan already running")
-    # Check after the in-progress guard so retries don't burn the hourly budget.
-    check_rate_limit(user.id, "scan", limit=10, window_seconds=3600)
+    # One scan at a time is the real throttle (~1–2 min). An hourly cap blocked
+    # filter iteration and previously surfaced only as "Failed to start scan".
     background_tasks.add_task(_run_scan, True)
     return {"message": "Scan started"}
 

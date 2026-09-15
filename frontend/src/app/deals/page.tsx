@@ -50,11 +50,11 @@ function asIdList(value: unknown): number[] {
 function scanStartError(e: unknown): string {
   const status = e && typeof e === "object" && "status" in e ? (e as { status?: number }).status : undefined;
   const message = e instanceof Error ? e.message : "";
-  if (status === 429 || /rate limit/i.test(message)) {
-    return "Scan limit reached — wait a few minutes and try again.";
-  }
   if (status === 409 || /already running/i.test(message)) {
     return "A scan is already running.";
+  }
+  if (status === 429 || /rate limit/i.test(message)) {
+    return message || "Too many requests — try again in a moment.";
   }
   return message || "Failed to start scan";
 }
