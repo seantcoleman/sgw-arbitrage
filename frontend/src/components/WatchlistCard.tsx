@@ -10,12 +10,12 @@ import {
   PRICE_WELL,
   StatPill,
   StatusPill,
-  TERMINAL_SNIPER_STATUSES,
+  UrgencyBadge,
   auctionHasEnded,
   displaySniperStatus,
   isMissedSnipe,
+  isTerminalSniperStatus,
   timeUntil,
-  UrgencyBadge,
 } from "@/components/listingCard";
 
 function trackingUrl(shipper: string | null, tracking: string): string {
@@ -242,7 +242,7 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
   const rawStatus = displaySniperStatus(item.sniper_status, item.end_time);
   const status = isMissedSnipe(item) ? "missed" : rawStatus;
-  const terminal = (TERMINAL_SNIPER_STATUSES as readonly string[]).includes(status);
+  const terminal = isTerminalSniperStatus(status);
   const statusLabel = STATUS_LABEL[status] ?? status;
   const statusTone = STATUS_TONE[status] ?? "blue";
 

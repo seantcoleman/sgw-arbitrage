@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { EditableMaxBid, WatchlistCard } from "@/components/WatchlistCard";
-import { TERMINAL_SNIPER_STATUSES, displaySniperStatus, isMissedSnipe, parseEndTime } from "@/components/listingCard";
+import {
+  auctionHasEnded,
+  displaySniperStatus,
+  isMissedSnipe,
+  isTerminalSniperStatus,
+  parseEndTime,
+} from "@/components/listingCard";
 import { getSettings, getSniperLogs, getSniperStatus, getWatchlist, removeFromWatchlist, repriceItem, SniperLogEntry, WatchlistItem } from "@/lib/api";
 
 function endTimeMs(endTime: string | null): number {
@@ -11,10 +17,13 @@ function endTimeMs(endTime: string | null): number {
   return parseEndTime(endTime).getTime();
 }
 
+/** Active queue = still-live auctions that are not a final outcome. */
 function isActiveWatchlistItem(item: WatchlistItem): boolean {
   if (isMissedSnipe(item)) return false;
+  if (isTerminalSniperStatus(item.sniper_status)) return false;
+  if (auctionHasEnded(item.end_time)) return false;
   const status = displaySniperStatus(item.sniper_status, item.end_time);
-  return !(TERMINAL_SNIPER_STATUSES as readonly string[]).includes(status);
+  return !isTerminalSniperStatus(status);
 }
 
 function lostDetailLine(item: WatchlistItem): string {
@@ -435,7 +444,7 @@ export default function WatchlistPage() {
 
                 {/* Countdown — only shown while auction is live */}
                 {(() => {
-                  const terminal = (TERMINAL_SNIPER_STATUSES as readonly string[]).includes(displayStatus);
+                  const terminal = isTerminalSniperStatus(displayStatus);
                   if (terminal) return null;
                   return (
                     <div className="text-center flex-shrink-0">
@@ -569,7 +578,7 @@ export default function WatchlistPage() {
             <p className="text-sm text-zinc-600 py-6 text-center">No active auctions in the sniper queue.</p>
           )}
           {endedSorted.length > 0 && (
-            <div>
+            <div className="pt-2 border-t border-zinc-800">
               <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-3">
                 Ended
                 <span className="text-zinc-600 font-medium normal-case tracking-normal ml-2">{endedSorted.length}</span>
@@ -590,7 +599,7 @@ export default function WatchlistPage() {
             )}
           </div>
           {endedSorted.length > 0 && (
-            <div>
+            <div className="pt-2 border-t border-zinc-800">
               <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-3">
                 Ended
                 <span className="text-zinc-600 font-medium normal-case tracking-normal ml-2">{endedSorted.length}</span>

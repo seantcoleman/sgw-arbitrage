@@ -15,19 +15,36 @@ export function auctionHasEnded(endTime: string | null): boolean {
   return parseEndTime(endTime).getTime() < Date.now();
 }
 
-export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost", "missed", "ended"] as const;
+export const TERMINAL_SNIPER_STATUSES = [
+  "won",
+  "awaiting_payment",
+  "shipped",
+  "lost",
+  "missed",
+  "ended",
+  "skipped",
+  "rejected",
+  "error",
+] as const;
+
+/** Final outcomes that never belong in the active sniper queue. */
+export function isTerminalSniperStatus(status: string | null | undefined): boolean {
+  const s = (status || "").toLowerCase();
+  return (TERMINAL_SNIPER_STATUSES as readonly string[]).includes(s);
+}
 
 /** Ended scheduled items are not lost — we may still have won and not synced yet.
  *  Skipped/rejected/error after close are losses (we never won). */
 export function displaySniperStatus(status: string, endTime: string | null): string {
-  if (status === "scheduled" && auctionHasEnded(endTime)) return "ended";
+  const s = (status || "").toLowerCase();
+  if (s === "scheduled" && auctionHasEnded(endTime)) return "ended";
   if (
-    (status === "skipped" || status === "rejected" || status === "error")
+    (s === "skipped" || s === "rejected" || s === "error")
     && auctionHasEnded(endTime)
   ) {
     return "lost";
   }
-  return status;
+  return s || status;
 }
 
 /** True when we lost without ever landing a bid (final ≤ max is a strong signal). */
@@ -36,8 +53,9 @@ export function isMissedSnipe(item: {
   final_price?: number | null;
   max_bid?: number | null;
 }): boolean {
-  if (item.sniper_status === "missed") return true;
-  if (item.sniper_status !== "lost") return false;
+  const status = (item.sniper_status || "").toLowerCase();
+  if (status === "missed") return true;
+  if (status !== "lost") return false;
   if (item.final_price == null || item.max_bid == null) return false;
   return item.final_price <= item.max_bid + 1e-9;
 }
