@@ -121,6 +121,11 @@ async def lifespan(app: FastAPI):
             logger.info(
                 f"Restored {restored} still-live deal(s) previously wiped by browse stale-mark"
             )
+    if not settings.get("healed_missed_losses_v1"):
+        n = _relabel_missed_losses()
+        db.update_setting("healed_missed_losses_v1", True)
+        if n:
+            logger.info(f"Relabeled {n} no-bid loss(es) as missed")
     interval = 120  # scan every 2 hours — deals last days, no need to scan more often
     _schedule_scan(interval)
     _scheduler.add_job(
@@ -512,9 +517,40 @@ def _add_sgw_favorite(item_id: int, max_bid: float):
         sgw = _get_sgw_client()
         note = json.dumps({"max_bid": max_bid})
         sgw.add_favorite(item_id, note=note)
+        # Verify the note stuck — empty notes are why snipes get silently skipped
+        favs = sgw.get_favorites()
+        fav = favs.get(item_id)
+        notes = (fav or {}).get("notes") or ""
+        if not fav:
+            raise RuntimeError("favorite missing after AddToFavorite")
+        if f"{max_bid}" not in notes and '"max_bid"' not in notes:
+            sgw.add_favorite_note(item_id, note)
+            favs = sgw.get_favorites()
+            notes = (favs.get(item_id) or {}).get("notes") or ""
+            if '"max_bid"' not in notes:
+                raise RuntimeError(f"favorite note not saved (got {notes!r})")
         logger.info(f"Added item {item_id} to SGW favorites with max_bid={max_bid}")
     except Exception as e:
         logger.error(f"Failed to add SGW favorite {item_id}: {e}")
+
+
+def _relabel_missed_losses() -> int:
+    """Flip lost rows with no bid evidence to 'missed' when final ≤ max."""
+    n = 0
+    for w in db.get_watchlist():
+        if (w.get("sniper_status") or "").lower() != "lost":
+            continue
+        try:
+            final_price = float(w["final_price"]) if w.get("final_price") is not None else None
+            max_bid = float(w["max_bid"]) if w.get("max_bid") is not None else None
+        except (TypeError, ValueError):
+            continue
+        if final_price is None or max_bid is None:
+            continue
+        if final_price <= max_bid + 1e-9:
+            db.update_watchlist_status(int(w["item_id"]), "missed")
+            n += 1
+    return n
 
 
 def _update_sgw_favorite_max_bid(item_id: int, max_bid: float):
@@ -683,19 +719,30 @@ def _check_bid_results() -> None:
                     + (f" (our max ${float(our_max):.2f})" if our_max else "")
                 )
             elif ended is True and (info.get("isClosed") or winner):
-                db.update_watchlist_result(item_id, "lost", final_price, final_shipping)
+                we_bid = any(_bidder_is_us(b.get("bidderName"), username) for b in bid_summary)
+                status = "lost" if we_bid else "missed"
+                # Also treat prior bid_placed as evidence we attempted a bid
+                if (item.get("sniper_status") or "").lower() == "bid_placed":
+                    status = "lost"
+                db.update_watchlist_result(item_id, status, final_price, final_shipping)
                 our_max = item.get("max_bid")
                 max_bit = f", our max ${float(our_max):.2f}" if our_max else ""
-                note = ""
-                try:
-                    if our_max is not None and final_price is not None and float(final_price) > float(our_max) + 1e-9:
-                        note = " — final above our max (outbid or bid never accepted)"
-                except (TypeError, ValueError):
-                    pass
-                logger.info(
-                    f"Lost: '{item.get('title', item_id)}' — final "
-                    f"${final_price:.2f}{max_bit}, winner: {winner or 'unknown'}{note}"
-                )
+                if status == "missed":
+                    logger.error(
+                        f"MISSED snipe: '{item.get('title', item_id)}' — no bid placed "
+                        f"(final ${final_price:.2f}{max_bit}, winner: {winner or 'unknown'})"
+                    )
+                else:
+                    note = ""
+                    try:
+                        if our_max is not None and final_price is not None and float(final_price) > float(our_max) + 1e-9:
+                            note = " — final above our max (outbid or bid never accepted)"
+                    except (TypeError, ValueError):
+                        pass
+                    logger.info(
+                        f"Lost: '{item.get('title', item_id)}' — final "
+                        f"${final_price:.2f}{max_bit}, winner: {winner or 'unknown'}{note}"
+                    )
         except Exception as e:
             logger.error(f"Win-check failed for item {item_id}: {e}")
 

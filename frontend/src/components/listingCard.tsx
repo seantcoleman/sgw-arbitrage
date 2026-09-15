@@ -15,7 +15,7 @@ export function auctionHasEnded(endTime: string | null): boolean {
   return parseEndTime(endTime).getTime() < Date.now();
 }
 
-export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost", "ended"] as const;
+export const TERMINAL_SNIPER_STATUSES = ["won", "awaiting_payment", "shipped", "lost", "missed", "ended"] as const;
 
 /** Ended scheduled items are not lost — we may still have won and not synced yet.
  *  Skipped/rejected/error after close are losses (we never won). */
@@ -28,6 +28,18 @@ export function displaySniperStatus(status: string, endTime: string | null): str
     return "lost";
   }
   return status;
+}
+
+/** True when we lost without ever landing a bid (final ≤ max is a strong signal). */
+export function isMissedSnipe(item: {
+  sniper_status: string;
+  final_price?: number | null;
+  max_bid?: number | null;
+}): boolean {
+  if (item.sniper_status === "missed") return true;
+  if (item.sniper_status !== "lost") return false;
+  if (item.final_price == null || item.max_bid == null) return false;
+  return item.final_price <= item.max_bid + 1e-9;
 }
 
 export function timeUntil(endTime: string | null): { label: string; urgency: Urgency } {

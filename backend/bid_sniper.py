@@ -148,14 +148,73 @@ class BidSniper:
         return max_bid
 
     def _parse_end_time(self, end_time_str: str) -> datetime.datetime:
+        raw = (end_time_str or "").strip()
+        if not raw:
+            raise ValueError("empty end time")
+        # Watchlist / API rows are UTC ISO (…Z). Favorites use naive Pacific.
+        if raw.endswith("Z") or "+" in raw[10:] or raw.endswith("-00:00"):
+            return datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
         date_format = self.date_format
-        if "." in end_time_str:
+        if "." in raw:
             date_format += ".%f"
         return (
-            datetime.datetime.strptime(end_time_str, date_format)
+            datetime.datetime.strptime(raw, date_format)
             .replace(tzinfo=ZoneInfo("America/Los_Angeles"))
             .astimezone(datetime.timezone.utc)
         )
+
+    def _watchlist_snipe_rows(self) -> Dict[int, Dict]:
+        """Local watchlist rows that still need a snipe (source of truth for max_bid)."""
+        out: Dict[int, Dict] = {}
+        try:
+            for w in db.get_watchlist():
+                if (w.get("sniper_status") or "").lower() != "scheduled":
+                    continue
+                try:
+                    max_bid = float(w.get("max_bid") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if max_bid <= 0:
+                    continue
+                out[int(w["item_id"])] = dict(w)
+        except Exception as e:
+            self.logger.error(f"Could not load watchlist snipes: {e}")
+        return out
+
+    def _resolve_max_bid(self, item_id: int, favorite: Optional[Dict] = None) -> Optional[float]:
+        if favorite:
+            mb = self._favorite_max_bid(favorite)
+            if mb is not None:
+                return mb
+        try:
+            for w in db.get_watchlist():
+                if int(w["item_id"]) == int(item_id):
+                    return float(w.get("max_bid") or 0) or None
+        except Exception:
+            pass
+        return None
+
+    def _ensure_favorite_note(self, item_id: int, max_bid: float, title: str = "") -> None:
+        """Make sure SGW favorites carry the max_bid note the sniper historically expected."""
+        note = json.dumps({"max_bid": max_bid})
+        try:
+            fav = self.favorites_cache["favorites"].get(item_id)
+            if fav and self._favorite_max_bid(fav) == max_bid:
+                return
+            if fav:
+                self.shopgoodwill_client.add_favorite_note(item_id, note)
+            else:
+                self.shopgoodwill_client.add_favorite(item_id, note=note)
+                self.logger.warning(
+                    f"Re-added SGW favorite for sniping '{title or item_id}' "
+                    f"(max ${max_bid:.2f})"
+                )
+            # Refresh just this entry in cache if possible
+            self.update_favorites_cache(0)
+        except Exception as e:
+            self.logger.error(
+                f"Could not sync SGW favorite note for {item_id}: {e}"
+            )
 
     def _soonest_seconds_remaining(self, now: datetime.datetime) -> Optional[float]:
         soonest: Optional[float] = None
@@ -222,22 +281,38 @@ class BidSniper:
             self.logger.error(f"Favorites refresh failed before bid on {item_id}: {e}")
 
         favorite = self.favorites_cache["favorites"].get(item_id, None)
-        if not favorite:
-            self.logger.error(
-                f"Snipe aborted for item {item_id}: not in SGW favorites at bid time"
+        watch = None
+        try:
+            watch = next(
+                (dict(w) for w in db.get_watchlist() if int(w["item_id"]) == int(item_id)),
+                None,
             )
-            return None
+        except Exception:
+            watch = None
 
-        max_bid = self._favorite_max_bid(favorite)
+        max_bid = self._resolve_max_bid(item_id, favorite)
+        title = (
+            (favorite or {}).get("title")
+            or (watch or {}).get("title")
+            or str(item_id)
+        )
+
         if max_bid is None:
             self.logger.error(
-                f"Snipe aborted for '{favorite.get('title', item_id)}': "
-                f"no max_bid in favorite note"
+                f"Snipe aborted for '{title}': no max_bid in favorites note or watchlist"
             )
             return None
 
-        title = favorite.get("title", str(item_id))
-        seller_id = favorite.get("sellerId")
+        # Favorites can drift (missing item / empty note). Local watchlist is source of truth.
+        if favorite is None or self._favorite_max_bid(favorite) is None:
+            self.logger.warning(
+                f"Favorite missing/incomplete for '{title}' — syncing from watchlist "
+                f"max ${max_bid:.2f}"
+            )
+            self._ensure_favorite_note(item_id, max_bid, title)
+            favorite = self.favorites_cache["favorites"].get(item_id, favorite)
+
+        seller_id = (favorite or {}).get("sellerId")
 
         # Live price / minimum bid so we don't claim success on a too-low max
         current_price = None
@@ -254,10 +329,20 @@ class BidSniper:
             )
             try:
                 current_price = float(
-                    favorite.get("currentPrice") or favorite.get("currentBid") or 0
+                    (favorite or {}).get("currentPrice")
+                    or (favorite or {}).get("currentBid")
+                    or (watch or {}).get("current_bid")
+                    or 0
                 )
             except (TypeError, ValueError):
                 current_price = None
+
+        if seller_id is None:
+            try:
+                info = self.shopgoodwill_client.get_item_info(item_id)
+                seller_id = info.get("sellerId")
+            except Exception as e:
+                self.logger.warning(f"Could not fetch sellerId for '{title}': {e}")
 
         if current_price is not None or minimum_bid is not None:
             cur_s = f"${current_price:.2f}" if current_price is not None else "?"
@@ -349,7 +434,7 @@ class BidSniper:
         except Exception as e:
             self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
-        end_time_str = favorite.get("endTime", "")
+        end_time_str = (favorite or {}).get("endTime") or (watch or {}).get("end_time") or ""
         if end_time_str:
             try:
                 end_dt = self._parse_end_time(end_time_str)
@@ -423,6 +508,28 @@ class BidSniper:
                     won = True
 
             status = "won" if won else "lost"
+            if not won:
+                # If we never appear in bid history, this was a missed snipe — not an outbid.
+                we_bid = False
+                try:
+                    for b in info.get("bidHistory", {}).get("bidSummary", []) or []:
+                        bn = (b.get("bidderName") or "").strip().lower()
+                        if bn and username and (
+                            bn == username
+                            or (
+                                "*" in bn
+                                and len(bn) == len(username)
+                                and bn[0] == username[0]
+                                and bn[-1] == username[-1]
+                            )
+                        ):
+                            we_bid = True
+                            break
+                except Exception:
+                    we_bid = False
+                if not we_bid:
+                    status = "missed"
+
             db.update_watchlist_result(item_id, status, final_price, final_shipping)
 
             title = info.get("title", item_id)
@@ -431,6 +538,13 @@ class BidSniper:
                     f"WON '{title}' — "
                     f"final ${final_price:.2f} + ${final_shipping:.2f} shipping"
                     + (f" (our max ${our_max:.2f})" if our_max else "")
+                )
+            elif status == "missed":
+                max_bit = f", our max ${our_max:.2f}" if our_max else ""
+                final_bit = f"${final_price:.2f}" if final_price is not None else "?"
+                self.logger.error(
+                    f"MISSED snipe '{title}' — no bid placed (final {final_bit}{max_bit}, "
+                    f"winner: {winner or 'unknown'})"
                 )
             else:
                 max_bit = f", our max ${our_max:.2f}" if our_max else ""
@@ -480,11 +594,52 @@ class BidSniper:
             )
             self.update_favorites_cache(cache_ttl)
 
+            # Schedule from favorites notes AND local watchlist. Watchlist max_bid is
+            # source of truth — empty/missing favorite notes used to silently skip snipes.
+            watch_snipes = self._watchlist_snipe_rows()
+            schedule_candidates: Dict[int, Dict] = {}
+
             for item_id, favorite_info in self.favorites_cache["favorites"].items():
+                max_bid = self._favorite_max_bid(favorite_info)
+                if max_bid is None and item_id not in watch_snipes:
+                    continue
+                if max_bid is None and item_id in watch_snipes:
+                    max_bid = float(watch_snipes[item_id]["max_bid"])
+                    self._ensure_favorite_note(
+                        item_id, max_bid, watch_snipes[item_id].get("title", "")
+                    )
+                schedule_candidates[item_id] = {
+                    "title": favorite_info.get("title") or str(item_id),
+                    "end_raw": favorite_info.get("endTime"),
+                    "max_bid": max_bid,
+                    "source": "favorite",
+                }
+
+            for item_id, watch in watch_snipes.items():
+                if item_id in schedule_candidates:
+                    # Prefer watchlist end_time if favorite is missing one
+                    if not schedule_candidates[item_id].get("end_raw") and watch.get("end_time"):
+                        schedule_candidates[item_id]["end_raw"] = watch.get("end_time")
+                    continue
+                self.logger.warning(
+                    f"Watchlist snipe '{watch.get('title', item_id)}' missing from "
+                    f"SGW favorites — scheduling from local watchlist"
+                )
+                self._ensure_favorite_note(
+                    item_id, float(watch["max_bid"]), watch.get("title", "")
+                )
+                schedule_candidates[item_id] = {
+                    "title": watch.get("title") or str(item_id),
+                    "end_raw": watch.get("end_time"),
+                    "max_bid": float(watch["max_bid"]),
+                    "source": "watchlist",
+                }
+
+            for item_id, cand in schedule_candidates.items():
                 if item_id in self.scheduled_tasks or item_id in self.bids_placed:
                     continue
 
-                end_raw = favorite_info.get("endTime")
+                end_raw = cand.get("end_raw")
                 if not end_raw:
                     continue
                 try:
@@ -500,10 +655,6 @@ class BidSniper:
 
                 if end_time <= now:
                     self.scheduled_tasks.add(item_id)
-                    continue
-
-                # Favorites without a max_bid are not snipes — don't schedule or log
-                if self._favorite_max_bid(favorite_info) is None:
                     continue
 
                 for alert_time_delta in self.alert_time_deltas:
@@ -527,7 +678,7 @@ class BidSniper:
                     secs_left = int((end_time - now).total_seconds())
                     late_by = int((now - bid_execution_datetime).total_seconds())
                     self.logger.warning(
-                        f"Snipe window missed for '{favorite_info['title']}' "
+                        f"Snipe window missed for '{cand['title']}' "
                         f"({late_by}s late) — bidding immediately ({secs_left}s left)"
                     )
                     bid_id = item_id
@@ -546,9 +697,10 @@ class BidSniper:
                     )
                 ).add_done_callback(self.task_err_handler)
 
+                via = f" (via {cand['source']})" if cand.get("source") == "watchlist" else ""
                 self.logger.info(
-                    f"Scheduled snipe for '{favorite_info['title']}' at "
-                    f"{bid_execution_datetime.isoformat()}"
+                    f"Scheduled snipe for '{cand['title']}' at "
+                    f"{bid_execution_datetime.isoformat()}{via}"
                 )
                 self.scheduled_tasks.add(item_id)
 
