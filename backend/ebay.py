@@ -37,12 +37,13 @@ _STOPWORDS = {
 _token: Optional[str] = None
 _token_expires_at: float = 0.0
 
-# In-memory cache: key=(search_term, days_back, version) → (result, expires_at)
-# 4-hour TTL — eBay prices don't change meaningfully in minutes
-_CACHE_TTL = 4 * 3600
+# In-memory + durable DB cache: key=(search_term, days_back, version) → (result, expires_at)
+# Week-long TTL — we only need rough resale estimates, not live market ticks.
+_CACHE_TTL = int(os.getenv("EBAY_CACHE_TTL_SECONDS", str(7 * 24 * 3600)))
 _cache: dict = {}
 _cache_hits = 0
 _cache_misses = 0
+_cache_db_hits = 0
 
 
 class EbayPriceResult:
@@ -157,42 +158,49 @@ def get_sold_prices(
 ) -> Optional[EbayPriceResult]:
     """
     Query eBay Browse API for current used-condition BIN listings matching search_term.
-    Results are cached for 4 hours to stay within eBay API rate limits.
+    Results are cached ~7 days (memory + durable DB) to stay within eBay API rate limits.
     Returns None only when no title-matched listings are found.
     Callers should compare sold_count to min_comps for deal thresholds;
     partial comps are still returned so UIs can show estimates + skip reasons.
     """
-    global _cache_hits, _cache_misses
+    global _cache_hits, _cache_misses, _cache_db_hits
 
     # Bust cache when matching / partial-comps logic changes
     cache_key = (search_term.lower().strip(), days_back, "v3-partial-comps")
     cache_key_str = f"{cache_key[0]}|{cache_key[1]}|{cache_key[2]}"
     now = time.time()
 
-    # Shared Postgres cache (multi-worker)
-    try:
-        import db as _db
-        cached_payload = _db.ebay_cache_get(cache_key_str)
-        if cached_payload is not None:
-            _cache_hits += 1
-            if cached_payload.get("_null"):
-                return None
-            return EbayPriceResult(
-                search_term=cached_payload["ebay_search"],
-                median=cached_payload["ebay_median"],
-                low=cached_payload["ebay_low"],
-                high=cached_payload["ebay_high"],
-                sold_count=cached_payload["ebay_sold_count"],
-                prices=cached_payload.get("prices") or [],
-            )
-    except Exception:
-        pass
-
+    # Fast path: process-local memory
     if cache_key in _cache:
         result, expires_at = _cache[cache_key]
         if now < expires_at:
             _cache_hits += 1
             return result
+        del _cache[cache_key]
+
+    # Durable DB cache (SQLite locally, Postgres in multi-tenant)
+    try:
+        import db as _db
+        cached_payload = _db.ebay_cache_get(cache_key_str)
+        if cached_payload is not None:
+            _cache_hits += 1
+            _cache_db_hits += 1
+            if cached_payload.get("_null"):
+                result = None
+            else:
+                result = EbayPriceResult(
+                    search_term=cached_payload.get("ebay_search") or search_term,
+                    median=float(cached_payload["ebay_median"]),
+                    low=float(cached_payload["ebay_low"]),
+                    high=float(cached_payload["ebay_high"]),
+                    sold_count=int(cached_payload["ebay_sold_count"]),
+                    prices=cached_payload.get("prices") or [],
+                )
+            _cache[cache_key] = (result, now + _CACHE_TTL)
+            return result
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"eBay DB cache read failed: {e}")
 
     _cache_misses += 1
     result = _fetch_sold_prices(search_term, days_back, max_results, min_comps)
@@ -205,21 +213,34 @@ def get_sold_prices(
             payload = result.to_dict()
             payload["prices"] = list(result.prices or [])
             _db.ebay_cache_set(cache_key_str, payload, _CACHE_TTL)
-    except Exception:
-        pass
-    # Prevent unbounded growth
-    if _cache_misses % 500 == 0:
-        _cache.clear()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"eBay DB cache write failed: {e}")
+
+    # Drop expired in-memory entries instead of wiping everything
+    if _cache_misses % 200 == 0:
+        expired = [k for k, (_, exp) in _cache.items() if exp <= now]
+        for k in expired:
+            _cache.pop(k, None)
     return result
 
 
 def get_cache_stats() -> dict:
     total = _cache_hits + _cache_misses
+    db_entries = 0
+    try:
+        import db as _db
+        db_entries = _db.ebay_cache_count()
+    except Exception:
+        pass
     return {
         "hits": _cache_hits,
         "misses": _cache_misses,
+        "db_hits": _cache_db_hits,
         "hit_rate": round(_cache_hits / total, 3) if total else 0,
         "cached_terms": len(_cache),
+        "db_entries": db_entries,
+        "ttl_hours": round(_CACHE_TTL / 3600, 1),
     }
 
 

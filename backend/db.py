@@ -250,6 +250,19 @@ def init_db():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ebay_price_cache (
+                cache_key   TEXT PRIMARY KEY,
+                payload     TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ebay_price_cache_expires "
+            "ON ebay_price_cache (expires_at)"
+        )
+
         # Seed cache from existing deal/watchlist search terms (once-ish; upsert is cheap)
         rows = conn.execute("""
             SELECT title, ebay_search FROM deals
@@ -2006,39 +2019,82 @@ def list_sgw_accounts_due_reverify(stale_hours: int = 24, limit: int = 20) -> Li
     return [dict(r) for r in rows]
 
 
-# ── eBay price cache (Postgres) ─────────────────────────────────────────────
+# ── eBay price cache (SQLite + Postgres) ────────────────────────────────────
 
 def ebay_cache_get(cache_key: str) -> Optional[Dict]:
-    if not using_postgres():
-        return None
     with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT payload FROM ebay_price_cache
-            WHERE cache_key = ? AND expires_at > now()
-            """,
-            (cache_key,),
-        ).fetchone()
+        if using_postgres():
+            row = conn.execute(
+                """
+                SELECT payload FROM ebay_price_cache
+                WHERE cache_key = ? AND expires_at > now()
+                """,
+                (cache_key,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT payload FROM ebay_price_cache
+                WHERE cache_key = ? AND expires_at > datetime('now')
+                """,
+                (cache_key,),
+            ).fetchone()
     if not row:
         return None
     payload = row["payload"]
-    return payload if isinstance(payload, dict) else json.loads(payload)
+    if isinstance(payload, dict):
+        return payload
+    try:
+        return json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
-def ebay_cache_set(cache_key: str, payload: Dict, ttl_seconds: int = 14400) -> None:
-    if not using_postgres():
-        return
+def ebay_cache_set(cache_key: str, payload: Dict, ttl_seconds: int = 604800) -> None:
+    ttl_seconds = max(60, int(ttl_seconds))
+    body = json.dumps(payload)
     with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO ebay_price_cache (cache_key, payload, expires_at)
-            VALUES (?, ?::jsonb, now() + (? || ' seconds')::interval)
-            ON CONFLICT (cache_key) DO UPDATE SET
-              payload = EXCLUDED.payload,
-              expires_at = EXCLUDED.expires_at
-            """,
-            (cache_key, json.dumps(payload), str(int(ttl_seconds))),
-        )
+        if using_postgres():
+            conn.execute(
+                """
+                INSERT INTO ebay_price_cache (cache_key, payload, expires_at)
+                VALUES (?, ?::jsonb, now() + (? || ' seconds')::interval)
+                ON CONFLICT (cache_key) DO UPDATE SET
+                  payload = EXCLUDED.payload,
+                  expires_at = EXCLUDED.expires_at
+                """,
+                (cache_key, body, str(ttl_seconds)),
+            )
+        else:
+            expires_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                """
+                INSERT INTO ebay_price_cache (cache_key, payload, expires_at, created_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(cache_key) DO UPDATE SET
+                  payload = excluded.payload,
+                  expires_at = excluded.expires_at
+                """,
+                (cache_key, body, expires_at),
+            )
+
+
+def ebay_cache_count() -> int:
+    """Count non-expired durable eBay price cache entries."""
+    with get_conn() as conn:
+        if using_postgres():
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM ebay_price_cache WHERE expires_at > now()"
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM ebay_price_cache WHERE expires_at > datetime('now')"
+            ).fetchone()
+    if not row:
+        return 0
+    return int(row["n"] if isinstance(row, dict) else row[0])
 
 
 # ── Scan log ────────────────────────────────────────────────────────────────
