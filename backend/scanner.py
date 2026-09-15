@@ -60,11 +60,9 @@ class Scanner:
         self.max_items = min(int(settings.get("scan_max_items", 200)), 200)  # hard cap
         self.ebay_fee_pct, self.ebay_resale_shipping = profit_calc.fee_settings(settings)
         self.auctions_only = bool(settings.get("auctions_only", True))
-        self.keywords = settings.get(
-            "scan_keywords",
-            ["sony headphones", "apple watch", "canon camera"],
-        )
-        self.category_ids = settings.get("scan_category_ids", [])
+        # Empty lists mean site-wide browse — never fall back to sample keywords.
+        self.keywords = settings.get("scan_keywords") or []
+        self.category_ids = settings.get("scan_category_ids") or []
         self._category_names: dict = {}
 
         auth_info = {
@@ -80,7 +78,7 @@ class Scanner:
 
         self.sgw = shopgoodwill.Shopgoodwill(auth_info)
 
-    def scan(self) -> dict:
+    def scan(self, refresh_deals: bool = False) -> dict:
         scan_id = db.log_scan_start()
         total_scanned = 0
         total_deals = 0
@@ -107,11 +105,11 @@ class Scanner:
                 logger.error(f"Error scanning {label}: {e}")
                 errors.append(f"{label}: {e}")
 
-        # Site-wide browse is only a sample of SGW (~200 listings), not a full
-        # inventory refresh. Stale-marking against that sample wipes better deals
-        # found by earlier keyword/category scans. Only mark stale when the scan
-        # has an explicit filter scope.
-        if self.keywords or self.category_ids:
+        # Filtered scans always replace the deals list. Background site-wide
+        # browse is only a sample of SGW, so it keeps prior filtered deals.
+        # User-triggered scans pass refresh_deals=True so clearing filters
+        # actually replaces the list instead of looking like a no-op.
+        if self.keywords or self.category_ids or refresh_deals:
             db.mark_deals_stale(active_item_ids)
         else:
             logger.info(

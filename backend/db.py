@@ -446,12 +446,21 @@ def mark_deals_stale(active_item_ids: List[int]) -> None:
     """Mark deals no longer in scan results as ended.
 
     Skips favorite-enrichment rows so a keyword/browse scan doesn't wipe
-    Favorites page analysis.
+    Favorites page analysis. An empty active set ends every non-favorite
+    deal — used when a user-triggered scan finds nothing / clears filters.
     """
-    if not active_item_ids:
-        return
-    placeholders = ",".join("?" * len(active_item_ids))
     with get_conn() as conn:
+        if not active_item_ids:
+            conn.execute(
+                """
+                UPDATE deals SET status = 'ended'
+                WHERE status = 'active'
+                  AND (keyword IS NULL OR keyword != ?)
+                """,
+                (FAVORITE_KEYWORD,),
+            )
+            return
+        placeholders = ",".join("?" * len(active_item_ids))
         conn.execute(f"""
             UPDATE deals SET status = 'ended'
             WHERE status = 'active'
@@ -1497,7 +1506,34 @@ def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
                     result[row["key"]] = json.loads(row["value"])
                 except (json.JSONDecodeError, TypeError):
                     result[row["key"]] = row["value"]
+    result["scan_keywords"] = _coerce_str_list(result.get("scan_keywords"))
+    result["scan_category_ids"] = _coerce_int_list(result.get("scan_category_ids"))
     return result
+
+
+def _coerce_str_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(v).strip() for v in parsed if str(v).strip()]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return [p.strip() for p in value.split(",") if p.strip()]
+    return []
+
+
+def _coerce_int_list(value: Any) -> List[int]:
+    items = value if isinstance(value, list) else _coerce_str_list(value)
+    out: List[int] = []
+    for v in items:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def update_setting(key: str, value: Any, user_id: Optional[UserId] = None) -> None:

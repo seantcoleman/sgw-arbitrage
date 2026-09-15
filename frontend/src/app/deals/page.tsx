@@ -38,6 +38,27 @@ function formatScanAgo(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(v => String(v)).filter(Boolean) : [];
+}
+
+function asIdList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(v => Number(v)).filter(n => Number.isFinite(n));
+}
+
+function scanStartError(e: unknown): string {
+  const status = e && typeof e === "object" && "status" in e ? (e as { status?: number }).status : undefined;
+  const message = e instanceof Error ? e.message : "";
+  if (status === 429 || /rate limit/i.test(message)) {
+    return "Scan limit reached — wait a few minutes and try again.";
+  }
+  if (status === 409 || /already running/i.test(message)) {
+    return "A scan is already running.";
+  }
+  return message || "Failed to start scan";
+}
+
 function ScanNumField({
   label,
   value,
@@ -129,8 +150,8 @@ export default function DealsPage() {
         getCategories(),
       ]);
       if (s) {
-        setSelectedCatIds(s.scan_category_ids ?? []);
-        setKeywords(s.scan_keywords ?? []);
+        setSelectedCatIds(asIdList(s.scan_category_ids));
+        setKeywords(asStringList(s.scan_keywords));
         setScanMinProfit(s.min_profit_usd ?? 20);
         setScanMinMargin(s.min_margin_pct ?? 30);
         setMinSoldComps(s.min_sold_comps ?? 5);
@@ -169,7 +190,7 @@ export default function DealsPage() {
       if (wasRunning && !scan.running) fetchDeals(true);
     };
     poll();
-    const interval = setInterval(poll, 20000);
+    const interval = setInterval(poll, scanRunning ? 5000 : 20000);
     return () => clearInterval(interval);
   }, [scanRunning]);
 
@@ -182,21 +203,55 @@ export default function DealsPage() {
   };
 
   const toggleCategory = async (id: number) => {
+    const previous = selectedCatIds;
     const updated = nextCategorySelection(categories, selectedCatIds, id);
     setSelectedCatIds(updated);
     try {
       await updateSetting("scan_category_ids", updated);
     } catch {
+      setSelectedCatIds(previous);
       toast.error("Failed to save category filter");
     }
   };
 
   const clearCategories = async () => {
+    const previous = selectedCatIds;
     setSelectedCatIds([]);
     try {
       await updateSetting("scan_category_ids", []);
     } catch {
+      setSelectedCatIds(previous);
       toast.error("Failed to clear category filter");
+    }
+  };
+
+  const clearAllScanFilters = async () => {
+    const prevCats = selectedCatIds;
+    const prevKeywords = keywords;
+    setSelectedCatIds([]);
+    setKeywords([]);
+    setNewKeyword("");
+    try {
+      await Promise.all([
+        updateSetting("scan_keywords", []),
+        updateSetting("scan_category_ids", []),
+      ]);
+    } catch {
+      setSelectedCatIds(prevCats);
+      setKeywords(prevKeywords);
+      toast.error("Failed to clear filters");
+    }
+  };
+
+  const clearKeywords = async () => {
+    const previous = keywords;
+    setKeywords([]);
+    setNewKeyword("");
+    try {
+      await updateSetting("scan_keywords", []);
+    } catch {
+      setKeywords(previous);
+      toast.error("Failed to clear keywords");
     }
   };
 
@@ -213,16 +268,19 @@ export default function DealsPage() {
     try {
       await updateSetting("scan_keywords", updated);
     } catch {
+      setKeywords(keywords);
       toast.error("Failed to save keyword");
     }
   };
 
   const removeKeyword = async (kw: string) => {
+    const previous = keywords;
     const updated = keywords.filter(k => k !== kw);
     setKeywords(updated);
     try {
       await updateSetting("scan_keywords", updated);
     } catch {
+      setKeywords(previous);
       toast.error("Failed to remove keyword");
     }
   };
@@ -255,8 +313,10 @@ export default function DealsPage() {
       await triggerScan();
       setScanRunning(true);
       toast("Scan started — checking SGW for deals...", { icon: "🔍" });
-    } catch {
-      toast.error("Failed to start scan");
+    } catch (e: unknown) {
+      const status = e && typeof e === "object" && "status" in e ? (e as { status?: number }).status : undefined;
+      if (status === 409) setScanRunning(true);
+      toast.error(scanStartError(e));
     }
   };
 
@@ -440,13 +500,24 @@ export default function DealsPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-zinc-300">Filters</p>
-                <button
-                  type="button"
-                  onClick={() => setShowScanFilters(false)}
-                  className="text-zinc-600 hover:text-zinc-300 text-xs px-1"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-2">
+                  {scanFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllScanFilters}
+                      className="text-[11px] text-zinc-500 hover:text-zinc-300"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowScanFilters(false)}
+                    className="text-zinc-600 hover:text-zinc-300 text-xs px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -492,6 +563,15 @@ export default function DealsPage() {
 
               <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-zinc-800/80">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mr-0.5">Keywords</span>
+                {keywords.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearKeywords}
+                    className="text-[11px] text-zinc-600 hover:text-zinc-300"
+                  >
+                    Clear
+                  </button>
+                )}
                 {keywords.map(kw => (
                   <span key={kw} className="inline-flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-2 py-0.5 text-[11px] text-zinc-300">
                     {kw}
@@ -536,7 +616,8 @@ export default function DealsPage() {
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
                 <p className="text-[11px] text-zinc-600">
-                  Filters apply on the next scan — not to deals already listed.
+                  Apply & Scan replaces the deal list with results for these filters.
+                  Empty keywords and categories browse all listings.
                 </p>
                 <button
                   type="button"

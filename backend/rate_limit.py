@@ -23,6 +23,9 @@ def check_rate_limit(user_id: str, action: str, *, limit: int, window_seconds: i
         if len(q) >= limit:
             raise HTTPException(
                 status_code=429,
-                detail=f"Rate limit exceeded for {action} ({limit}/{window_seconds}s)",
+                detail=(
+                    f"Rate limit exceeded for {action} "
+                    f"({limit} per {window_seconds // 60} minutes). Try again later."
+                ),
             )
         q.append(now)

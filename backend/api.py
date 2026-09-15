@@ -15,7 +15,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -1080,11 +1080,12 @@ def verify_sgw_account(account_id: int, user: RequireUser):
 
 @app.post("/scan")
 def trigger_scan(background_tasks: BackgroundTasks, user: RequireUser):
-    check_rate_limit(user.id, "scan", limit=3, window_seconds=3600)
     global _scan_running
     if _scan_running:
-        return {"message": "Scan already running"}
-    background_tasks.add_task(_run_scan)
+        raise HTTPException(status_code=409, detail="Scan already running")
+    # Check after the in-progress guard so retries don't burn the hourly budget.
+    check_rate_limit(user.id, "scan", limit=10, window_seconds=3600)
+    background_tasks.add_task(_run_scan, True)
     return {"message": "Scan started"}
 
 
@@ -1094,17 +1095,23 @@ def scan_status(user: RequireUser):
     return {"running": _scan_running, "recent_scans": recent}
 
 
-def _run_scan():
+def _run_scan(refresh_deals: bool = False):
+    """Run a scan. User-triggered scans pass refresh_deals=True so clearing
+    filters replaces the deals list instead of keeping the previous scope.
+    """
     global _scan_running
     with _scan_lock:
+        if _scan_running:
+            logger.info("Scan already running — skip")
+            return
         _scan_running = True
-        try:
-            from scanner import Scanner
-            Scanner().scan()
-        except Exception as e:
-            logger.error(f"Scan error: {e}")
-        finally:
-            _scan_running = False
+    try:
+        from scanner import Scanner
+        Scanner().scan(refresh_deals=refresh_deals)
+    except Exception as e:
+        logger.error(f"Scan error: {e}")
+    finally:
+        _scan_running = False
 
 
 # ── Bid Sniper ───────────────────────────────────────────────────────────────
@@ -1185,7 +1192,7 @@ def get_settings(user: RequireUser):
 
 class SettingsUpdateRequest(BaseModel):
     key: str
-    value: object
+    value: Any
 
 
 def _restart_sniper() -> None:
