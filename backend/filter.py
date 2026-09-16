@@ -331,7 +331,13 @@ def _clean_with_gateway(title: str, api_key: str) -> Optional[str]:
     """Extract a clean eBay search term via Vercel AI Gateway."""
     import httpx
 
-    model = (os.getenv("AI_GATEWAY_MODEL") or AI_GATEWAY_DEFAULT_MODEL).strip()
+    primary = (os.getenv("AI_GATEWAY_MODEL") or AI_GATEWAY_DEFAULT_MODEL).strip()
+    # Fallbacks if the primary model is unavailable for this key / region
+    models = [primary]
+    for alt in ("openai/gpt-4.1-mini", "openai/gpt-4o-mini", "google/gemini-2.5-flash"):
+        if alt not in models:
+            models.append(alt)
+
     prompt = (
         "You are an eBay search expert. Turn this auction title into a good eBay search.\n\n"
         f"Title: {title}\n\n"
@@ -349,24 +355,37 @@ def _clean_with_gateway(title: str, api_key: str) -> Optional[str]:
         "Search term:"
     )
 
-    try:
-        resp = httpx.post(
-            AI_GATEWAY_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 40,
-                "temperature": 0,
-            },
-            timeout=8,
-        )
-        resp.raise_for_status()
-        result = resp.json()["choices"][0]["message"]["content"].strip()
-        return _normalize_search_term(result)
-    except Exception as e:
-        logger.debug(f"AI Gateway title clean failed: {e}")
-        return None
+    last_err = None
+    for model in models:
+        try:
+            resp = httpx.post(
+                AI_GATEWAY_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 40,
+                    "temperature": 0,
+                },
+                timeout=8,
+            )
+            if resp.status_code >= 400:
+                last_err = f"{model} HTTP {resp.status_code}: {resp.text[:200]}"
+                logger.warning(f"AI Gateway title clean failed: {last_err}")
+                continue
+            result = resp.json()["choices"][0]["message"]["content"].strip()
+            term = _normalize_search_term(result)
+            if term:
+                if model != primary:
+                    logger.info(f"AI Gateway used fallback model {model}")
+                return term
+            last_err = f"{model} empty/SKIP response"
+        except Exception as e:
+            last_err = f"{model}: {e}"
+            logger.warning(f"AI Gateway title clean failed: {last_err}")
+    if last_err:
+        logger.warning(f"AI Gateway title clean gave up; using regex. Last error: {last_err}")
+    return None
 
 
 def _clean_with_regex(title: str) -> Optional[str]:
