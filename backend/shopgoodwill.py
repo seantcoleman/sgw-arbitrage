@@ -378,7 +378,7 @@ class Shopgoodwill:
         # Category IDs: pass as comma-separated `scids` param (the correct SGW filter param)
         cat_ids: list = query_json.get("categoryId", [])
         scids_param = ",".join(str(c) for c in cat_ids) if cat_ids else ""
-        # Default ending-soonest; callers can set sortDescending=True for site-wide browse
+        # Default ending-soonest; callers may set sortDescending=True to reverse
         sort_desc = "true" if query_json.get("sortDescending") else "false"
 
         total_listings: List[Dict] = []

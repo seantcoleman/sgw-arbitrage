@@ -136,9 +136,7 @@ class Scanner:
         query = {**SGW_SEARCH_TEMPLATE, "searchText": keyword or ""}
         if self.category_ids:
             query["categoryId"] = self.category_ids
-        # Empty site-wide browse: ending-later first so results aren't all about to expire
-        if not keyword and not self.category_ids:
-            query["sortDescending"] = True
+        # Always ending-soonest (SGW default) so empty browse matches Deals UI sort
         label = f"'{keyword}'" if keyword else f"category {self.category_ids}"
         try:
             items = self.sgw.get_query_results(query, page_size=40)
