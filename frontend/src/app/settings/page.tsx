@@ -203,28 +203,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </Section>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-100">Credentials</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Set in <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">backend/.env</code> — restart the server after changes
-          </p>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          {[
-            { key: "SGW_USERNAME", desc: "ShopGoodwill username" },
-            { key: "SGW_PASSWORD", desc: "ShopGoodwill password" },
-            { key: "EBAY_APP_ID", desc: "eBay Developer App ID" },
-            { key: "EBAY_CERT_ID", desc: "eBay Cert ID (Client Secret)" },
-          ].map(({ key, desc }) => (
-            <div key={key} className="flex items-center gap-3 text-xs">
-              <code className="text-zinc-300 bg-zinc-800 px-2 py-1 rounded-lg font-mono w-40 flex-shrink-0">{key}</code>
-              <span className="text-zinc-600">{desc}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
