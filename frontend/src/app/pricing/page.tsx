@@ -122,7 +122,8 @@ export default function PricingPage() {
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
             <li>✓ Pay only when you win</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ Paste URL or Favorites → eBay comps</li>
+            <li>✓ eBay Value Lookup</li>
+            <li>✓ Add from ShopGoodwill Favorites</li>
             <li>✓ Last-second bidding workers</li>
             <li>✓ No win, no charge</li>
           </ul>
@@ -153,7 +154,8 @@ export default function PricingPage() {
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
             <li>✓ Win auctions with 0% success fee</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ Paste URL or Favorites → eBay comps</li>
+            <li>✓ eBay Value Lookup</li>
+            <li>✓ Add from ShopGoodwill Favorites</li>
             <li>✓ Last-second bidding workers</li>
             <li>✓ Cancel anytime in billing portal</li>
           </ul>
