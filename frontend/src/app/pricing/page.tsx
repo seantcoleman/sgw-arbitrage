@@ -124,7 +124,7 @@ export default function PricingPage() {
             <li>✓ Unlimited auction snipes</li>
             <li>✓ eBay Value Lookup</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
-            <li>✓ Last-second bidding workers</li>
+            <li>✓ Automatic last-second bids</li>
             <li>✓ No win, no charge</li>
           </ul>
           <button
@@ -156,7 +156,7 @@ export default function PricingPage() {
             <li>✓ Unlimited auction snipes</li>
             <li>✓ eBay Value Lookup</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
-            <li>✓ Last-second bidding workers</li>
+            <li>✓ Automatic last-second bids</li>
             <li>✓ Cancel anytime in billing portal</li>
           </ul>
           <button
