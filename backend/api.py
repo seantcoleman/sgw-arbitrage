@@ -537,7 +537,8 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         sgw_account_id=sgw_account_id,
     )
 
-    background_tasks.add_task(_add_sgw_favorite_for_user, user.id, req.item_id, req.max_bid)
+    # Do not sync to SGW favorites — watchlist/snipe_jobs own sniping.
+    # Favorites stays for items the user starred on ShopGoodwill.
 
     return {
         "success": True,
@@ -556,6 +557,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
 def remove_from_watchlist(item_id: int, background_tasks: BackgroundTasks, user: RequireUser):
     db.cancel_snipe_job(item_id, user_id=user.id)
     db.remove_from_watchlist(item_id, user_id=user.id)
+    # Best-effort: unfavorite if we previously synced this item to SGW
     background_tasks.add_task(_remove_sgw_favorite_for_user, user.id, item_id)
     return {"success": True}
 
@@ -565,7 +567,7 @@ class WatchlistMaxBidRequest(BaseModel):
 
 
 @app.patch("/watchlist/{item_id}")
-def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, background_tasks: BackgroundTasks, user: RequireUser):
+def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, user: RequireUser):
     """Update sniper max bid for a live, not-yet-sniped watchlist item."""
     watch = next((w for w in db.get_watchlist(user.id) if w["item_id"] == item_id), None)
     if not watch:
@@ -588,7 +590,6 @@ def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, backgrou
         )
 
     db.update_watchlist_max_bid(item_id, req.max_bid, user_id=user.id)
-    background_tasks.add_task(_update_sgw_favorite_max_bid_for_user, user.id, item_id, req.max_bid)
     return {"success": True, "item_id": item_id, "max_bid": req.max_bid}
 
 

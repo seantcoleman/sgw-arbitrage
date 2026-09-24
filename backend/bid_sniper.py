@@ -350,12 +350,6 @@ class BidSniper:
             self.bids_placed.discard(item_id)
             return "aborted"
 
-        # Best-effort favorite sync for SGW UI — never required to fire
-        try:
-            self._ensure_favorite_note(item_id, max_bid, title)
-        except Exception:
-            pass
-
         seller_id = None
         current_price = None
         minimum_bid = None
