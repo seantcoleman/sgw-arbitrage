@@ -90,6 +90,7 @@ export default function AccountPage() {
   const isPro =
     billing?.plan === "pro" &&
     ["active", "trialing"].includes(billing.stripe_subscription_status || "");
+  const hasCard = Boolean(billing?.has_payment_method);
 
   return (
     <div className="max-w-xl">
@@ -133,7 +134,7 @@ export default function AccountPage() {
                 href="/pricing"
                 className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-center hover:bg-emerald-500"
               >
-                {isPro ? "Change plan" : "Set up billing"}
+                {isPro ? "Change plan" : hasCard ? "View plans" : "Set up billing"}
               </Link>
               <button
                 type="button"

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { getMe, MeResponse } from "@/lib/api";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 async function startCheckout(mode: "setup" | "subscription") {
@@ -29,7 +30,21 @@ async function startCheckout(mode: "setup" | "subscription") {
 
 export default function PricingPage() {
   const [loading, setLoading] = useState<"setup" | "subscription" | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const signedIn = authConfigured();
+
+  useEffect(() => {
+    if (!signedIn) return;
+    getMe()
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, [signedIn]);
+
+  const billing = me?.billing;
+  const isPro =
+    billing?.plan === "pro" &&
+    ["active", "trialing"].includes(billing.stripe_subscription_status || "");
+  const hasCard = Boolean(billing?.has_payment_method);
 
   const onClick = async (mode: "setup" | "subscription") => {
     if (!signedIn) {
@@ -58,6 +73,42 @@ export default function PricingPage() {
           No upfront cost on Standard. A small success fee only when you win — or go Pro
           and keep 0% commission.
         </p>
+        {signedIn && billing && (
+          <p className="mx-auto mt-4 max-w-lg text-sm text-zinc-400">
+            {isPro ? (
+              <>
+                You&apos;re on <span className="text-emerald-400 font-medium">Pro</span>.{" "}
+                <Link
+                  href="/account"
+                  className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                >
+                  Manage billing
+                </Link>
+              </>
+            ) : hasCard ? (
+              <>
+                You&apos;re on <span className="text-zinc-200 font-medium">Standard</span> with a
+                card on file.{" "}
+                <Link
+                  href="/account"
+                  className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                >
+                  Account
+                </Link>
+              </>
+            ) : (
+              <>
+                Save a card to start sniping, or upgrade to Pro.{" "}
+                <Link
+                  href="/account"
+                  className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                >
+                  Account
+                </Link>
+              </>
+            )}
+          </p>
+        )}
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto pb-16">
@@ -71,17 +122,21 @@ export default function PricingPage() {
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
             <li>✓ Pay only when you win</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ Deal feed + eBay comps</li>
+            <li>✓ Paste URL or Favorites → eBay comps</li>
             <li>✓ Last-second bidding workers</li>
             <li>✓ No win, no charge</li>
           </ul>
           <button
             type="button"
-            disabled={loading !== null}
+            disabled={loading !== null || (hasCard && !isPro)}
             onClick={() => onClick("setup")}
             className="mt-8 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-semibold text-zinc-100 hover:border-zinc-500 disabled:opacity-50"
           >
-            {loading === "setup" ? "Redirecting…" : "Save card & start sniping"}
+            {hasCard && !isPro
+              ? "Card already on file"
+              : loading === "setup"
+                ? "Redirecting…"
+                : "Save card & start sniping"}
           </button>
         </div>
 
@@ -98,17 +153,21 @@ export default function PricingPage() {
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
             <li>✓ Win auctions with 0% success fee</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ Deal feed + eBay comps</li>
+            <li>✓ Paste URL or Favorites → eBay comps</li>
             <li>✓ Last-second bidding workers</li>
             <li>✓ Cancel anytime in billing portal</li>
           </ul>
           <button
             type="button"
-            disabled={loading !== null}
+            disabled={loading !== null || isPro}
             onClick={() => onClick("subscription")}
             className="mt-8 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
           >
-            {loading === "subscription" ? "Redirecting…" : "Upgrade to Pro"}
+            {isPro
+              ? "Current plan"
+              : loading === "subscription"
+                ? "Redirecting…"
+                : "Upgrade to Pro"}
           </button>
         </div>
       </div>
