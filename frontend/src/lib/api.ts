@@ -51,7 +51,17 @@ export const getWatchlist = () =>
   apiFetch<{ watchlist: WatchlistItem[] }>("/watchlist");
 
 export const addToWatchlist = (item_id: number, max_bid: number) =>
-  apiFetch("/watchlist", {
+  apiFetch<{
+    success: boolean;
+    item_id: number;
+    max_bid: number;
+    image_url?: string | null;
+    ebay_median?: number | null;
+    ebay_search?: string | null;
+    profit?: number | null;
+    you_get?: number | null;
+    title?: string | null;
+  }>("/watchlist", {
     method: "POST",
     body: JSON.stringify({ item_id, max_bid }),
   });

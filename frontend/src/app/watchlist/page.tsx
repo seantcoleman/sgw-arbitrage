@@ -169,15 +169,18 @@ export default function WatchlistPage() {
     return (localStorage.getItem("watchlist-view") as "list" | "cards") || "list";
   });
   const logBottomRef = useRef<HTMLDivElement>(null);
+  const addingRef = useRef(false);
 
   useEffect(() => {
     const load = async () => {
+      if (addingRef.current) return;
       const [wl, sniper, settings, me] = await Promise.all([
         getWatchlist().catch(() => ({ watchlist: [] })),
         getSniperStatus().catch(() => ({ running: false })),
         getSettings().catch(() => null),
         getMe().catch(() => null),
       ]);
+      if (addingRef.current) return;
       setWatchlist(wl.watchlist);
       setSniperRunning(sniper.running);
       if (settings) setSnipeSeconds(Number(settings.snipe_seconds_before));
@@ -249,45 +252,27 @@ export default function WatchlistPage() {
       return;
     }
     setAdding(true);
+    addingRef.current = true;
     try {
-      await addToWatchlist(itemId, maxBid);
+      // Server fetches SGW detail, image, and eBay comps before returning
+      const added = await addToWatchlist(itemId, maxBid);
       const wl = await getWatchlist();
-      let items = wl.watchlist;
-      const added = items.find(i => i.item_id === itemId);
-      if (added && added.ebay_median == null && added.title) {
-        try {
-          const result = await repriceItem(itemId, added.title);
-          items = items.map(i =>
-            i.item_id === itemId
-              ? {
-                  ...i,
-                  ebay_median: result.ebay_median,
-                  ebay_search: result.ebay_search,
-                  you_get: result.you_get,
-                  profit: result.profit,
-                  ebay_fee_pct: result.ebay_fee_pct,
-                  ebay_resale_shipping: result.ebay_resale_shipping,
-                }
-              : i
-          );
-          toast.success(
-            `Queued #${itemId} · eBay $${result.ebay_median.toFixed(0)} · +$${result.profit.toFixed(0)} net`
-          );
-        } catch (e: unknown) {
-          toast.success(`Queued #${itemId} for sniping`);
-          toast.error(
-            e instanceof Error ? e.message : "Could not fetch eBay comps — use Wrong item? to retry"
-          );
-        }
-      } else {
-        toast.success(`Queued #${itemId} for sniping`);
-      }
-      setWatchlist(items);
+      setWatchlist(wl.watchlist);
       setPasteUrl("");
       setPasteMaxBid("");
+      if (added.ebay_median != null) {
+        const profit = added.profit ?? 0;
+        toast.success(
+          `Queued #${itemId} · eBay $${added.ebay_median.toFixed(0)} · ${profit >= 0 ? "+" : ""}$${profit.toFixed(0)} net`
+        );
+      } else {
+        toast.success(`Queued #${itemId} for sniping`);
+        toast("No eBay comps yet — try Wrong item? with a better search term", { icon: "ℹ️" });
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to add auction");
     } finally {
+      addingRef.current = false;
       setAdding(false);
     }
   };
@@ -638,7 +623,7 @@ export default function WatchlistPage() {
       >
         <div className="text-sm font-semibold text-zinc-200 mb-1">Add auction to sniper</div>
         <p className="text-xs text-zinc-500 mb-3">
-          Paste a ShopGoodwill item URL or ID, set your max bid, and we&apos;ll queue a last-second snipe and look up eBay comps.
+          Paste a ShopGoodwill item URL or ID, set your max bid, and we&apos;ll look up eBay comps then queue a last-second snipe.
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -670,7 +655,7 @@ export default function WatchlistPage() {
               disabled={adding || hasSgw === false}
               className="shrink-0 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2.5 transition-colors"
             >
-              {adding ? "Adding…" : "Snipe"}
+              {adding ? "Looking up eBay…" : "Snipe"}
             </button>
           </div>
         </div>

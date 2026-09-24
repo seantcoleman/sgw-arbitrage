@@ -386,7 +386,72 @@ def _sgw_item_image_url(item_info: dict) -> Optional[str]:
             return str(val[0]).replace("\\", "/")
         if isinstance(val, str) and val:
             return val.replace("\\", "/")
+
+    # Item detail API often returns relative paths: imageServer + imageUrlString
+    # e.g. imageServer="https://…/production/"
+    #      imageUrlString="68\\Items\\…\\foo.png;68\\Items\\…\\bar.png"
+    server = (item_info.get("imageServer") or "").strip()
+    path_blob = (
+        item_info.get("imageUrlString")
+        or item_info.get("thumbnailUrlString")
+        or ""
+    )
+    if isinstance(path_blob, str) and path_blob.strip():
+        first_path = path_blob.split(";")[0].strip().replace("\\", "/")
+        if first_path.startswith("http"):
+            return first_path
+        if server and first_path:
+            return f"{server.rstrip('/')}/{first_path.lstrip('/')}"
+        if first_path.startswith("http") is False and first_path:
+            # Fallback CDN root used by SGW listings
+            return f"https://shopgoodwillimages.azureedge.net/production/{first_path.lstrip('/')}"
     return None
+
+
+def _price_watchlist_deal(deal: dict, user_id) -> dict:
+    """Fill ebay_median / profit / ebay_search on a deal-shaped dict when missing."""
+    if deal.get("ebay_median") is not None:
+        return deal
+    title = (deal.get("title") or "").strip()
+    if not title:
+        return deal
+    settings = db.get_settings(user_id)
+    days_back = int(settings.get("ebay_days_back", 90))
+    fee_pct, resale_ship = profit_calc.fee_settings(settings)
+    shipping = float(deal.get("shipping_est") or 12.0)
+    current_bid = float(deal.get("current_bid") or 0)
+    try:
+        resolved = search_term.resolve_ebay_search(
+            title,
+            days_back=days_back,
+            min_comps=1,
+            preferred_term=None,
+            learn=True,
+        )
+        price_result = resolved.price_result
+    except Exception as e:
+        logger.warning(f"eBay comps on watchlist add failed for '{title[:60]}': {e}")
+        return deal
+    if price_result is None:
+        return deal
+
+    you_get, total_cost, profit = profit_calc.net_profit(
+        price_result.median, current_bid, shipping, fee_pct, resale_ship
+    )
+    margin = round(profit / total_cost, 4) if total_cost > 0 else 0.0
+    deal = {
+        **deal,
+        "ebay_median": round(price_result.median, 2),
+        "ebay_low": round(price_result.low, 2),
+        "ebay_high": round(price_result.high, 2),
+        "ebay_sold_count": price_result.sold_count,
+        "ebay_search": resolved.term or title,
+        "profit": round(profit, 2),
+        "margin": margin,
+        "shipping_est": shipping,
+        "you_get": round(you_get, 2),
+    }
+    return deal
 
 
 @app.post("/watchlist")
@@ -414,15 +479,27 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
                 "ebay_median": None,
                 "profit": None,
                 "ebay_search": None,
+                "shipping_est": float(item_info.get("defaultShippingPrice") or item_info.get("shippingPrice") or 12.0),
             }
         except Exception as e:
             raise HTTPException(status_code=404, detail=f"Deal not found and could not fetch from SGW: {e}")
+    elif not deal.get("image_url"):
+        # Deal row exists but image missing — refresh from SGW item detail
+        try:
+            sgw = _get_sgw_client_for_user(user.id)
+            item_info = sgw.get_item_info(req.item_id)
+            deal = {**deal, "image_url": _sgw_item_image_url(item_info) or deal.get("image_url")}
+        except Exception as e:
+            logger.debug(f"Could not refresh image for {req.item_id}: {e}")
 
     if req.max_bid <= (deal.get("current_bid") or 0):
         raise HTTPException(
             status_code=400,
             detail=f"Max bid must be greater than current bid of ${deal.get('current_bid', 0):.2f}",
         )
+
+    # Price before insert so the first watchlist paint already has comps + image
+    deal = _price_watchlist_deal(deal, user.id)
 
     end_time = deal["end_time"]
     # Normalize SGW Pacific times to UTC for durable scheduling
@@ -445,9 +522,9 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         "current_bid": deal["current_bid"],
         "end_time": end_time,
         "sgw_url": deal["sgw_url"],
-        "image_url": deal["image_url"],
-        "ebay_median": deal["ebay_median"],
-        "profit": deal["profit"],
+        "image_url": deal.get("image_url"),
+        "ebay_median": deal.get("ebay_median"),
+        "profit": deal.get("profit"),
         "ebay_search": deal.get("ebay_search"),
         "user_id": user.id,
         "sgw_account_id": sgw_account_id,
@@ -462,7 +539,17 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
 
     background_tasks.add_task(_add_sgw_favorite_for_user, user.id, req.item_id, req.max_bid)
 
-    return {"success": True, "item_id": req.item_id, "max_bid": req.max_bid}
+    return {
+        "success": True,
+        "item_id": req.item_id,
+        "max_bid": req.max_bid,
+        "image_url": deal.get("image_url"),
+        "ebay_median": deal.get("ebay_median"),
+        "ebay_search": deal.get("ebay_search"),
+        "profit": deal.get("profit"),
+        "you_get": deal.get("you_get"),
+        "title": deal.get("title"),
+    }
 
 
 @app.delete("/watchlist/{item_id}")
