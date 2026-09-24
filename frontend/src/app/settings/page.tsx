@@ -86,32 +86,11 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-black text-zinc-100 tracking-tight">Settings</h1>
         <p className="text-zinc-500 text-sm mt-1">
-          Sniper timing and credentials. Scan filters live on the Deals page.
+          Sniper timing, shipping ZIP, and resale cost assumptions.
         </p>
       </div>
 
       <Section title="Scanner & Sniper">
-        <NumField
-          label="Max items per scan"
-          description="Hard-capped at 200 to stay within eBay API limits. ~30s scan time."
-          value={200}
-          onChange={() => {}}
-          onSave={() => {}}
-          suffix="items" min={200} step={200}
-          readOnly
-        />
-        <div className="flex items-center justify-between py-4 border-b border-zinc-800/60">
-          <div>
-            <div className="text-sm font-medium text-zinc-200">Scan interval</div>
-            <div className="text-xs text-zinc-600 mt-0.5">
-              The backend auto-scans every 2 hours — new deals appear automatically
-            </div>
-          </div>
-          <div className="flex items-center bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 gap-1.5">
-            <span className="text-sm text-zinc-400 font-medium">120</span>
-            <span className="text-xs text-zinc-600">min</span>
-          </div>
-        </div>
         <NumField
           label="Snipe timing" description="Place bid this many seconds before auction ends"
           value={settings.snipe_seconds_before ?? 30}

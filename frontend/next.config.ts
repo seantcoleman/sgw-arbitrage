@@ -12,6 +12,20 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.azureedge.net" },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/deals",
+        destination: "/watchlist",
+        permanent: false,
+      },
+      {
+        source: "/deals/:path*",
+        destination: "/watchlist",
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

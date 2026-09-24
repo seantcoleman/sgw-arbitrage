@@ -137,12 +137,9 @@ async def lifespan(app: FastAPI):
     reclaimed = db.reclaim_expired_snipe_leases()
     if reclaimed:
         logger.info(f"Reclaimed {reclaimed} expired snipe lease(s) on startup")
-    # When EXTERNAL_SCANNER=1, a dedicated scanner_service owns the interval.
-    if os.getenv("EXTERNAL_SCANNER", "").lower() not in ("1", "true", "yes"):
-        interval = 120
-        _schedule_scan(interval)
-    else:
-        logger.info("EXTERNAL_SCANNER set — API will not schedule auto-scans")
+    # Catalog auto-scans are disabled to conserve eBay API quota.
+    # Favorites scan + per-item reprice still call eBay on demand.
+    logger.info("Catalog auto-scan disabled — use Favorites scan or Watchlist paste-URL reprice")
     _scheduler.add_job(
         _check_bid_results,
         "interval",
@@ -527,7 +524,7 @@ def reprice_item(item_id: int, req: RepriceRequest, user: RequireUser):
     # Prefer existing deal row; fall back to watchlist / SGW for cost basis
     records = db.get_deals_by_ids([item_id])
     deal = records[0] if records else None
-    watch = next((w for w in db.get_watchlist() if w["item_id"] == item_id), None)
+    watch = next((w for w in db.get_watchlist(user.id) if w["item_id"] == item_id), None)
 
     title = (deal or {}).get("title") or (watch or {}).get("title") or f"Item #{item_id}"
 
@@ -1079,14 +1076,11 @@ def verify_sgw_account(account_id: int, user: RequireUser):
 # ── Scanner ─────────────────────────────────────────────────────────────────
 
 @app.post("/scan")
-def trigger_scan(background_tasks: BackgroundTasks, user: RequireUser):
-    global _scan_running
-    if _scan_running:
-        raise HTTPException(status_code=409, detail="Scan already running")
-    # One scan at a time is the real throttle (~1–2 min). An hourly cap blocked
-    # filter iteration and previously surfaced only as "Failed to start scan".
-    background_tasks.add_task(_run_scan, True)
-    return {"message": "Scan started"}
+def trigger_scan(user: RequireUser):
+    raise HTTPException(
+        status_code=410,
+        detail="Catalog scans are disabled. Paste a ShopGoodwill URL on Watchlist or use Favorites → Check eBay Prices.",
+    )
 
 
 @app.get("/scan/status")

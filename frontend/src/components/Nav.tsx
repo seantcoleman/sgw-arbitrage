@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { getScanStatus } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 export function Nav() {
   const path = usePathname();
   const { theme, toggleTheme } = useTheme();
-  const [scanRunning, setScanRunning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
@@ -19,17 +17,6 @@ export function Nav() {
     authConfigured() ? null : true
   );
   const userMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (signedIn === false) return;
-    const poll = async () => {
-      const scan = await getScanStatus().catch(() => ({ running: false }));
-      setScanRunning(scan.running);
-    };
-    poll();
-    const interval = setInterval(poll, 8000);
-    return () => clearInterval(interval);
-  }, [signedIn]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -72,9 +59,8 @@ export function Nav() {
   };
 
   const links = [
-    { href: "/deals", label: "Deals" },
-    { href: "/favorites", label: "Favorites" },
     { href: "/watchlist", label: "Watchlist" },
+    { href: "/favorites", label: "Favorites" },
     { href: "/settings", label: "Settings" },
   ];
 
@@ -93,7 +79,7 @@ export function Nav() {
     <nav className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4 min-w-0">
         <Link
-          href={loggedOut ? "/" : "/deals"}
+          href={loggedOut ? "/" : "/watchlist"}
           className="flex items-center gap-2 shrink-0"
           onClick={() => setMenuOpen(false)}
         >
@@ -116,12 +102,6 @@ export function Nav() {
         )}
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {scanRunning && !loggedOut && (
-            <span className="flex items-center gap-1.5 text-xs text-amber-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              <span className="hidden sm:inline">Scanning</span>
-            </span>
-          )}
           <button
             type="button"
             onClick={toggleTheme}

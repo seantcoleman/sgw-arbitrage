@@ -53,7 +53,15 @@ export async function updateSession(request: NextRequest) {
   // Only bounce signed-in users away from marketing home + auth forms
   if (user && (path === "/" || path === "/login" || path === "/signup")) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/deals";
+    redirectUrl.pathname = "/watchlist";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  // Deals UI is retired for now — keep page code, send everyone to Watchlist
+  if (user && (path === "/deals" || path.startsWith("/deals/"))) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/watchlist";
     redirectUrl.search = "";
     return NextResponse.redirect(redirectUrl);
   }

@@ -12,6 +12,7 @@ import {
   parseEndTime,
 } from "@/components/listingCard";
 import {
+  addToWatchlist,
   getMe,
   getSettings,
   getSniperLogs,
@@ -22,6 +23,27 @@ import {
   SniperLogEntry,
   WatchlistItem,
 } from "@/lib/api";
+
+/** Parse a ShopGoodwill item URL or bare numeric ID. */
+export function parseSgwItemId(input: string): number | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  if (/^\d{5,}$/.test(raw)) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host !== "shopgoodwill.com") return null;
+    const m = url.pathname.match(/\/item\/(\d+)/i);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
 
 function endTimeMs(endTime: string | null): number {
   if (!endTime) return Number.POSITIVE_INFINITY;
@@ -139,6 +161,9 @@ export default function WatchlistPage() {
   const [recheckId, setRecheckId] = useState<number | null>(null);
   const [recheckTerm, setRecheckTerm] = useState("");
   const [rechecking, setRechecking] = useState(false);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [pasteMaxBid, setPasteMaxBid] = useState("");
+  const [adding, setAdding] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
     if (typeof window === "undefined") return "list";
     return (localStorage.getItem("watchlist-view") as "list" | "cards") || "list";
@@ -210,6 +235,61 @@ export default function WatchlistPage() {
 
   const handleMaxBidUpdated = (itemId: number, maxBid: number) => {
     setWatchlist(prev => prev.map(i => (i.item_id === itemId ? { ...i, max_bid: maxBid } : i)));
+  };
+
+  const handlePasteAdd = async () => {
+    const itemId = parseSgwItemId(pasteUrl);
+    if (itemId == null) {
+      toast.error("Paste a ShopGoodwill item URL or numeric item ID");
+      return;
+    }
+    const maxBid = Number(pasteMaxBid);
+    if (!Number.isFinite(maxBid) || maxBid <= 0) {
+      toast.error("Enter a max bid greater than 0");
+      return;
+    }
+    setAdding(true);
+    try {
+      await addToWatchlist(itemId, maxBid);
+      const wl = await getWatchlist();
+      let items = wl.watchlist;
+      const added = items.find(i => i.item_id === itemId);
+      if (added && added.ebay_median == null && added.title) {
+        try {
+          const result = await repriceItem(itemId, added.title);
+          items = items.map(i =>
+            i.item_id === itemId
+              ? {
+                  ...i,
+                  ebay_median: result.ebay_median,
+                  ebay_search: result.ebay_search,
+                  you_get: result.you_get,
+                  profit: result.profit,
+                  ebay_fee_pct: result.ebay_fee_pct,
+                  ebay_resale_shipping: result.ebay_resale_shipping,
+                }
+              : i
+          );
+          toast.success(
+            `Queued #${itemId} · eBay $${result.ebay_median.toFixed(0)} · +$${result.profit.toFixed(0)} net`
+          );
+        } catch (e: unknown) {
+          toast.success(`Queued #${itemId} for sniping`);
+          toast.error(
+            e instanceof Error ? e.message : "Could not fetch eBay comps — use Wrong item? to retry"
+          );
+        }
+      } else {
+        toast.success(`Queued #${itemId} for sniping`);
+      }
+      setWatchlist(items);
+      setPasteUrl("");
+      setPasteMaxBid("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to add auction");
+    } finally {
+      setAdding(false);
+    }
   };
 
   const activeItems = watchlist.filter(isActiveWatchlistItem);
@@ -548,6 +628,59 @@ export default function WatchlistPage() {
         </div>
       </div>
 
+      {/* Paste ShopGoodwill URL → queue snipe */}
+      <form
+        className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4"
+        onSubmit={e => {
+          e.preventDefault();
+          void handlePasteAdd();
+        }}
+      >
+        <div className="text-sm font-semibold text-zinc-200 mb-1">Add auction to sniper</div>
+        <p className="text-xs text-zinc-500 mb-3">
+          Paste a ShopGoodwill item URL or ID, set your max bid, and we&apos;ll queue a last-second snipe and look up eBay comps.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={pasteUrl}
+            onChange={e => setPasteUrl(e.target.value)}
+            placeholder="https://shopgoodwill.com/item/123456789 or item ID"
+            className="flex-1 min-w-0 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            disabled={adding}
+            autoComplete="off"
+          />
+          <div className="flex gap-2 sm:w-auto">
+            <div className="relative flex-1 sm:w-32">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0.01}
+                step={0.01}
+                value={pasteMaxBid}
+                onChange={e => setPasteMaxBid(e.target.value)}
+                placeholder="Max bid"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 pl-7 pr-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+                disabled={adding}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={adding || hasSgw === false}
+              className="shrink-0 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2.5 transition-colors"
+            >
+              {adding ? "Adding…" : "Snipe"}
+            </button>
+          </div>
+        </div>
+        {hasSgw === false && (
+          <p className="text-xs text-amber-400/90 mt-2">
+            <Link href="/account" className="underline font-medium">Connect ShopGoodwill</Link> before queuing snipes.
+          </p>
+        )}
+      </form>
+
       {/* Queued items can't be bid on without connected ShopGoodwill credentials */}
       {hasSgw === false && activeItems.length > 0 && (
         <div className="flex items-start gap-3 bg-amber-950/30 border border-amber-800/40 text-amber-300 light:bg-amber-50 light:border-amber-200 light:text-amber-800 rounded-xl px-4 py-3 mb-5 text-sm">
@@ -612,8 +745,8 @@ export default function WatchlistPage() {
               </Link>
             </>
           ) : (
-            <p className="text-sm text-zinc-600 max-w-xs">
-              Go to Deals or Favorites and click &quot;+ Add to Sniper&quot; on any auction you want to bid on.
+            <p className="text-sm text-zinc-600 max-w-sm">
+              Paste a ShopGoodwill auction URL above, or add items from Favorites after checking eBay prices.
             </p>
           )}
         </div>
