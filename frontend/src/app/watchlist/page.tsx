@@ -664,6 +664,11 @@ export default function WatchlistPage() {
         <div className="text-sm font-semibold text-zinc-200 mb-1">Add auction to sniper</div>
         <p className="text-xs text-zinc-500 mb-3">
           Paste a ShopGoodwill item URL or ID, set your max bid, and we&apos;ll look up eBay comps then queue a last-second snipe.
+          You can also add items from the{" "}
+          <Link href="/favorites" className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2">
+            Favorites
+          </Link>{" "}
+          page.
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
