@@ -164,6 +164,7 @@ export default function WatchlistPage() {
   const [pasteUrl, setPasteUrl] = useState("");
   const [pasteMaxBid, setPasteMaxBid] = useState("");
   const [adding, setAdding] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<{ itemId: number; maxBid: number } | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
     if (typeof window === "undefined") return "list";
     return (localStorage.getItem("watchlist-view") as "list" | "cards") || "list";
@@ -253,13 +254,15 @@ export default function WatchlistPage() {
     }
     setAdding(true);
     addingRef.current = true;
+    setPendingAdd({ itemId, maxBid });
+    setPasteUrl("");
+    setPasteMaxBid("");
     try {
       // Server fetches SGW detail, image, and eBay comps before returning
       const added = await addToWatchlist(itemId, maxBid);
       const wl = await getWatchlist();
       setWatchlist(wl.watchlist);
-      setPasteUrl("");
-      setPasteMaxBid("");
+      setPendingAdd(null);
       if (added.ebay_median != null) {
         const profit = added.profit ?? 0;
         toast.success(
@@ -270,12 +273,49 @@ export default function WatchlistPage() {
         toast("No eBay comps yet — try Wrong item? with a better search term", { icon: "ℹ️" });
       }
     } catch (e: unknown) {
+      setPendingAdd(null);
       toast.error(e instanceof Error ? e.message : "Failed to add auction");
     } finally {
       addingRef.current = false;
       setAdding(false);
     }
   };
+
+  const pendingSkeletonList = pendingAdd ? (
+    <div
+      key={`pending-${pendingAdd.itemId}`}
+      className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4 animate-pulse"
+      aria-busy="true"
+      aria-label={`Loading item ${pendingAdd.itemId}`}
+    >
+      <div className="w-16 h-16 bg-zinc-800 rounded-xl flex-shrink-0" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="h-4 bg-zinc-800 rounded w-3/4" />
+        <div className="h-3 bg-zinc-800 rounded w-1/2" />
+        <div className="h-3 bg-zinc-800/80 rounded w-40" />
+      </div>
+      <div className="hidden sm:block w-20 h-8 bg-zinc-800 rounded-lg flex-shrink-0" />
+    </div>
+  ) : null;
+
+  const pendingSkeletonCard = pendingAdd ? (
+    <div
+      key={`pending-${pendingAdd.itemId}`}
+      className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden animate-pulse"
+      aria-busy="true"
+      aria-label={`Loading item ${pendingAdd.itemId}`}
+    >
+      <div className="h-48 bg-zinc-800" />
+      <div className="p-4 space-y-3">
+        <div className="h-4 bg-zinc-800 rounded w-5/6" />
+        <div className="h-3 bg-zinc-800 rounded w-2/3" />
+        <div className="flex gap-2 pt-1">
+          <div className="h-8 bg-zinc-800 rounded-lg w-24" />
+          <div className="h-8 bg-zinc-800 rounded-lg w-20 ml-auto" />
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   const activeItems = watchlist.filter(isActiveWatchlistItem);
 
@@ -655,7 +695,7 @@ export default function WatchlistPage() {
               disabled={adding || hasSgw === false}
               className="shrink-0 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2.5 transition-colors"
             >
-              {adding ? "Looking up eBay…" : "Snipe"}
+              {adding ? "Queuing…" : "Snipe"}
             </button>
           </div>
         </div>
@@ -708,7 +748,7 @@ export default function WatchlistPage() {
             </div>
           ))}
         </div>
-      ) : watchlist.length === 0 ? (
+      ) : watchlist.length === 0 && !pendingAdd ? (
         <div className="flex flex-col items-center justify-center py-40 text-center">
           <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
             <svg className="w-6 h-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -737,8 +777,9 @@ export default function WatchlistPage() {
         </div>
       ) : viewMode === "cards" ? (
         <div className="space-y-8">
-          {activeSorted.length > 0 ? (
+          {pendingSkeletonCard || activeSorted.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {pendingSkeletonCard}
               {activeSorted.map(renderCard)}
             </div>
           ) : (
@@ -759,11 +800,12 @@ export default function WatchlistPage() {
       ) : (
         <div className="space-y-8">
           <div className="space-y-3">
+            {pendingSkeletonList}
             {activeSorted.length > 0 ? (
               activeSorted.map(renderListRow)
-            ) : (
+            ) : !pendingAdd ? (
               <p className="text-sm text-zinc-600 py-6 text-center">No active auctions in the sniper queue.</p>
-            )}
+            ) : null}
           </div>
           {endedSorted.length > 0 && (
             <div className="pt-2 border-t border-zinc-800">
