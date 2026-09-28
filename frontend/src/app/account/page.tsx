@@ -102,7 +102,9 @@ export default function AccountPage() {
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl mb-4 overflow-hidden">
         <div className="px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-100">Billing</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">Pay only when you win — or go Pro for 0%.</p>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Standard: 2% on confirmed wins. Pro: $15/mo with 0% commission.
+          </p>
         </div>
         <div className="px-5 py-4 space-y-3 text-sm">
           <div className="flex items-center justify-between gap-3">
@@ -113,7 +115,7 @@ export default function AccountPage() {
               <div className="text-xs text-zinc-500 mt-0.5">
                 {isPro
                   ? "0% success fee · monthly subscription"
-                  : "2% success fee on each win · no monthly fee"}
+                  : "2% of hammer on confirmed wins · no monthly fee"}
               </div>
               {billing?.billing_blocked && (
                 <div className="text-xs text-red-400 mt-1">
@@ -187,7 +189,8 @@ export default function AccountPage() {
         <div className="px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-100">ShopGoodwill login</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Stored encrypted on the sniper server. Never sent to the browser after save.
+            Encrypted at rest (AES-256-GCM). Key stays on the bidding server. Password is not shown
+            after save.
           </p>
         </div>
         <div className="px-5 py-4 space-y-4">

@@ -8,7 +8,7 @@ export default function PrivacyPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">Privacy Policy</h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: September 15, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: September 28, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -20,12 +20,12 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong className="text-zinc-200">ShopGoodwill credentials:</strong> username and
-              password, stored encrypted (AES-256-GCM) on our bidding server. We do not display
-              your password after save.
+              password, stored encrypted at rest (AES-256-GCM) in our database. The decryption key
+              is held on our bidding server. We do not display your password after save.
             </li>
             <li>
-              <strong className="text-zinc-200">App data:</strong> watchlist items, max bids, deal
-              scans, sniper activity logs, and auction outcomes.
+              <strong className="text-zinc-200">App data:</strong> watchlist items, max bids,
+              favorites sync, sniper activity logs, and auction outcomes.
             </li>
             <li>
               <strong className="text-zinc-200">Billing:</strong> Stripe customer ID and payment
@@ -37,7 +37,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">2. How we use data</h2>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Operate the sniper and deal scanner</li>
+            <li>Operate the sniper, watchlist, and favorites tools</li>
             <li>Place bids you schedule and check win/loss results</li>
             <li>Charge success fees or subscriptions</li>
             <li>Provide support and prevent abuse</li>
@@ -65,16 +65,19 @@ export default function PrivacyPage() {
             Account and billing records are kept while your account is active and as needed for
             accounting, fraud prevention, and legal compliance. Encrypted ShopGoodwill credentials
             are deleted when you disconnect them or delete your account. You may request account
-            deletion by contacting us with the email on your account.
+            deletion by emailing{" "}
+            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
+              scoleman2296@gmail.com
+            </a>
+            .
           </p>
         </section>
 
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">5. Security</h2>
           <p>
-            Credentials are encrypted at rest with a key held only on the bidding server. Access
-            to production systems is restricted. No method of transmission or storage is 100%
-            secure.
+            Credentials are encrypted at rest with a key held on the bidding server. Access to
+            production systems is restricted. No method of transmission or storage is 100% secure.
           </p>
         </section>
 

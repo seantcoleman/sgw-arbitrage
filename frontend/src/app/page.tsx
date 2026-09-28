@@ -3,15 +3,15 @@ import Link from "next/link";
 const STEPS = [
   {
     title: "Connect ShopGoodwill",
-    body: "Link your existing ShopGoodwill account once. Credentials are encrypted with AES-256-GCM and the key never leaves our bidding server.",
+    body: "Link your ShopGoodwill account once. Credentials are encrypted at rest (AES-256-GCM); the decryption key stays on our bidding server.",
   },
   {
-    title: "Find the spread",
-    body: "We scan live auctions and compare them against recent eBay sale prices, net of fees and shipping, so you see real profit instead of a guess.",
+    title: "Add auctions & check eBay",
+    body: "Paste a ShopGoodwill item or pull from your Favorites. We compare it to recent eBay sales, net of fees and shipping, so you see estimated profit before you snipe.",
   },
   {
     title: "Snipe automatically",
-    body: "Set your max bid and walk away. Our workers place the bid in the last seconds of the auction, so you never drive the price up early.",
+    body: "Set your max bid and walk away. Our workers place the bid in the last seconds of the auction so you are not bidding early and driving the price up.",
   },
 ];
 
@@ -22,15 +22,15 @@ const FEATURES = [
   },
   {
     title: "Last-second bidding",
-    body: "Bids fire seconds before close from a pre-warmed session, so there's no time for a counter-bid.",
+    body: "Bids fire seconds before close from a pre-warmed session, reducing the chance of an early bidding war.",
   },
   {
-    title: "Your favorites, synced",
-    body: "Items you favorite on ShopGoodwill show up here already analyzed and ready to queue.",
+    title: "ShopGoodwill Favorites",
+    body: "Items you star on ShopGoodwill sync here. Run an eBay price check, then queue a snipe with one click.",
   },
   {
     title: "Durable snipe queue",
-    body: "Scheduled bids live in the database with leases, so a restart never costs you an auction.",
+    body: "Scheduled bids live in the database with leases, so a worker restart does not wipe your queue. Missed snipes can still happen if ShopGoodwill or the network fails.",
   },
 ];
 
@@ -49,9 +49,8 @@ export default function LandingPage() {
           </span>
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-base sm:text-lg text-zinc-400">
-          We watch ShopGoodwill for listings selling well below their eBay resale
-          value, then place your bid in the final seconds so you pay as little as
-          possible.
+          Queue ShopGoodwill auctions from a URL or your Favorites, compare them to eBay
+          comps, and let us place your bid in the final seconds of the auction.
         </p>
         <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link
@@ -68,7 +67,7 @@ export default function LandingPage() {
           </Link>
         </div>
         <p className="mt-4 text-xs text-zinc-600">
-          Pay only when you win. You bid with your own ShopGoodwill account.
+          Pay only when you win on Standard. You bid with your own ShopGoodwill account.
         </p>
       </section>
 
@@ -115,8 +114,9 @@ export default function LandingPage() {
         <h2 className="text-center text-2xl font-black tracking-tight text-zinc-100">
           Pay only when you win
         </h2>
-        <p className="mx-auto mt-3 max-w-md text-center text-sm text-zinc-500">
-          Standard charges 2% of the hammer only on wins. Pro is $15/month with 0% commission.
+        <p className="mx-auto mt-3 max-w-lg text-center text-sm text-zinc-500">
+          Standard charges 2% of the hammer on confirmed wins (fees may batch until they reach
+          Stripe&apos;s charge minimum). Pro is $15/month with 0% commission.
         </p>
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
@@ -154,11 +154,11 @@ export default function LandingPage() {
 
       <section className="border-t border-zinc-800/80 py-20 text-center">
         <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-100">
-          Start finding deals tonight
+          Queue your first snipe tonight
         </h2>
         <p className="mx-auto mt-3 max-w-md text-sm text-zinc-500">
-          Create an account, connect ShopGoodwill, and queue your first snipe in
-          a couple of minutes.
+          Create an account, connect ShopGoodwill, save a card, and add an auction from a URL or
+          Favorites.
         </p>
         <Link
           href="/signup"

@@ -70,8 +70,9 @@ export default function PricingPage() {
           Pay only when you win.
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-sm sm:text-base text-zinc-500">
-          No upfront cost on Standard. A small success fee only when you win — or go Pro
-          and keep 0% commission.
+          Standard has no monthly fee — we charge 2% of the hammer on confirmed wins. Or go Pro
+          for $15/month and 0% commission. Small fees may batch until they meet Stripe&apos;s
+          charge minimum.
         </p>
         {signedIn && billing && (
           <p className="mx-auto mt-4 max-w-lg text-sm text-zinc-400">
@@ -120,12 +121,12 @@ export default function PricingPage() {
             <span className="text-base font-medium text-zinc-500"> / win</span>
           </p>
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
-            <li>✓ Pay only when you win</li>
+            <li>✓ 2% of hammer on confirmed wins</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ eBay Value Lookup</li>
+            <li>✓ eBay comps when you queue</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
             <li>✓ Automatic last-second bids</li>
-            <li>✓ No win, no charge</li>
+            <li>✓ No win, no success fee</li>
           </ul>
           <button
             type="button"
@@ -152,9 +153,9 @@ export default function PricingPage() {
             <span className="text-base font-medium text-zinc-500"> / month</span>
           </p>
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
-            <li>✓ Win auctions with 0% success fee</li>
+            <li>✓ 0% success fee while Pro is active</li>
             <li>✓ Unlimited auction snipes</li>
-            <li>✓ eBay Value Lookup</li>
+            <li>✓ eBay comps when you queue</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
             <li>✓ Automatic last-second bids</li>
             <li>✓ Cancel anytime in billing portal</li>
@@ -175,8 +176,9 @@ export default function PricingPage() {
       </div>
 
       <p className="text-center text-xs text-zinc-600 pb-12 max-w-xl mx-auto">
-        Unlike some tools that charge per snipe whether you win or lose, we only bill a
-        success fee on wins (Standard) or a flat monthly fee with 0% commission (Pro).{" "}
+        Standard bills a 2% success fee on confirmed wins (fees may batch for Stripe&apos;s
+        minimum). Pro is a flat monthly fee with 0% commission. A saved card or active Pro plan is
+        required to queue snipes.{" "}
         <Link href="/terms" className="text-zinc-500 hover:text-zinc-300">
           Terms
         </Link>

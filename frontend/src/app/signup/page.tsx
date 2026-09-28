@@ -120,8 +120,8 @@ export default function SignupPage() {
             <Link href="/privacy" className="text-emerald-400 hover:underline" target="_blank">
               Privacy Policy
             </Link>
-            . I understand ShopGoodwill credentials are stored encrypted on the bidding server to
-            place bids I schedule.
+            . I understand ShopGoodwill credentials are stored encrypted at rest (AES-256-GCM) and
+            used only to place bids I schedule.
           </span>
         </label>
         <button

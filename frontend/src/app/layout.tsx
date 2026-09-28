@@ -14,12 +14,12 @@ export const metadata: Metadata = {
     template: "%s · BuzzerBidder",
   },
   description:
-    "Find underpriced ShopGoodwill auctions and win them with last-second bids.",
+    "Queue ShopGoodwill auctions, compare eBay comps, and place last-second bids.",
   metadataBase: new URL("https://buzzerbidder.com"),
   openGraph: {
     title: "BuzzerBidder",
     description:
-      "Find underpriced ShopGoodwill auctions and win them with last-second bids.",
+      "Queue ShopGoodwill auctions, compare eBay comps, and place last-second bids.",
     url: "https://buzzerbidder.com",
     siteName: "BuzzerBidder",
     type: "website",

@@ -10,7 +10,7 @@ export default function TermsPage() {
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">
         Terms of Service
       </h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: September 15, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: September 28, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -25,10 +25,11 @@ export default function TermsPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">2. The Service</h2>
           <p>
-            BuzzerBidder is a hosted web application that finds ShopGoodwill auctions with potential
-            resale profit and can place last-second bids on your behalf using credentials you
-            provide. We are <strong className="text-zinc-200">not</strong> affiliated with,
-            endorsed by, or sponsored by ShopGoodwill or Goodwill Industries.
+            BuzzerBidder is a hosted web application that helps you queue ShopGoodwill auctions
+            (from item URLs or your ShopGoodwill Favorites), compare them to eBay comps, and place
+            last-second bids on your behalf using credentials you provide. We are{" "}
+            <strong className="text-zinc-200">not</strong> affiliated with, endorsed by, or
+            sponsored by ShopGoodwill or Goodwill Industries.
           </p>
         </section>
 
@@ -38,11 +39,13 @@ export default function TermsPage() {
           </h2>
           <p>
             To place bids, you may connect your ShopGoodwill username and password. We store those
-            credentials <strong className="text-zinc-200">encrypted (AES-256-GCM)</strong> on our
-            bidding servers and use them only to place bids you schedule and to check auction
-            outcomes. The encryption key does not leave the bidding server. You are responsible for
-            the accuracy of your credentials and for complying with ShopGoodwill&apos;s own terms.
-            ShopGoodwill may suspend or ban accounts; we are not liable for that.
+            credentials <strong className="text-zinc-200">encrypted at rest (AES-256-GCM)</strong>{" "}
+            in our database. The decryption key is held on our bidding servers and is used only to
+            place bids you schedule and to check auction outcomes. Plaintext credentials may exist
+            briefly in memory on the bidding server while performing those actions. We do not
+            display your password in the app after you save it. You are responsible for the accuracy
+            of your credentials and for complying with ShopGoodwill&apos;s own terms. ShopGoodwill
+            may suspend or ban accounts; we are not liable for that.
           </p>
         </section>
 
@@ -52,8 +55,10 @@ export default function TermsPage() {
             <li>
               <strong className="text-zinc-200">Standard:</strong> no monthly fee. We charge a{" "}
               <strong className="text-zinc-200">2% success fee</strong> on the hammer price
-              (winning bid amount) of each auction you win through the Service. If you do not win,
-              you owe no success fee for that auction.
+              (winning bid amount) of auctions you win through the Service, based on confirmed
+              ShopGoodwill order outcomes. If you do not win, you owe no success fee for that
+              auction. Small fees may accrue and be charged together when they meet Stripe&apos;s
+              minimum charge amount.
             </li>
             <li>
               <strong className="text-zinc-200">Pro:</strong> a monthly subscription (currently
@@ -109,7 +114,7 @@ export default function TermsPage() {
           <p>
             You may stop using the Service at any time. We may suspend or terminate access for
             unpaid balances, abuse, or violation of these Terms. On termination, queued snipes may
-            be cancelled and credentials removed from our servers.
+            be cancelled and credentials removed from our systems.
           </p>
         </section>
 
