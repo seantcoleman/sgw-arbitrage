@@ -9,8 +9,21 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
-  title: "SGW Arbitrage",
-  description: "ShopGoodwill price arbitrage + bid sniper dashboard",
+  title: {
+    default: "BuzzerBidder",
+    template: "%s · BuzzerBidder",
+  },
+  description:
+    "Find underpriced ShopGoodwill auctions and win them with last-second bids.",
+  metadataBase: new URL("https://buzzerbidder.com"),
+  openGraph: {
+    title: "BuzzerBidder",
+    description:
+      "Find underpriced ShopGoodwill auctions and win them with last-second bids.",
+    url: "https://buzzerbidder.com",
+    siteName: "BuzzerBidder",
+    type: "website",
+  },
 };
 
 const THEME_INIT = `(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.classList.add("light")}catch(e){}})();`;

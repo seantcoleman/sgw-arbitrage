@@ -38,11 +38,10 @@ export default function LandingPage() {
   return (
     <div className="-mt-6 sm:-mt-8">
       <section className="py-20 sm:py-28 text-center">
-        <p className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          ShopGoodwill arbitrage, automated
+        <p className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-100">
+          BuzzerBidder
         </p>
-        <h1 className="mt-6 text-4xl sm:text-6xl font-black tracking-tight text-zinc-100">
+        <h1 className="mt-5 text-2xl sm:text-4xl font-bold tracking-tight text-zinc-300">
           Buy underpriced auctions.
           <br />
           <span className="bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent">
@@ -168,6 +167,8 @@ export default function LandingPage() {
           Get started
         </Link>
         <p className="mt-8 text-xs text-zinc-600">
+          © {new Date().getFullYear()} BuzzerBidder
+          {" · "}
           <Link href="/terms" className="hover:text-zinc-400">
             Terms
           </Link>

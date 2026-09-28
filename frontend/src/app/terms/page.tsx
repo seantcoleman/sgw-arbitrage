@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Terms of Service · SGW Arb",
+  title: "Terms of Service",
 };
 
 export default function TermsPage() {
@@ -16,16 +16,16 @@ export default function TermsPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">1. Acceptance</h2>
           <p>
-            By creating an account or using SGW Arb (&quot;the Service&quot;), you agree to these
+            By creating an account or using BuzzerBidder (&quot;the Service&quot;), you agree to these
             Terms. If you do not agree, do not use the Service. These Terms are a binding agreement
-            between you and the operator of SGW Arb.
+            between you and the operator of BuzzerBidder.
           </p>
         </section>
 
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">2. The Service</h2>
           <p>
-            SGW Arb is a hosted web application that finds ShopGoodwill auctions with potential
+            BuzzerBidder is a hosted web application that finds ShopGoodwill auctions with potential
             resale profit and can place last-second bids on your behalf using credentials you
             provide. We are <strong className="text-zinc-200">not</strong> affiliated with,
             endorsed by, or sponsored by ShopGoodwill or Goodwill Industries.
@@ -90,7 +90,7 @@ export default function TermsPage() {
             <li>Use the Service only for lawful purposes</li>
             <li>Comply with ShopGoodwill&apos;s terms of service</li>
             <li>Pay all fees owed under your plan</li>
-            <li>Keep your SGW Arb and ShopGoodwill account credentials secure</li>
+            <li>Keep your BuzzerBidder and ShopGoodwill account credentials secure</li>
             <li>Not abuse, reverse engineer, or resell the Service</li>
           </ul>
         </section>
@@ -135,7 +135,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">11. Contact</h2>
           <p>
-            Questions about these Terms: use the email associated with your SGW Arb account or the
+            Questions about these Terms: use the email associated with your BuzzerBidder account or the
             contact method listed on the site.
           </p>
         </section>
