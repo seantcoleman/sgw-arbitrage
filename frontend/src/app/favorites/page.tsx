@@ -344,7 +344,7 @@ export default function FavoritesPage() {
       const data = await getAllFavorites();
       setFavorites(data.favorites);
     } catch {
-      setError("Cannot reach backend — make sure it's running on port 8000.");
+      setError("Cannot reach backend — check that the API tunnel is up.");
     } finally {
       if (!silent) setLoading(false);
     }

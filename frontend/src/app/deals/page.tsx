@@ -128,7 +128,7 @@ export default function DealsPage() {
       setDeals(data.deals);
       setTotalDeals(data.count);
     } catch {
-      setError("Cannot reach backend — make sure it's running on port 8000.");
+      setError("Cannot reach backend — check that the API tunnel is up.");
     } finally {
       if (!silent) setLoading(false);
     }
