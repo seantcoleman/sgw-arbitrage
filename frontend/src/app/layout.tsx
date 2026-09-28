@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   },
 };
 
-const THEME_INIT = `(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.classList.add("light")}catch(e){}})();`;
+const THEME_INIT = `(function(){try{var p=localStorage.getItem("theme");var h=(new Date()).getHours();var light=p==="light"||(p!=="dark"&&h>=6&&h<19);if(light)document.documentElement.classList.add("light")}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

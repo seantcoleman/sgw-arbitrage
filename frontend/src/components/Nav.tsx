@@ -8,7 +8,7 @@ import { authConfigured, createClient } from "@/lib/supabase/client";
 
 export function Nav() {
   const path = usePathname();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, preference, cycleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
@@ -104,12 +104,28 @@ export function Nav() {
         <div className="ml-auto flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
             type="button"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            onClick={cycleTheme}
+            aria-label={
+              preference === "light"
+                ? "Theme: light. Click for dark"
+                : preference === "dark"
+                  ? "Theme: dark. Click for auto by time"
+                  : "Theme: auto by time. Click for light"
+            }
+            title={
+              preference === "light"
+                ? "Light · click for Dark"
+                : preference === "dark"
+                  ? "Dark · click for Auto"
+                  : "Auto (by time) · click for Light"
+            }
             className="flex items-center justify-center w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"
           >
-            {theme === "dark" ? (
+            {preference === "auto" ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M7.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M7.05 7.05L5.636 5.636M12 8a4 4 0 100 8 4 4 0 000-8z" />
+              </svg>
+            ) : theme === "dark" ? (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1.5M12 19.5V21M4.22 4.22l1.06 1.06M18.72 18.72l1.06 1.06M3 12h1.5M19.5 12H21M4.22 19.78l1.06-1.06M18.72 5.28l1.06-1.06M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
               </svg>
