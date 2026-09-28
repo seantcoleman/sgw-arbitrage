@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
-/** Oracle FastAPI origin via Cloudflare tunnel — used only for server-side rewrites.
- *  Quick tunnels change hostname when sgw-tunnel restarts.
- *  Do not read BACKEND_URL here until Vercel env can be updated (stale trycloudflare
- *  hostnames override a good default and break production). */
+/** Oracle FastAPI origin — server-side rewrites only.
+ * Prefer a stable named host (api.buzzerbidder.com). Fall back to the current
+ * quick-tunnel URL until the named Cloudflare tunnel is live. */
 const BACKEND_URL =
+  process.env.BACKEND_URL ||
   "https://overcome-tries-jacob-steering.trycloudflare.com";
 
 const nextConfig: NextConfig = {
