@@ -8,9 +8,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all paths except static assets and Next internals.
-     * Auth is skipped automatically when Supabase env vars are absent.
+     * Match all paths except static assets, Next internals, and /backend
+     * (rewritten to FastAPI — must not be intercepted by auth redirects).
      */
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|backend/|favicon.ico|icon.svg|apple-icon.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

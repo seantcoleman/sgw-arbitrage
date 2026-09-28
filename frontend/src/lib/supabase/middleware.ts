@@ -30,6 +30,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+  // Proxied FastAPI — auth is JWT on the API; never redirect these to /login
+  // (redirect HTML breaks JSON clients and surfaces as "Cannot reach backend").
+  if (path.startsWith("/backend")) {
+    return supabaseResponse;
+  }
   const isAuthPage =
     path.startsWith("/login") ||
     path.startsWith("/signup") ||
