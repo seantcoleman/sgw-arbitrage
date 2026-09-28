@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 /** Resolved appearance applied to the document. */
 export type Theme = "light" | "dark";
-/** Stored preference — `auto` follows local time of day. */
+/** Stored preference — `auto` follows local time of day (default until the user toggles). */
 export type ThemePreference = "light" | "dark" | "auto";
 
 const STORAGE_KEY = "theme";
@@ -15,13 +15,10 @@ const DAY_END = 19;
 const ThemeContext = createContext<{
   theme: Theme;
   preference: ThemePreference;
-  cycleTheme: () => void;
-  /** @deprecated use cycleTheme — kept so older callers keep working */
   toggleTheme: () => void;
 }>({
   theme: "light",
   preference: "auto",
-  cycleTheme: () => {},
   toggleTheme: () => {},
 });
 
@@ -86,13 +83,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [preference]);
 
-  const cycleTheme = useCallback(() => {
-    setPreference(prev => {
-      const order: ThemePreference[] = ["light", "dark", "auto"];
-      const next = order[(order.indexOf(prev) + 1) % order.length];
-      const resolved = resolveTheme(next);
-      applyDomTheme(resolved);
-      setTheme(resolved);
+  /** Always flips the visible theme. Leaving auto locks in an explicit choice. */
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next: Theme = prev === "dark" ? "light" : "dark";
+      applyDomTheme(next);
+      setPreference(next);
       try {
         localStorage.setItem(STORAGE_KEY, next);
       } catch {
@@ -103,7 +99,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, preference, cycleTheme, toggleTheme: cycleTheme }}>
+    <ThemeContext.Provider value={{ theme, preference, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
