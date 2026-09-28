@@ -1,13 +1,11 @@
 import type { NextConfig } from "next";
 
 /** Oracle FastAPI origin via Cloudflare tunnel — used only for server-side rewrites.
- *  Quick tunnels change hostname when sgw-tunnel restarts; set BACKEND_URL to the new https URL.
- *  Ignore stale http://public-ip:8000 values (Oracle firewall blocks direct access). */
-const TUNNEL_BACKEND =
-  "https://overcome-tries-jacob-steering.trycloudflare.com";
-const rawBackend = process.env.BACKEND_URL?.trim() ?? "";
+ *  Quick tunnels change hostname when sgw-tunnel restarts.
+ *  Do not read BACKEND_URL here until Vercel env can be updated (stale trycloudflare
+ *  hostnames override a good default and break production). */
 const BACKEND_URL =
-  rawBackend.startsWith("https://") ? rawBackend : TUNNEL_BACKEND;
+  "https://overcome-tries-jacob-steering.trycloudflare.com";
 
 const nextConfig: NextConfig = {
   images: {
