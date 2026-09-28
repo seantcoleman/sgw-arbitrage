@@ -1022,10 +1022,9 @@ def _get_sgw_client_for_account(account_id: int) -> shopgoodwill.Shopgoodwill:
 def _get_sgw_client_for_user(user_id) -> shopgoodwill.Shopgoodwill:
     account_id = db.get_primary_sgw_account_id(user_id)
     if account_id:
-        try:
-            return _get_sgw_client_for_account(account_id)
-        except HTTPException:
-            pass
+        # Surface decrypt / missing-row errors — do not swallow into a misleading
+        # "connect your account" message when an account row already exists.
+        return _get_sgw_client_for_account(account_id)
     # Single-tenant / bootstrap fallback
     if not using_postgres():
         return _get_sgw_client()
@@ -1157,7 +1156,14 @@ def verify_sgw_account(account_id: int, user: RequireUser):
         db.mark_sgw_account_verified(account_id, True)
         return {"success": True, "status": "active"}
     except Exception as e:
-        db.mark_sgw_account_verified(account_id, False, str(e)[:300])
+        # Manual verify: only lock the account out on real auth failures
+        msg = str(e)
+        auth_fail = any(
+            n in msg.lower()
+            for n in ("invalid credentials", "invalid auth", "unauthorized", "401", "403")
+        )
+        if auth_fail:
+            db.mark_sgw_account_verified(account_id, False, msg[:300])
         raise HTTPException(status_code=400, detail=f"Verification failed: {e}")
 
 

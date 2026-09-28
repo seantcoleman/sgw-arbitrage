@@ -343,8 +343,19 @@ export default function FavoritesPage() {
     try {
       const data = await getAllFavorites();
       setFavorites(data.favorites);
-    } catch {
-      setError("Cannot reach backend — check that the API tunnel is up.");
+    } catch (e: unknown) {
+      const status =
+        e && typeof e === "object" && "status" in e
+          ? (e as { status?: number }).status
+          : undefined;
+      const message = e instanceof Error ? e.message : "Failed to load favorites";
+      if (status === 400 && /shopgoodwill|connect/i.test(message)) {
+        setError(message);
+      } else if (!status || status >= 500) {
+        setError("Cannot reach ShopGoodwill right now — try again in a minute.");
+      } else {
+        setError(message);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -469,7 +480,14 @@ export default function FavoritesPage() {
       )}
 
       {error && (
-        <div className="bg-red-950/50 border border-red-800/50 text-red-300 rounded-xl p-4 mb-6 text-sm">{error}</div>
+        <div className="bg-red-950/50 border border-red-800/50 text-red-300 rounded-xl p-4 mb-6 text-sm">
+          <p>{error}</p>
+          {/shopgoodwill|connect/i.test(error) && (
+            <a href="/account" className="inline-block mt-2 text-emerald-400 hover:text-emerald-300 underline underline-offset-2">
+              Open Account settings
+            </a>
+          )}
+        </div>
       )}
 
       {loading ? (

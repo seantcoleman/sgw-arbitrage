@@ -1884,6 +1884,13 @@ def mark_sgw_account_verified(account_id: int, ok: bool, error: Optional[str] = 
 
 
 def get_primary_sgw_account_id(user_id: UserId) -> Optional[int]:
+    """Prefer active/pending; fall back to a user-cipher account marked invalid.
+
+    Transient ShopGoodwill outages used to flip status to invalid and permanently
+    break Favorites until manual reconnect — still allow those rows so login can
+    be retried on the next request.
+    """
+    uid = str(user_id) if using_postgres() else user_id
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -1894,8 +1901,37 @@ def get_primary_sgw_account_id(user_id: UserId) -> Optional[int]:
                      id
             LIMIT 1
             """,
-            (str(user_id) if using_postgres() else user_id,),
+            (uid,),
         ).fetchone()
+        if row:
+            return int(row["id"])
+        # Soft fallback: encrypted user credentials still present
+        if using_postgres():
+            row = conn.execute(
+                """
+                SELECT id FROM sgw_accounts
+                WHERE user_id = ?
+                  AND auth_source = 'user'
+                  AND encrypted_username IS NOT NULL
+                  AND status = 'invalid'
+                ORDER BY updated_at DESC NULLS LAST, id DESC
+                LIMIT 1
+                """,
+                (uid,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT id FROM sgw_accounts
+                WHERE user_id = ?
+                  AND auth_source = 'user'
+                  AND encrypted_username IS NOT NULL
+                  AND status = 'invalid'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (uid,),
+            ).fetchone()
     return int(row["id"]) if row else None
 
 

@@ -140,8 +140,23 @@ class BidSniper:
             "unclear": f"Bid submitted for '{title}', outcome unconfirmed",
         }.get(outcome or "", f"No bid placed for '{title}'")
 
+    @staticmethod
+    def _is_auth_failure(exc: BaseException) -> bool:
+        """True only for credential failures — not transient SGW outages (5xx/timeouts)."""
+        msg = str(exc).lower()
+        return any(
+            needle in msg
+            for needle in (
+                "invalid credentials",
+                "invalid auth",
+                "unauthorized",
+                "401",
+                "403",
+            )
+        )
+
     async def _reverify_stale_sgw_accounts(self) -> None:
-        """Re-login accounts whose last_verified_at is stale; mark invalid on failure."""
+        """Re-login accounts whose last_verified_at is stale; mark invalid only on auth failure."""
         now = time.time()
         if now - self._last_reverify_sweep < self._reverify_interval:
             return
@@ -155,9 +170,16 @@ class BidSniper:
                 db.mark_sgw_account_verified(account_id, True)
                 self.logger.info(f"Re-verified SGW account {account_id}")
             except Exception as e:
-                db.mark_sgw_account_verified(account_id, False, str(e)[:300])
-                self.logger.error(f"SGW account {account_id} re-verify failed: {e}")
-                self._account_clients.pop(account_id, None)
+                if self._is_auth_failure(e):
+                    db.mark_sgw_account_verified(account_id, False, str(e)[:300])
+                    self.logger.error(f"SGW account {account_id} re-verify failed (auth): {e}")
+                    self._account_clients.pop(account_id, None)
+                else:
+                    # Leave status alone — a 503 must not lock users out of Favorites.
+                    self.logger.warning(
+                        f"SGW account {account_id} re-verify hit transient error (kept active): {e}"
+                    )
+                    self._account_clients.pop(account_id, None)
 
     def update_favorites_cache(self, max_cache_time: int) -> None:
         age = (
