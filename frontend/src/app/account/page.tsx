@@ -155,27 +155,31 @@ export default function AccountPage() {
             </div>
           </div>
 
-          {(me?.win_fees?.length ?? 0) > 0 && (
-            <div className="pt-3 border-t border-zinc-800">
-              <div className="text-xs font-medium text-zinc-400 mb-2">Recent success fees</div>
-              <ul className="space-y-1.5 max-h-40 overflow-y-auto">
-                {me!.win_fees!.slice(0, 10).map((f) => (
-                  <li
-                    key={f.id}
-                    className="flex justify-between gap-2 text-xs text-zinc-500"
-                  >
-                    <span>
-                      Item {f.item_id} · hammer ${(f.hammer_cents / 100).toFixed(2)}
-                    </span>
-                    <span className="text-zinc-300">
-                      ${(f.fee_cents / 100).toFixed(2)}{" "}
-                      <span className="text-zinc-600">{f.status}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {(() => {
+            const fees = (me?.win_fees ?? []).filter((f) => f.status !== "waived").slice(0, 10);
+            if (!fees.length) return null;
+            return (
+              <div className="pt-3 border-t border-zinc-800">
+                <div className="text-xs font-medium text-zinc-400 mb-2">Recent success fees</div>
+                <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {fees.map((f) => (
+                    <li
+                      key={f.id}
+                      className="flex justify-between gap-2 text-xs text-zinc-500"
+                    >
+                      <span>
+                        Item {f.item_id} · hammer ${(f.hammer_cents / 100).toFixed(2)}
+                      </span>
+                      <span className="text-zinc-300">
+                        ${(f.fee_cents / 100).toFixed(2)}{" "}
+                        <span className="text-zinc-600">{f.status}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

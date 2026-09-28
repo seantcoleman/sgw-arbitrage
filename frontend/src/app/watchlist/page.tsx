@@ -274,6 +274,15 @@ export default function WatchlistPage() {
       }
     } catch (e: unknown) {
       setPendingAdd(null);
+      const status =
+        e && typeof e === "object" && "status" in e
+          ? (e as { status?: number }).status
+          : undefined;
+      if (status === 402) {
+        toast.error(e instanceof Error ? e.message : "Billing required");
+        window.location.href = "/pricing";
+        return;
+      }
       toast.error(e instanceof Error ? e.message : "Failed to add auction");
     } finally {
       addingRef.current = false;

@@ -35,9 +35,15 @@ _jwks_fetched_at = 0.0
 
 
 class AuthUser:
-    def __init__(self, id: str, email: Optional[str] = None):
+    def __init__(
+        self,
+        id: str,
+        email: Optional[str] = None,
+        user_metadata: Optional[dict] = None,
+    ):
         self.id = id
         self.email = email
+        self.user_metadata = user_metadata or {}
 
     @property
     def uuid(self) -> UUID:
@@ -175,7 +181,13 @@ async def current_user(
     role = claims.get("role")
     if role and role != "authenticated":
         raise HTTPException(status_code=401, detail="Token is not an authenticated user")
-    return AuthUser(id=str(sub), email=claims.get("email"))
+    return AuthUser(
+        id=str(sub),
+        email=claims.get("email"),
+        user_metadata=claims.get("user_metadata")
+        if isinstance(claims.get("user_metadata"), dict)
+        else {},
+    )
 
 
 async def optional_user(

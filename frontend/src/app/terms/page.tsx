@@ -135,15 +135,16 @@ export default function TermsPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">11. Contact</h2>
           <p>
-            Questions about these Terms: use the email associated with your BuzzerBidder account or the
-            contact method listed on the site.
+            Questions about these Terms: email{" "}
+            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
+              scoleman2296@gmail.com
+            </a>
+            .
           </p>
         </section>
       </div>
 
       <p className="mt-12 text-xs text-zinc-600">
-        This is a draft for product launch — have it reviewed by counsel before broad public
-        signup.{" "}
         <Link href="/" className="text-emerald-400 hover:underline">
           Back home
         </Link>

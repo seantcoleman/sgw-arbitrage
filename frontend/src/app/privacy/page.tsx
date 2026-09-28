@@ -97,7 +97,11 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">8. Contact</h2>
           <p>
-            Privacy questions: use the email on your BuzzerBidder account. See also our{" "}
+            Privacy questions: email{" "}
+            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
+              scoleman2296@gmail.com
+            </a>
+            . See also our{" "}
             <Link href="/terms" className="text-emerald-400 hover:underline">
               Terms of Service
             </Link>

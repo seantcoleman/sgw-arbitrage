@@ -1045,6 +1045,15 @@ class SgwConnectRequest(BaseModel):
 @app.get("/me")
 def get_me(user: RequireUser):
     db.ensure_user_profile(user.id, user.email)
+    # Stamp ToS if signup metadata recorded acceptance but profile column is still null
+    try:
+        meta = user.user_metadata or {}
+        if meta.get("tos_accepted") or meta.get("tos_accepted_at"):
+            billing_probe = db.get_billing_profile(user.id) or {}
+            if not billing_probe.get("tos_accepted_at"):
+                db.accept_tos(user.id)
+    except Exception:
+        pass
     accounts = db.list_sgw_accounts(user.id)
     billing = db.get_billing_profile(user.id) or {}
     can = db.user_can_snipe(user.id)

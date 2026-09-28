@@ -17,8 +17,8 @@ const STEPS = [
 
 const FEATURES = [
   {
-    title: "Profit-first deal feed",
-    body: "Every listing is priced against eBay comps with your fee and shipping assumptions baked in.",
+    title: "eBay comps on every snipe",
+    body: "When you queue an auction, we price it against recent eBay sales with fees and shipping baked in.",
   },
   {
     title: "Last-second bidding",
