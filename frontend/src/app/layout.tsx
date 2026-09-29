@@ -34,6 +34,9 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  verification: {
+    google: "7us_CUJDHU9IlXG1QmOoxSU9ZE9pK0XlxIUNvOXec5s",
+  },
 };
 
 const THEME_INIT = `(function(){try{var p=localStorage.getItem("theme");var h=(new Date()).getHours();var light=p==="light"||(p!=="dark"&&h>=6&&h<19);if(light)document.documentElement.classList.add("light")}catch(e){}})();`;
