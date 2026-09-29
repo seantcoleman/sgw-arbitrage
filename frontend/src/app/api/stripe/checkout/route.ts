@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { appOrigin, getProPriceId, getStripe } from "@/lib/stripe";
 import { createServiceClient, userFromAuthHeader } from "@/lib/supabase/admin";
 
@@ -55,6 +56,8 @@ export async function POST(req: Request) {
     const origin = appOrigin(req);
 
     if (mode === "setup") {
+      // Managed Payments (account default) only allows payment/subscription modes.
+      // Standard plan saves a card with no charge — opt out for setup Checkout.
       const session = await stripe.checkout.sessions.create({
         mode: "setup",
         customer: customerId,
@@ -65,7 +68,9 @@ export async function POST(req: Request) {
         setup_intent_data: {
           metadata: { supabase_user_id: user.id },
         },
-      });
+        // Opt out until stripe-node types include managed_payments on this API version.
+        managed_payments: { enabled: false },
+      } as Stripe.Checkout.SessionCreateParams);
       return NextResponse.json({ url: session.url });
     }
 
