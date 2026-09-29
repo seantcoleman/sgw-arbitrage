@@ -122,6 +122,12 @@ export function Nav() {
 
           {loggedOut && (
             <div className="flex items-center gap-2">
+              <Link href="/pricing" className="hidden sm:inline px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors">
+                Pricing
+              </Link>
+              <Link href="/guides/shopgoodwill-sniping" className="hidden md:inline px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors">
+                Guide
+              </Link>
               <Link
                 href="/login"
                 className="px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"

@@ -4,25 +4,35 @@ import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { AppToaster } from "@/components/AppToaster";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "BuzzerBidder",
+    default: "BuzzerBidder — ShopGoodwill Sniper",
     template: "%s · BuzzerBidder",
   },
-  description:
-    "Queue ShopGoodwill auctions, compare eBay comps, and place last-second bids.",
-  metadataBase: new URL("https://buzzerbidder.com"),
+  description: DEFAULT_DESCRIPTION,
+  applicationName: SITE_NAME,
   openGraph: {
-    title: "BuzzerBidder",
-    description:
-      "Queue ShopGoodwill auctions, compare eBay comps, and place last-second bids.",
-    url: "https://buzzerbidder.com",
-    siteName: "BuzzerBidder",
+    title: "BuzzerBidder — ShopGoodwill Sniper",
+    description: DEFAULT_DESCRIPTION,
+    url: SITE_URL,
+    siteName: SITE_NAME,
     type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BuzzerBidder — ShopGoodwill Sniper",
+    description: DEFAULT_DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 

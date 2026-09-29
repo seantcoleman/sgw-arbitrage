@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { FaqSection } from "@/components/FaqSection";
 import { getMe, MeResponse } from "@/lib/api";
+import { PRICING_FAQS } from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 async function startCheckout(mode: "setup" | "subscription") {
@@ -174,6 +176,8 @@ export default function PricingPage() {
           </button>
         </div>
       </div>
+
+      <FaqSection faqs={PRICING_FAQS} />
 
       <p className="text-center text-xs text-zinc-600 pb-12 max-w-xl mx-auto">
         Standard bills a 2% success fee on confirmed wins (fees may batch for Stripe&apos;s

@@ -2,6 +2,9 @@ import Link from "next/link";
 
 export const metadata = {
   title: "Privacy Policy",
+  description:
+    "How BuzzerBidder stores your account, encrypted ShopGoodwill credentials, and Stripe billing data.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {

@@ -46,7 +46,27 @@ export async function updateSession(request: NextRequest) {
     path === "/pricing" ||
     path === "/terms" ||
     path === "/privacy" ||
+    path === "/guides" ||
+    path.startsWith("/guides/") ||
+    path.startsWith("/opengraph-image") ||
+    path.startsWith("/twitter-image") ||
+    path === "/robots.txt" ||
+    path === "/sitemap.xml" ||
     path.startsWith("/api/stripe/webhook");
+
+  const noindex =
+    path.startsWith("/watchlist") ||
+    path.startsWith("/favorites") ||
+    path.startsWith("/account") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/deals") ||
+    path.startsWith("/login") ||
+    path.startsWith("/signup") ||
+    path.startsWith("/reset-password") ||
+    path.startsWith("/auth");
+  if (noindex) {
+    supabaseResponse.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
 
   if (!user && !isAuthPage && !isPublicPage) {
     const redirectUrl = request.nextUrl.clone();

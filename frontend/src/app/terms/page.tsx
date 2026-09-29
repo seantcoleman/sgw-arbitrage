@@ -2,6 +2,9 @@ import Link from "next/link";
 
 export const metadata = {
   title: "Terms of Service",
+  description:
+    "BuzzerBidder terms: ShopGoodwill sniping, encrypted credentials, 2% success fees, and the $15/month Pro plan.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {

@@ -1,4 +1,47 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { FaqSection } from "@/components/FaqSection";
+import { HOME_FAQS, SITE_URL } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  title: "ShopGoodwill Sniper — Last-Second Bids",
+  description:
+    "Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds. Pay 2% only when you win, or go Pro for $15/month.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "ShopGoodwill Sniper — Last-Second Bids",
+    description:
+      "Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds.",
+    url: SITE_URL,
+  },
+};
+
+const softwareLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "BuzzerBidder",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: SITE_URL,
+  description:
+    "ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids.",
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Standard",
+      price: "0",
+      priceCurrency: "USD",
+      description: "2% success fee on confirmed wins. No monthly fee.",
+    },
+    {
+      "@type": "Offer",
+      name: "Pro",
+      price: "15",
+      priceCurrency: "USD",
+      description: "$15 per month with 0% success fee.",
+    },
+  ],
+};
 
 const STEPS = [
   {
@@ -37,6 +80,10 @@ const FEATURES = [
 export default function LandingPage() {
   return (
     <div className="-mt-6 sm:-mt-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareLd) }}
+      />
       <section className="py-20 sm:py-28 text-center">
         <p className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-100">
           BuzzerBidder
@@ -152,6 +199,8 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <FaqSection faqs={HOME_FAQS} />
+
       <section className="border-t border-zinc-800/80 py-20 text-center">
         <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-100">
           Queue your first snipe tonight
@@ -168,6 +217,10 @@ export default function LandingPage() {
         </Link>
         <p className="mt-8 text-xs text-zinc-600">
           © {new Date().getFullYear()} BuzzerBidder
+          {" · "}
+          <Link href="/guides/shopgoodwill-sniping" className="hover:text-zinc-400">
+            Guide
+          </Link>
           {" · "}
           <Link href="/terms" className="hover:text-zinc-400">
             Terms
