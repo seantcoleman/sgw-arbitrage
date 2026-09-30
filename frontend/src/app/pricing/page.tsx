@@ -8,13 +8,13 @@ import { getMe, MeResponse } from "@/lib/api";
 import { PRICING_FAQS } from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
-async function startCheckout(mode: "setup" | "subscription") {
+async function startCheckout(mode: "setup" | "subscription"): Promise<"redirecting" | void> {
   const supabase = createClient();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
     window.location.href = `/login?next=${encodeURIComponent("/pricing")}`;
-    return;
+    return "redirecting";
   }
   const res = await fetch("/api/stripe/checkout", {
     method: "POST",
@@ -26,8 +26,11 @@ async function startCheckout(mode: "setup" | "subscription") {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || body.detail || "Checkout failed");
-  if (body.url) window.location.href = body.url;
-  else throw new Error("No checkout URL returned");
+  if (body.url) {
+    window.location.href = body.url;
+    return "redirecting";
+  }
+  throw new Error("No checkout URL returned");
 }
 
 export default function PricingPage() {
@@ -55,7 +58,9 @@ export default function PricingPage() {
     }
     setLoading(mode);
     try {
-      await startCheckout(mode);
+      const result = await startCheckout(mode);
+      // Keep loading while the browser navigates to login or Stripe Checkout.
+      if (result !== "redirecting") setLoading(null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Checkout failed");
       setLoading(null);
