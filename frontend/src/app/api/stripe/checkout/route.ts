@@ -55,9 +55,10 @@ export async function POST(req: Request) {
     const stripe = getStripe();
     const origin = appOrigin(req);
 
+    // Managed Payments is on by default for this Stripe account. Setup mode is
+    // ineligible, and subscription Checkout fails unless the Pro product has an
+    // eligible tax_code — opt out for both until Managed Payments is configured.
     if (mode === "setup") {
-      // Managed Payments (account default) only allows payment/subscription modes.
-      // Standard plan saves a card with no charge — opt out for setup Checkout.
       const session = await stripe.checkout.sessions.create({
         mode: "setup",
         customer: customerId,
@@ -84,7 +85,8 @@ export async function POST(req: Request) {
       subscription_data: {
         metadata: { supabase_user_id: user.id },
       },
-    });
+      managed_payments: { enabled: false },
+    } as Stripe.Checkout.SessionCreateParams);
     return NextResponse.json({ url: session.url });
   } catch (err: unknown) {
     console.error("stripe checkout error", err);
