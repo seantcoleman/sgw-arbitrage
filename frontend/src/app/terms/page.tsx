@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Terms of Service",
   description:
-    "BuzzerBidder terms: ShopGoodwill sniping, encrypted credentials, 2% success fees, and the $15/month Pro plan.",
+    "BuzzerBidder terms: ShopGoodwill sniping, encrypted credentials, 2% success fees, and the $10/month Pro plan.",
   alternates: { canonical: "/terms" },
 };
 
@@ -65,7 +65,7 @@ export default function TermsPage() {
             </li>
             <li>
               <strong className="text-zinc-200">Pro:</strong> a monthly subscription (currently
-              $15/month unless we change the price in Stripe) with{" "}
+              $10/month unless we change the price in Stripe) with{" "}
               <strong className="text-zinc-200">0% success fee</strong> while the subscription is
               active.
             </li>

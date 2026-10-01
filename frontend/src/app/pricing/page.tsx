@@ -78,7 +78,7 @@ export default function PricingPage() {
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-sm sm:text-base text-zinc-500">
           Standard has no monthly fee — we charge 2% of the hammer on confirmed wins. Or go Pro
-          for $15/month and 0% commission. Small fees may batch until they meet Stripe&apos;s
+          for $10/month and 0% commission. Small fees may batch until they meet Stripe&apos;s
           charge minimum.
         </p>
         {signedIn && billing && (
@@ -156,7 +156,7 @@ export default function PricingPage() {
           <h2 className="text-xl font-bold text-zinc-100">Pro</h2>
           <p className="mt-1 text-sm text-zinc-500">0% success fee · Monthly plan</p>
           <p className="mt-6 text-4xl font-black text-zinc-100">
-            $15
+            $10
             <span className="text-base font-medium text-zinc-500"> / month</span>
           </p>
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">

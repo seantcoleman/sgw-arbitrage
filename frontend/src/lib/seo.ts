@@ -3,7 +3,7 @@ export const SITE_URL = "https://buzzerbidder.com";
 export const SITE_NAME = "BuzzerBidder";
 
 export const DEFAULT_DESCRIPTION =
-  "ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids. Pay 2% only when you win, or $15/month with 0% commission.";
+  "ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids. Pay 2% only when you win, or $10/month with 0% commission.";
 
 export type Faq = { q: string; a: string };
 
@@ -18,7 +18,7 @@ export const HOME_FAQS: Faq[] = [
   },
   {
     q: "When do you charge?",
-    a: "Standard has no monthly fee. We charge 2% of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is $15/month with 0% commission while the subscription is active.",
+    a: "Standard has no monthly fee. We charge 2% of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is $10/month with 0% commission while the subscription is active.",
   },
   {
     q: "Do you store my ShopGoodwill password?",
@@ -33,7 +33,7 @@ export const HOME_FAQS: Faq[] = [
 export const PRICING_FAQS: Faq[] = [
   {
     q: "What is the difference between Standard and Pro?",
-    a: "Standard has no monthly fee and charges a 2% success fee on the hammer of confirmed wins. Pro is $15 per month and charges 0% success fee while the subscription is active. Both plans include unlimited snipes, eBay comps, and last-second bidding.",
+    a: "Standard has no monthly fee and charges a 2% success fee on the hammer of confirmed wins. Pro is $10 per month and charges 0% success fee while the subscription is active. Both plans include unlimited snipes, eBay comps, and last-second bidding.",
   },
   {
     q: "Do I pay if I lose the auction?",

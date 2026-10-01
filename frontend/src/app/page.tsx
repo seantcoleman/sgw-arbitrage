@@ -6,7 +6,7 @@ import { HOME_FAQS, SITE_URL } from "@/lib/seo";
 export const metadata: Metadata = {
   title: "ShopGoodwill Sniper — Last-Second Bids",
   description:
-    "Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds. Pay 2% only when you win, or go Pro for $15/month.",
+    "Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds. Pay 2% only when you win, or go Pro for $10/month.",
   alternates: { canonical: "/" },
   openGraph: {
     title: "ShopGoodwill Sniper — Last-Second Bids",
@@ -38,7 +38,7 @@ const softwareLd = {
       name: "Pro",
       price: "15",
       priceCurrency: "USD",
-      description: "$15 per month with 0% success fee.",
+      description: "$10 per month with 0% success fee.",
     },
   ],
 };
@@ -163,7 +163,7 @@ export default function LandingPage() {
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-center text-sm text-zinc-500">
           Standard charges 2% of the hammer on confirmed wins (fees may batch until they reach
-          Stripe&apos;s charge minimum). Pro is $15/month with 0% commission.
+          Stripe&apos;s charge minimum). Pro is $10/month with 0% commission.
         </p>
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
@@ -180,7 +180,7 @@ export default function LandingPage() {
             <h3 className="font-semibold text-zinc-100">Pro</h3>
             <p className="mt-1 text-xs text-zinc-500">0% success fee · Monthly</p>
             <p className="mt-4 text-3xl font-black text-zinc-100">
-              $15<span className="text-base font-medium text-zinc-500">/mo</span>
+              $10<span className="text-base font-medium text-zinc-500">/mo</span>
             </p>
             <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">
               <li>0% commission on wins</li>

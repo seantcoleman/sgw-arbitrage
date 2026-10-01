@@ -27,7 +27,7 @@ const FAQS: Faq[] = [
   },
   {
     q: "How is BuzzerBidder priced versus a per-snipe tool?",
-    a: "Some desktop snipers charge a flat amount for every snipe, win or lose. BuzzerBidder Standard charges 2% of the hammer only on confirmed wins. Pro is $15/month with no success fee.",
+    a: "Some desktop snipers charge a flat amount for every snipe, win or lose. BuzzerBidder Standard charges 2% of the hammer only on confirmed wins. Pro is $10/month with no success fee.",
   },
 ];
 
@@ -72,7 +72,7 @@ export default function SnipingGuidePage() {
           BuzzerBidder Standard
         </Link>{" "}
         charges 2% of the hammer on confirmed wins and nothing when you lose. Fees can batch until
-        they reach Stripe&apos;s minimum charge. Pro is $15 per month with a 0% success fee while
+        they reach Stripe&apos;s minimum charge. Pro is $10 per month with a 0% success fee while
         the subscription is active. ShopGoodwill still invoices you separately for the item,
         shipping, and tax.
       </p>

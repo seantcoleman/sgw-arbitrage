@@ -103,7 +103,7 @@ export default function AccountPage() {
         <div className="px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-100">Billing</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Standard: 2% on confirmed wins. Pro: $15/mo with 0% commission.
+            Standard: 2% on confirmed wins. Pro: $10/mo with 0% commission.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3 text-sm">
