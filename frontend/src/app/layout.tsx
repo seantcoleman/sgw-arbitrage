@@ -3,6 +3,7 @@ import { Geist_Mono, Geist } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { AppToaster } from "@/components/AppToaster";
+import { JsonLd } from "@/components/JsonLd";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
@@ -39,6 +40,24 @@ export const metadata: Metadata = {
   },
 };
 
+const organizationLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: SITE_NAME,
+  url: SITE_URL,
+  logo: `${SITE_URL}/opengraph-image`,
+  description: DEFAULT_DESCRIPTION,
+};
+
+const websiteLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: SITE_NAME,
+  url: SITE_URL,
+  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+  description: DEFAULT_DESCRIPTION,
+};
+
 const THEME_INIT = `(function(){try{var p=localStorage.getItem("theme");var h=(new Date()).getHours();var light=p==="light"||(p!=="dark"&&h>=6&&h<19);if(light)document.documentElement.classList.add("light")}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -48,6 +67,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>
       <body className={`${geist.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-100 min-h-screen`}>
+        <JsonLd data={organizationLd} />
+        <JsonLd data={websiteLd} />
         <ThemeProvider>
           <Nav />
           <AppToaster />

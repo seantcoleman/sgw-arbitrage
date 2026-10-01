@@ -1,19 +1,23 @@
 import type { MetadataRoute } from "next";
+import { COMPARE_PAGES, GUIDES } from "@/lib/guides";
 import { SITE_URL } from "@/lib/seo";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
-  return [
+  const marketing: MetadataRoute.Sitemap = [
     { url: SITE_URL, lastModified, changeFrequency: "weekly", priority: 1 },
     { url: `${SITE_URL}/pricing`, lastModified, changeFrequency: "monthly", priority: 0.9 },
-    { url: `${SITE_URL}/guides`, lastModified, changeFrequency: "monthly", priority: 0.8 },
-    {
-      url: `${SITE_URL}/guides/shopgoodwill-sniping`,
-      lastModified,
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
+    { url: `${SITE_URL}/guides`, lastModified, changeFrequency: "weekly", priority: 0.85 },
     { url: `${SITE_URL}/terms`, lastModified, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
   ];
+
+  const content = [...GUIDES, ...COMPARE_PAGES].map((page) => ({
+    url: `${SITE_URL}${page.href}`,
+    lastModified,
+    changeFrequency: "monthly" as const,
+    priority: page.priority ?? 0.8,
+  }));
+
+  return [...marketing, ...content];
 }
