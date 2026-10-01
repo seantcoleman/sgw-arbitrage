@@ -47,7 +47,7 @@ export function renderOgImage() {
           </div>
         </div>
         <div style={{ fontSize: 28, color: "#a1a1aa" }}>
-          eBay comps · Pay 2% only when you win · or Pro at $15/mo
+          eBay comps · Pay 2% only when you win · or Pro at $10/mo
         </div>
       </div>
     ),
