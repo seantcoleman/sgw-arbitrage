@@ -36,7 +36,7 @@ const softwareLd = {
     {
       "@type": "Offer",
       name: "Pro",
-      price: "15",
+      price: "10",
       priceCurrency: "USD",
       description: "$10 per month with 0% success fee.",
     },
@@ -89,10 +89,10 @@ export default function LandingPage() {
           BuzzerBidder
         </p>
         <h1 className="mt-5 text-2xl sm:text-4xl font-bold tracking-tight text-zinc-300">
-          Buy underpriced auctions.
+          ShopGoodwill sniper for last-second wins.
           <br />
           <span className="bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent">
-            Win them at the last second.
+            Buy underpriced auctions.
           </span>
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-base sm:text-lg text-zinc-400">
@@ -218,8 +218,16 @@ export default function LandingPage() {
         <p className="mt-8 text-xs text-zinc-600">
           © {new Date().getFullYear()} BuzzerBidder
           {" · "}
+          <Link href="/guides" className="hover:text-zinc-400">
+            Guides
+          </Link>
+          {" · "}
           <Link href="/guides/shopgoodwill-sniping" className="hover:text-zinc-400">
-            Guide
+            Sniping
+          </Link>
+          {" · "}
+          <Link href="/pricing" className="hover:text-zinc-400">
+            Pricing
           </Link>
           {" · "}
           <Link href="/terms" className="hover:text-zinc-400">

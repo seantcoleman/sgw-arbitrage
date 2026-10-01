@@ -125,8 +125,8 @@ export function Nav() {
               <Link href="/pricing" className="hidden sm:inline px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors">
                 Pricing
               </Link>
-              <Link href="/guides/shopgoodwill-sniping" className="hidden md:inline px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors">
-                Guide
+              <Link href="/guides" className="hidden md:inline px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors">
+                Guides
               </Link>
               <Link
                 href="/login"

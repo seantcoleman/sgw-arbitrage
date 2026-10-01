@@ -9,6 +9,10 @@ export type Faq = { q: string; a: string };
 
 export const HOME_FAQS: Faq[] = [
   {
+    q: "What is a ShopGoodwill sniper?",
+    a: "A ShopGoodwill sniper is software that places your max bid in the final seconds of an auction instead of bidding early. BuzzerBidder is a hosted sniper: you queue auctions from a URL or Favorites, compare them to eBay comps, and we bid with your own ShopGoodwill account near close.",
+  },
+  {
     q: "What is BuzzerBidder?",
     a: "BuzzerBidder is a hosted ShopGoodwill sniper. You queue auctions from a URL or your ShopGoodwill Favorites, compare them to recent eBay sales, and we place your bid in the final seconds using your own ShopGoodwill account.",
   },
@@ -17,8 +21,16 @@ export const HOME_FAQS: Faq[] = [
     a: "You set a max bid. Our workers keep a scheduled job and fire the bid seconds before the auction ends, so you are not bidding early and pushing the price up. A bid can still be missed if ShopGoodwill or the network fails.",
   },
   {
+    q: "ShopGoodwill auto bid vs manual bidding — what's the difference?",
+    a: "Manual bidding means you watch the clock and click near the end. Auto bid (sniping) schedules that last-second bid for you. Hosted tools like BuzzerBidder keep the queue on a server so you do not need your laptop open. Early manual bids can also raise the visible price and attract competition.",
+  },
+  {
     q: "When do you charge?",
     a: "Standard has no monthly fee. We charge 2% of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is $10/month with 0% commission while the subscription is active.",
+  },
+  {
+    q: "How does BuzzerBidder compare to per-snipe desktop tools?",
+    a: "Many desktop snipers charge a flat fee every time a bid fires, win or lose. BuzzerBidder Standard charges 2% only on confirmed wins. Pro is $10/month with 0% success fee. You still pay ShopGoodwill for the item, shipping, and tax separately.",
   },
   {
     q: "Do you store my ShopGoodwill password?",

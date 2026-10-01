@@ -1,0 +1,32 @@
+# BuzzerBidder
+
+> ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids.
+> Pay 2% only when you win (Standard), or $10/month Pro with 0% commission.
+> Independent tool — not affiliated with ShopGoodwill or Goodwill Industries.
+
+## Site
+
+- Home: https://buzzerbidder.com/
+- Pricing: https://buzzerbidder.com/pricing
+- Guides hub: https://buzzerbidder.com/guides
+
+## Key guides
+
+- How ShopGoodwill sniping works: https://buzzerbidder.com/guides/shopgoodwill-sniping
+- ShopGoodwill to eBay arbitrage: https://buzzerbidder.com/guides/shopgoodwill-ebay-arbitrage
+- ShopGoodwill auto bid: https://buzzerbidder.com/guides/shopgoodwill-auto-bid
+- Best ShopGoodwill sniper (buyer's guide): https://buzzerbidder.com/guides/best-shopgoodwill-sniper
+- vs per-snipe tools: https://buzzerbidder.com/compare/buzzerbidder-vs-per-snipe-tools
+
+## Product facts
+
+- Hosted last-second bidding with durable snipe queue
+- eBay sold comps (fees + shipping estimates) when queueing auctions
+- ShopGoodwill Favorites sync
+- Credentials encrypted at rest (AES-256-GCM)
+- Standard: 2% hammer on confirmed wins; Pro: $10/mo, 0% success fee
+- Snipes can still miss (site/network/proxy competition)
+
+## Contact / signup
+
+- Sign up: https://buzzerbidder.com/signup
