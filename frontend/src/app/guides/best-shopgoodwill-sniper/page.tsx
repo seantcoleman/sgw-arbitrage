@@ -89,15 +89,15 @@ export default function BestSniperGuidePage() {
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">2. Pricing that matches your win rate</h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        Per-snipe fees punish losses and high-volume testing. A{" "}
+        Prefer pay-per-win (only bill confirmed wins) or a clear monthly cap over tools that charge
+        every bid attempt.{" "}
         <Link
           href="/compare/buzzerbidder-vs-per-snipe-tools"
           className="text-emerald-400 hover:underline"
         >
-          pay-when-you-win model
+          BuzzerBidder Standard
         </Link>{" "}
-        (BuzzerBidder Standard: 2% of hammer) or a flat Pro subscription ($10/mo, 0% fee) can be
-        cheaper if you fire many bids that do not convert.
+        is 2% of hammer on wins; Pro is $10/mo with 0% fee — pick based on your volume.
       </p>
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">3. eBay comps next to the bid</h2>

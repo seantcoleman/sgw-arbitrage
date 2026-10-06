@@ -85,7 +85,8 @@ const OPTIONS = [
   },
   {
     name: "Desktop snipers (e.g. shopgoodwillsniper.com)",
-    summary: "Local apps; some use success-fee or monthly Pro similar to win-fee models.",
+    summary:
+      "Local apps; some use success-fee or monthly Pro. Compare fee models (pay-per-win vs pay-per-attempt vs monthly) before you pick.",
     bestFor: "Keeping credentials on your machine if you accept babysitting a desktop.",
     href: "/compare/buzzerbidder-vs-per-snipe-tools",
   },

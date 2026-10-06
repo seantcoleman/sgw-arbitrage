@@ -55,9 +55,9 @@ export const GUIDES: GuideMeta[] = [
 export const COMPARE_PAGES: GuideMeta[] = [
   {
     href: "/compare/buzzerbidder-vs-per-snipe-tools",
-    title: "BuzzerBidder vs per-snipe sniper tools",
-    description: `Pay ${STANDARD_FEE_LABEL} only when you win (or ${PRO_PRICE_SHORT} Pro) versus charging a flat fee every time a bid fires — including losses.`,
-    keywords: "shopgoodwill sniper pricing, per snipe fee",
+    title: "ShopGoodwill sniper pricing models compared",
+    description: `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL}); Pro is ${PRO_PRICE_SHORT}. Compare with flat per-win fees and tools that bill every bid attempt.`,
+    keywords: "shopgoodwill sniper pricing, pay per win, per snipe fee",
     priority: 0.8,
   },
   {

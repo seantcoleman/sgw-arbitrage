@@ -53,7 +53,7 @@ export default function GuidesPage() {
       </h1>
       <p className="mt-4 text-sm sm:text-base text-zinc-400 max-w-2xl">
         Practical notes on bidding ShopGoodwill auctions in the final seconds, pricing flips
-        against eBay sold comps, and choosing between pay-when-you-win and per-snipe tools.
+        against eBay sold comps, and how pay-per-win vs monthly sniper pricing compares.
         BuzzerBidder is an independent ShopGoodwill sniper — not affiliated with ShopGoodwill.
       </p>
 

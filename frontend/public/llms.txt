@@ -22,7 +22,7 @@
 
 ## Comparisons
 
-- vs per-snipe tools: https://buzzerbidder.com/compare/buzzerbidder-vs-per-snipe-tools
+- Sniper pricing models (pay-per-win Standard + Pro monthly): https://buzzerbidder.com/compare/buzzerbidder-vs-per-snipe-tools
 - vs ThriftSniper: https://buzzerbidder.com/compare/buzzerbidder-vs-thriftsniper
 - vs BidPulse: https://buzzerbidder.com/compare/buzzerbidder-vs-bidpulse
 

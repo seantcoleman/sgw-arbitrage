@@ -38,8 +38,8 @@ export const HOME_FAQS: Faq[] = [
     a: `Standard has no monthly fee. We charge ${STANDARD_FEE_LABEL} of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% commission while the subscription is active.`,
   },
   {
-    q: "How does BuzzerBidder compare to per-snipe desktop tools?",
-    a: `Many desktop snipers charge a flat fee every time a bid fires, win or lose. BuzzerBidder Standard charges ${STANDARD_FEE_LABEL} only on confirmed wins. Pro is ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% success fee. You still pay ShopGoodwill for the item, shipping, and tax separately.`,
+    q: "Does BuzzerBidder have a pay-per-win / per-snipe option?",
+    a: `Yes. Standard is pay-as-you-go: ${STANDARD_FEE_LABEL} of the hammer only on confirmed wins, no monthly fee. Pro is optional at ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% success fee. That differs from tools that bill a credit every time a bid fires, including losses. You still pay ShopGoodwill for the item, shipping, and tax separately.`,
   },
   {
     q: "Do you store my ShopGoodwill password?",
