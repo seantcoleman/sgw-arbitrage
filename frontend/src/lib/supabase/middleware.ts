@@ -48,6 +48,10 @@ export async function updateSession(request: NextRequest) {
     path === "/privacy" ||
     path === "/guides" ||
     path.startsWith("/guides/") ||
+    path.startsWith("/compare/") ||
+    path.startsWith("/alternatives/") ||
+    path.startsWith("/tools/") ||
+    path === "/llms.txt" ||
     path.startsWith("/opengraph-image") ||
     path.startsWith("/twitter-image") ||
     path === "/robots.txt" ||
