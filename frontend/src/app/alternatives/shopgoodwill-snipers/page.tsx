@@ -88,7 +88,7 @@ const OPTIONS = [
     summary:
       "Local apps; some use success-fee or monthly Pro. Compare fee models (pay-per-win vs pay-per-attempt vs monthly) before you pick.",
     bestFor: "Keeping credentials on your machine if you accept babysitting a desktop.",
-    href: "/guides/shopgoodwill-sniper-pricing",
+    href: "/pricing",
   },
   {
     name: "BuzzerBidder",

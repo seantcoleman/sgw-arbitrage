@@ -22,7 +22,6 @@
 
 ## Comparisons
 
-- Sniper pricing models (pay-per-win Standard + Pro monthly): https://buzzerbidder.com/guides/shopgoodwill-sniper-pricing
 - vs ThriftSniper: https://buzzerbidder.com/compare/buzzerbidder-vs-thriftsniper
 - vs BidPulse: https://buzzerbidder.com/compare/buzzerbidder-vs-bidpulse
 

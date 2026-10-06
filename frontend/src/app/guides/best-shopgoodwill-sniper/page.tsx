@@ -91,10 +91,7 @@ export default function BestSniperGuidePage() {
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Prefer pay-per-win (only bill confirmed wins) or a clear monthly cap over tools that charge
         every bid attempt.{" "}
-        <Link
-          href="/guides/shopgoodwill-sniper-pricing"
-          className="text-emerald-400 hover:underline"
-        >
+        <Link href="/pricing" className="text-emerald-400 hover:underline">
           BuzzerBidder Standard
         </Link>{" "}
         is 2% of hammer on wins; Pro is $10/mo with 0% fee — pick based on your volume.

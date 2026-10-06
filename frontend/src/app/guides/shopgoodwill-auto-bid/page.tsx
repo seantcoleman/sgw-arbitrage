@@ -148,14 +148,11 @@ export default function AutoBidGuidePage() {
         <Link href="/pricing" className="text-emerald-400 hover:underline">
           2% of the hammer on confirmed wins
         </Link>
-        . Lose → no success fee. Pro: $10/month, 0% success fee while active. Compare that to{" "}
-        <Link
-          href="/guides/shopgoodwill-sniper-pricing"
-          className="text-emerald-400 hover:underline"
-        >
-          tools that charge every time a bid fires
-        </Link>
-        .
+        . Lose → no success fee. Pro: $10/month, 0% success fee while active. See{" "}
+        <Link href="/pricing" className="text-emerald-400 hover:underline">
+          pricing
+        </Link>{" "}
+        for both plans.
       </p>
 
       <p className="mt-8 flex flex-wrap gap-3">
