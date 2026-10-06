@@ -9,6 +9,8 @@
 - Home: https://buzzerbidder.com/
 - Pricing: https://buzzerbidder.com/pricing
 - Guides hub: https://buzzerbidder.com/guides
+- Alternatives: https://buzzerbidder.com/alternatives/shopgoodwill-snipers
+- Max bid calculator: https://buzzerbidder.com/tools/max-bid-calculator
 
 ## Key guides
 
@@ -16,7 +18,13 @@
 - ShopGoodwill to eBay arbitrage: https://buzzerbidder.com/guides/shopgoodwill-ebay-arbitrage
 - ShopGoodwill auto bid: https://buzzerbidder.com/guides/shopgoodwill-auto-bid
 - Best ShopGoodwill sniper (buyer's guide): https://buzzerbidder.com/guides/best-shopgoodwill-sniper
-- vs per-snipe tools: https://buzzerbidder.com/compare/buzzerbidder-vs-per-snipe-tools
+- Bidding strategy & tips: https://buzzerbidder.com/guides/shopgoodwill-bidding-strategy
+
+## Comparisons
+
+- Sniper pricing models (pay-per-win Standard + Pro monthly): https://buzzerbidder.com/compare/buzzerbidder-vs-per-snipe-tools
+- vs ThriftSniper: https://buzzerbidder.com/compare/buzzerbidder-vs-thriftsniper
+- vs BidPulse: https://buzzerbidder.com/compare/buzzerbidder-vs-bidpulse
 
 ## Product facts
 

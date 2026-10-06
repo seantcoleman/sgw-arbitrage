@@ -5,7 +5,12 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { FaqSection } from "@/components/FaqSection";
 import { getMe, MeResponse } from "@/lib/api";
-import { PRICING_FAQS } from "@/lib/seo";
+import {
+  PRICING_FAQS,
+  PRO_MONTHLY_USD,
+  PRO_SUCCESS_FEE_PCT,
+  STANDARD_FEE_LABEL,
+} from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 async function startCheckout(mode: "setup" | "subscription"): Promise<"redirecting" | void> {
@@ -77,9 +82,9 @@ export default function PricingPage() {
           Pay only when you win.
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-sm sm:text-base text-zinc-500">
-          Standard has no monthly fee — we charge 2% of the hammer on confirmed wins. Or go Pro
-          for $10/month and 0% commission. Small fees may batch until they meet Stripe&apos;s
-          charge minimum.
+          Standard has no monthly fee — we charge {STANDARD_FEE_LABEL} of the hammer on confirmed
+          wins. Or go Pro for ${PRO_MONTHLY_USD}/month and {PRO_SUCCESS_FEE_PCT}% commission. Small
+          fees may batch until they meet Stripe&apos;s charge minimum.
         </p>
         {signedIn && billing && (
           <p className="mx-auto mt-4 max-w-lg text-sm text-zinc-400">
@@ -122,13 +127,15 @@ export default function PricingPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto pb-16">
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 sm:p-8 flex flex-col">
           <h2 className="text-xl font-bold text-zinc-100">Standard</h2>
-          <p className="mt-1 text-sm text-zinc-500">2% success fee · No monthly fee</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            {STANDARD_FEE_LABEL} success fee · No monthly fee
+          </p>
           <p className="mt-6 text-4xl font-black text-zinc-100">
-            2%
+            {STANDARD_FEE_LABEL}
             <span className="text-base font-medium text-zinc-500"> / win</span>
           </p>
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
-            <li>✓ 2% of hammer on confirmed wins</li>
+            <li>✓ {STANDARD_FEE_LABEL} of hammer on confirmed wins</li>
             <li>✓ Unlimited auction snipes</li>
             <li>✓ eBay comps when you queue</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
@@ -154,13 +161,15 @@ export default function PricingPage() {
             Most popular
           </span>
           <h2 className="text-xl font-bold text-zinc-100">Pro</h2>
-          <p className="mt-1 text-sm text-zinc-500">0% success fee · Monthly plan</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            {PRO_SUCCESS_FEE_PCT}% success fee · Monthly plan
+          </p>
           <p className="mt-6 text-4xl font-black text-zinc-100">
-            $10
+            ${PRO_MONTHLY_USD}
             <span className="text-base font-medium text-zinc-500"> / month</span>
           </p>
           <ul className="mt-6 space-y-2 text-sm text-zinc-400 flex-1">
-            <li>✓ 0% success fee while Pro is active</li>
+            <li>✓ {PRO_SUCCESS_FEE_PCT}% success fee while Pro is active</li>
             <li>✓ Unlimited auction snipes</li>
             <li>✓ eBay comps when you queue</li>
             <li>✓ Add from ShopGoodwill Favorites</li>
@@ -185,9 +194,9 @@ export default function PricingPage() {
       <FaqSection faqs={PRICING_FAQS} />
 
       <p className="text-center text-xs text-zinc-600 pb-12 max-w-xl mx-auto">
-        Standard bills a 2% success fee on confirmed wins (fees may batch for Stripe&apos;s
-        minimum). Pro is a flat monthly fee with 0% commission. A saved card or active Pro plan is
-        required to queue snipes.{" "}
+        Standard bills a {STANDARD_FEE_LABEL} success fee on confirmed wins (fees may batch for
+        Stripe&apos;s minimum). Pro is a flat monthly fee with {PRO_SUCCESS_FEE_PCT}% commission. A
+        saved card or active Pro plan is required to queue snipes.{" "}
         <Link href="/terms" className="text-zinc-500 hover:text-zinc-300">
           Terms
         </Link>

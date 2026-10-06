@@ -2,8 +2,17 @@ export const SITE_URL = "https://buzzerbidder.com";
 
 export const SITE_NAME = "BuzzerBidder";
 
+/** Single source of truth for marketing + JSON-LD claim copy. Keep in sync with Stripe. */
+export const STANDARD_SUCCESS_FEE_PCT = 2;
+export const PRO_MONTHLY_USD = 10;
+export const PRO_SUCCESS_FEE_PCT = 0;
+
+export const STANDARD_FEE_LABEL = `${STANDARD_SUCCESS_FEE_PCT}%`;
+export const PRO_PRICE_LABEL = `$${PRO_MONTHLY_USD}/month`;
+export const PRO_PRICE_SHORT = `$${PRO_MONTHLY_USD}/mo`;
+
 export const DEFAULT_DESCRIPTION =
-  "ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids. Pay 2% only when you win, or $10/month with 0% commission.";
+  `ShopGoodwill sniper that compares auctions to eBay comps and places last-second bids. Pay ${STANDARD_FEE_LABEL} only when you win, or ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% commission.`;
 
 export type Faq = { q: string; a: string };
 
@@ -26,11 +35,11 @@ export const HOME_FAQS: Faq[] = [
   },
   {
     q: "When do you charge?",
-    a: "Standard has no monthly fee. We charge 2% of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is $10/month with 0% commission while the subscription is active.",
+    a: `Standard has no monthly fee. We charge ${STANDARD_FEE_LABEL} of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% commission while the subscription is active.`,
   },
   {
-    q: "How does BuzzerBidder compare to per-snipe desktop tools?",
-    a: "Many desktop snipers charge a flat fee every time a bid fires, win or lose. BuzzerBidder Standard charges 2% only on confirmed wins. Pro is $10/month with 0% success fee. You still pay ShopGoodwill for the item, shipping, and tax separately.",
+    q: "Does BuzzerBidder have a pay-per-win / per-snipe option?",
+    a: `Yes. Standard is pay-as-you-go: ${STANDARD_FEE_LABEL} of the hammer only on confirmed wins, no monthly fee. Pro is optional at ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% success fee. That differs from tools that bill a credit every time a bid fires, including losses. You still pay ShopGoodwill for the item, shipping, and tax separately.`,
   },
   {
     q: "Do you store my ShopGoodwill password?",
@@ -45,7 +54,7 @@ export const HOME_FAQS: Faq[] = [
 export const PRICING_FAQS: Faq[] = [
   {
     q: "What is the difference between Standard and Pro?",
-    a: "Standard has no monthly fee and charges a 2% success fee on the hammer of confirmed wins. Pro is $10 per month and charges 0% success fee while the subscription is active. Both plans include unlimited snipes, eBay comps, and last-second bidding.",
+    a: `Standard has no monthly fee and charges a ${STANDARD_FEE_LABEL} success fee on the hammer of confirmed wins. Pro is $${PRO_MONTHLY_USD} per month and charges ${PRO_SUCCESS_FEE_PCT}% success fee while the subscription is active. Both plans include unlimited snipes, eBay comps, and last-second bidding.`,
   },
   {
     q: "Do I pay if I lose the auction?",
@@ -53,7 +62,7 @@ export const PRICING_FAQS: Faq[] = [
   },
   {
     q: "Why might fees be charged together?",
-    a: "Stripe has a minimum charge amount. Small 2% fees can accrue and be invoiced together once they reach that minimum.",
+    a: `Stripe has a minimum charge amount. Small ${STANDARD_FEE_LABEL} fees can accrue and be invoiced together once they reach that minimum.`,
   },
   {
     q: "Do I need a card on file to snipe?",
@@ -61,6 +70,6 @@ export const PRICING_FAQS: Faq[] = [
   },
   {
     q: "Can I cancel Pro?",
-    a: "Yes. Cancel anytime in the Stripe billing portal from your Account page. After the subscription ends, new wins follow the Standard 2% success fee unless you stay on Pro.",
+    a: `Yes. Cancel anytime in the Stripe billing portal from your Account page. After the subscription ends, new wins follow the Standard ${STANDARD_FEE_LABEL} success fee unless you stay on Pro.`,
   },
 ];

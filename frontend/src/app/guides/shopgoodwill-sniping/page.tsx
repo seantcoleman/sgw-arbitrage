@@ -10,7 +10,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/seo";
 export const metadata: Metadata = {
   title: "How ShopGoodwill Sniping Works",
   description:
-    "How last-second ShopGoodwill bidding works, how to use eBay comps before you bid, and how a 2% win fee compares with paying per snipe.",
+    "How last-second ShopGoodwill bidding works, how to use eBay comps before you bid, and how pay-per-win Standard compares with monthly Pro and other fee models.",
   alternates: { canonical: "/guides/shopgoodwill-sniping" },
   openGraph: {
     title: "How ShopGoodwill sniping works",
@@ -30,8 +30,8 @@ const FAQS: Faq[] = [
     a: "Early bids can raise the visible price and attract other bidders. A last-second bid keeps your max hidden until the auction is almost over.",
   },
   {
-    q: "How is BuzzerBidder priced versus a per-snipe tool?",
-    a: "Some desktop snipers charge a flat amount for every snipe, win or lose. BuzzerBidder Standard charges 2% of the hammer only on confirmed wins. Pro is $10/month with no success fee.",
+    q: "Does BuzzerBidder have a pay-per-win option?",
+    a: "Yes. Standard charges 2% of the hammer only on confirmed wins (no monthly fee). That is our pay-as-you-go plan. Pro is $10/month with no success fee if you prefer a flat bill. Some other tools bill a credit every time a bid fires, including losses.",
   },
   {
     q: "What is ShopGoodwill proxy bidding?",
@@ -209,24 +209,26 @@ export default function SnipingGuidePage() {
         <Link href="/guides/shopgoodwill-auto-bid" className="text-emerald-400 hover:underline">
           auto bid / scheduled sniping
         </Link>
-        , see the dedicated guide. For pricing models, see{" "}
+        , see the dedicated guide.         For pricing models, see{" "}
         <Link
           href="/compare/buzzerbidder-vs-per-snipe-tools"
           className="text-emerald-400 hover:underline"
         >
-          BuzzerBidder vs per-snipe tools
+          sniper pricing models compared
         </Link>
         .
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Pay when you win, not per click</h2>
+      <h2 className="mt-10 text-xl font-bold text-zinc-100">
+        Standard is pay-per-win; Pro is monthly
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        Some sniper tools charge a fixed fee every time they fire a bid, including losses.{" "}
         <Link href="/pricing" className="text-emerald-400 hover:underline">
           BuzzerBidder Standard
         </Link>{" "}
-        charges 2% of the hammer on confirmed wins and nothing when you lose. Fees can batch until
-        they reach Stripe&apos;s minimum charge. Pro is $10 per month with a 0% success fee while
+        is already a per-successful-snipe plan: 2% of the hammer on confirmed wins and nothing when
+        you lose. Fees can batch until they reach Stripe&apos;s minimum charge. Pro is $10 per month
+        with a 0% success fee while
         the subscription is active. ShopGoodwill still invoices you separately for the item,
         shipping, and tax.
       </p>

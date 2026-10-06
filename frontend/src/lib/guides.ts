@@ -1,4 +1,4 @@
-import { SITE_URL } from "@/lib/seo";
+import { PRO_PRICE_SHORT, SITE_URL, STANDARD_FEE_LABEL } from "@/lib/seo";
 
 export type GuideMeta = {
   href: string;
@@ -42,16 +42,61 @@ export const GUIDES: GuideMeta[] = [
     keywords: "best shopgoodwill sniper, shopgoodwill auction sniper",
     priority: 0.85,
   },
+  {
+    href: "/guides/shopgoodwill-bidding-strategy",
+    title: "ShopGoodwill bidding strategy & tips",
+    description:
+      "When to snipe, how to set max bids from comps, and when to walk away — practical ShopGoodwill bidding tips.",
+    keywords: "shopgoodwill bidding tips, shopgoodwill bidding strategy",
+    priority: 0.85,
+  },
 ];
 
 export const COMPARE_PAGES: GuideMeta[] = [
   {
     href: "/compare/buzzerbidder-vs-per-snipe-tools",
-    title: "BuzzerBidder vs per-snipe sniper tools",
-    description:
-      "Pay 2% only when you win (or $10/mo Pro) versus charging a flat fee every time a bid fires — including losses.",
-    keywords: "shopgoodwill sniper pricing, per snipe fee",
+    title: "ShopGoodwill sniper pricing models compared",
+    description: `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL}); Pro is ${PRO_PRICE_SHORT}. Compare with flat per-win fees and tools that bill every bid attempt.`,
+    keywords: "shopgoodwill sniper pricing, pay per win, per snipe fee",
     priority: 0.8,
+  },
+  {
+    href: "/compare/buzzerbidder-vs-thriftsniper",
+    title: "BuzzerBidder vs ThriftSniper",
+    description:
+      "Hosted ShopGoodwill sniping with eBay comps and pay-when-you-win plans versus ThriftSniper’s per-win flat fee — factual comparison.",
+    keywords: "thriftsniper alternative, buzzerbidder vs thriftsniper",
+    priority: 0.8,
+  },
+  {
+    href: "/compare/buzzerbidder-vs-bidpulse",
+    title: "BuzzerBidder vs BidPulse",
+    description:
+      "Compare BuzzerBidder’s win-fee / Pro pricing and eBay comps with BidPulse’s subscription-style ShopGoodwill sniping.",
+    keywords: "bidpulse alternative, buzzerbidder vs bidpulse",
+    priority: 0.8,
+  },
+];
+
+export const ALTERNATIVES_PAGES: GuideMeta[] = [
+  {
+    href: "/alternatives/shopgoodwill-snipers",
+    title: "ShopGoodwill sniper alternatives (2026)",
+    description:
+      "Criteria-led roundup of ShopGoodwill sniping tools — pricing models, hosted vs desktop, comps, and when each fits.",
+    keywords: "shopgoodwill sniper alternatives, thriftsniper alternative",
+    priority: 0.8,
+  },
+];
+
+export const TOOL_PAGES: GuideMeta[] = [
+  {
+    href: "/tools/max-bid-calculator",
+    title: "ShopGoodwill max bid calculator",
+    description:
+      "Free calculator: turn eBay sold comps, fees, shipping, and target profit into a ShopGoodwill max bid.",
+    keywords: "shopgoodwill max bid calculator, ebay profit calculator",
+    priority: 0.85,
   },
 ];
 
@@ -59,8 +104,12 @@ export function absoluteUrl(path: string): string {
   return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+export function allContentPages(): GuideMeta[] {
+  return [...GUIDES, ...COMPARE_PAGES, ...ALTERNATIVES_PAGES, ...TOOL_PAGES];
+}
+
 export function relatedGuides(currentHref: string, limit = 3): GuideMeta[] {
-  return [...GUIDES, ...COMPARE_PAGES]
+  return allContentPages()
     .filter((g) => g.href !== currentHref)
     .slice(0, limit);
 }
