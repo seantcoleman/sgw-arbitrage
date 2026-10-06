@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { PRO_PRICE_SHORT, STANDARD_FEE_LABEL } from "@/lib/seo";
 
 export const ogSize = { width: 1200, height: 630 };
 export const ogContentType = "image/png";
@@ -47,7 +48,7 @@ export function renderOgImage() {
           </div>
         </div>
         <div style={{ fontSize: 28, color: "#a1a1aa" }}>
-          eBay comps · Pay 2% only when you win · or Pro at $10/mo
+          eBay comps · Pay {STANDARD_FEE_LABEL} only when you win · or Pro at {PRO_PRICE_SHORT}
         </div>
       </div>
     ),

@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { COMPARE_PAGES, GUIDES } from "@/lib/guides";
+import { allContentPages } from "@/lib/guides";
 import { SITE_URL } from "@/lib/seo";
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -12,7 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
   ];
 
-  const content = [...GUIDES, ...COMPARE_PAGES].map((page) => ({
+  const content = allContentPages().map((page) => ({
     url: `${SITE_URL}${page.href}`,
     lastModified,
     changeFrequency: "monthly" as const,

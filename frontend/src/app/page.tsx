@@ -1,12 +1,18 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { FaqSection } from "@/components/FaqSection";
-import { HOME_FAQS, SITE_URL } from "@/lib/seo";
+import {
+  HOME_FAQS,
+  PRO_MONTHLY_USD,
+  PRO_SUCCESS_FEE_PCT,
+  SITE_URL,
+  STANDARD_FEE_LABEL,
+  STANDARD_SUCCESS_FEE_PCT,
+} from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "ShopGoodwill Sniper — Last-Second Bids",
-  description:
-    "Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds. Pay 2% only when you win, or go Pro for $10/month.",
+  description: `Queue ShopGoodwill auctions, compare them to eBay comps, and snipe in the final seconds. Pay ${STANDARD_FEE_LABEL} only when you win, or go Pro for $${PRO_MONTHLY_USD}/month.`,
   alternates: { canonical: "/" },
   openGraph: {
     title: "ShopGoodwill Sniper — Last-Second Bids",
@@ -31,14 +37,14 @@ const softwareLd = {
       name: "Standard",
       price: "0",
       priceCurrency: "USD",
-      description: "2% success fee on confirmed wins. No monthly fee.",
+      description: `${STANDARD_SUCCESS_FEE_PCT}% success fee on confirmed wins. No monthly fee.`,
     },
     {
       "@type": "Offer",
       name: "Pro",
-      price: "10",
+      price: String(PRO_MONTHLY_USD),
       priceCurrency: "USD",
-      description: "$10 per month with 0% success fee.",
+      description: `$${PRO_MONTHLY_USD} per month with ${PRO_SUCCESS_FEE_PCT}% success fee.`,
     },
   ],
 };
@@ -162,14 +168,17 @@ export default function LandingPage() {
           Pay only when you win
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-center text-sm text-zinc-500">
-          Standard charges 2% of the hammer on confirmed wins (fees may batch until they reach
-          Stripe&apos;s charge minimum). Pro is $10/month with 0% commission.
+          Standard charges {STANDARD_FEE_LABEL} of the hammer on confirmed wins (fees may batch until
+          they reach Stripe&apos;s charge minimum). Pro is ${PRO_MONTHLY_USD}/month with{" "}
+          {PRO_SUCCESS_FEE_PCT}% commission.
         </p>
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
             <h3 className="font-semibold text-zinc-100">Standard</h3>
-            <p className="mt-1 text-xs text-zinc-500">2% success fee · No monthly fee</p>
-            <p className="mt-4 text-3xl font-black text-zinc-100">2%</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {STANDARD_FEE_LABEL} success fee · No monthly fee
+            </p>
+            <p className="mt-4 text-3xl font-black text-zinc-100">{STANDARD_FEE_LABEL}</p>
             <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">
               <li>Pay only when you win</li>
               <li>Unlimited snipes</li>
@@ -178,12 +187,15 @@ export default function LandingPage() {
           </div>
           <div className="rounded-2xl border border-emerald-800/50 bg-zinc-900 p-6">
             <h3 className="font-semibold text-zinc-100">Pro</h3>
-            <p className="mt-1 text-xs text-zinc-500">0% success fee · Monthly</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {PRO_SUCCESS_FEE_PCT}% success fee · Monthly
+            </p>
             <p className="mt-4 text-3xl font-black text-zinc-100">
-              $10<span className="text-base font-medium text-zinc-500">/mo</span>
+              ${PRO_MONTHLY_USD}
+              <span className="text-base font-medium text-zinc-500">/mo</span>
             </p>
             <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">
-              <li>0% commission on wins</li>
+              <li>{PRO_SUCCESS_FEE_PCT}% commission on wins</li>
               <li>Unlimited snipes</li>
               <li>Cancel anytime</li>
             </ul>

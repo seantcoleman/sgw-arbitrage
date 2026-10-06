@@ -7,7 +7,7 @@ export function RelatedGuides({ currentHref }: { currentHref: string }) {
 
   return (
     <aside className="mt-14 border-t border-zinc-800/80 pt-10">
-      <h2 className="text-lg font-bold text-zinc-100">Related guides</h2>
+      <h2 className="text-lg font-bold text-zinc-100">Related reading</h2>
       <ul className="mt-4 space-y-3">
         {guides.map((guide) => (
           <li key={guide.href}>
