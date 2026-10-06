@@ -150,7 +150,7 @@ export default function AutoBidGuidePage() {
         </Link>
         . Lose → no success fee. Pro: $10/month, 0% success fee while active. Compare that to{" "}
         <Link
-          href="/compare/buzzerbidder-vs-per-snipe-tools"
+          href="/guides/shopgoodwill-sniper-pricing"
           className="text-emerald-400 hover:underline"
         >
           tools that charge every time a bid fires

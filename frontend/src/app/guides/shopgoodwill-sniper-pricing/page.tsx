@@ -17,12 +17,12 @@ import {
 export const metadata: Metadata = {
   title: "ShopGoodwill Sniper Pricing Models Compared",
   description: `BuzzerBidder includes a pay-per-win plan (${STANDARD_FEE_LABEL} on confirmed wins) and Pro at ${PRO_PRICE_LABEL}. Compare those with flat per-win fees and tools that bill every bid attempt.`,
-  alternates: { canonical: "/compare/buzzerbidder-vs-per-snipe-tools" },
+  alternates: { canonical: "/guides/shopgoodwill-sniper-pricing" },
   openGraph: {
     title: "ShopGoodwill sniper pricing models compared",
     description:
       "Pay-per-win, pay-per-attempt, and monthly sniper pricing — including BuzzerBidder Standard and Pro.",
-    url: absoluteUrl("/compare/buzzerbidder-vs-per-snipe-tools"),
+    url: absoluteUrl("/guides/shopgoodwill-sniper-pricing"),
   },
 };
 
@@ -49,7 +49,7 @@ const articleLd = {
     "Pay-per-win, pay-per-attempt, and monthly pricing for ShopGoodwill snipers — including BuzzerBidder Standard and Pro.",
   author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
   publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/compare/buzzerbidder-vs-per-snipe-tools"),
+  mainEntityOfPage: absoluteUrl("/guides/shopgoodwill-sniper-pricing"),
   datePublished: "2026-10-01",
   dateModified: "2026-10-06",
 };
@@ -59,11 +59,12 @@ const breadcrumbLd = {
   "@type": "BreadcrumbList",
   itemListElement: [
     { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+    { "@type": "ListItem", position: 2, name: "Guides", item: absoluteUrl("/guides") },
     {
       "@type": "ListItem",
-      position: 2,
-      name: "Compare",
-      item: absoluteUrl("/compare/buzzerbidder-vs-per-snipe-tools"),
+      position: 3,
+      name: "Sniper pricing",
+      item: absoluteUrl("/guides/shopgoodwill-sniper-pricing"),
     },
   ],
 };
@@ -74,7 +75,12 @@ export default function SniperPricingModelsPage() {
       <JsonLd data={articleLd} />
       <JsonLd data={breadcrumbLd} />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Compare</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
+        <Link href="/guides" className="hover:underline">
+          Guides
+        </Link>
+        {" / Pricing models"}
+      </p>
       <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
         ShopGoodwill sniper pricing models compared
       </h1>
@@ -190,7 +196,7 @@ export default function SniperPricingModelsPage() {
       </p>
 
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/compare/buzzerbidder-vs-per-snipe-tools" />
+      <RelatedGuides currentHref="/guides/shopgoodwill-sniper-pricing" />
     </article>
   );
 }

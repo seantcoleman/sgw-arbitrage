@@ -211,7 +211,7 @@ export default function SnipingGuidePage() {
         </Link>
         , see the dedicated guide.         For pricing models, see{" "}
         <Link
-          href="/compare/buzzerbidder-vs-per-snipe-tools"
+          href="/guides/shopgoodwill-sniper-pricing"
           className="text-emerald-400 hover:underline"
         >
           sniper pricing models compared

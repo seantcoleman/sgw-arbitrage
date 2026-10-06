@@ -31,6 +31,12 @@ const nextConfig: NextConfig = {
         destination: "/watchlist",
         permanent: false,
       },
+      // Retired misleading slug — Standard is already pay-per-win / per successful snipe
+      {
+        source: "/compare/buzzerbidder-vs-per-snipe-tools",
+        destination: "/guides/shopgoodwill-sniper-pricing",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {
