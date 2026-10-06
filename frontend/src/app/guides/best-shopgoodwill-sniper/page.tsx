@@ -92,7 +92,7 @@ export default function BestSniperGuidePage() {
         Prefer pay-per-win (only bill confirmed wins) or a clear monthly cap over tools that charge
         every bid attempt.{" "}
         <Link
-          href="/compare/buzzerbidder-vs-per-snipe-tools"
+          href="/guides/shopgoodwill-sniper-pricing"
           className="text-emerald-400 hover:underline"
         >
           BuzzerBidder Standard

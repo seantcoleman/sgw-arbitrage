@@ -14,7 +14,7 @@ export const GUIDES: GuideMeta[] = [
     href: "/guides/shopgoodwill-sniping",
     title: "How ShopGoodwill sniping works",
     description:
-      "What a last-second bid does, how eBay comps fit in, and how pay-when-you-win pricing compares with per-snipe tools.",
+      "What a last-second bid does, how eBay comps fit in, and how Standard pay-per-win pricing compares with monthly Pro.",
     keywords: "shopgoodwill sniping, shopgoodwill sniper, last-second bid",
     priority: 0.9,
   },
@@ -50,16 +50,16 @@ export const GUIDES: GuideMeta[] = [
     keywords: "shopgoodwill bidding tips, shopgoodwill bidding strategy",
     priority: 0.85,
   },
+  {
+    href: "/guides/shopgoodwill-sniper-pricing",
+    title: "ShopGoodwill sniper pricing models compared",
+    description: `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL}); Pro is ${PRO_PRICE_SHORT}. Compare with flat per-win fees and tools that bill every bid attempt.`,
+    keywords: "shopgoodwill sniper pricing, pay per win, sniper pricing models",
+    priority: 0.85,
+  },
 ];
 
 export const COMPARE_PAGES: GuideMeta[] = [
-  {
-    href: "/compare/buzzerbidder-vs-per-snipe-tools",
-    title: "ShopGoodwill sniper pricing models compared",
-    description: `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL}); Pro is ${PRO_PRICE_SHORT}. Compare with flat per-win fees and tools that bill every bid attempt.`,
-    keywords: "shopgoodwill sniper pricing, pay per win, per snipe fee",
-    priority: 0.8,
-  },
   {
     href: "/compare/buzzerbidder-vs-thriftsniper",
     title: "BuzzerBidder vs ThriftSniper",
