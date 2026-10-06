@@ -209,12 +209,9 @@ export default function SnipingGuidePage() {
         <Link href="/guides/shopgoodwill-auto-bid" className="text-emerald-400 hover:underline">
           auto bid / scheduled sniping
         </Link>
-        , see the dedicated guide.         For pricing models, see{" "}
-        <Link
-          href="/guides/shopgoodwill-sniper-pricing"
-          className="text-emerald-400 hover:underline"
-        >
-          sniper pricing models compared
+        , see the dedicated guide.         For plans and fees, see{" "}
+        <Link href="/pricing" className="text-emerald-400 hover:underline">
+          pricing
         </Link>
         .
       </p>

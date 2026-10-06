@@ -1,4 +1,4 @@
-import { PRO_PRICE_SHORT, SITE_URL, STANDARD_FEE_LABEL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 
 export type GuideMeta = {
   href: string;
@@ -48,13 +48,6 @@ export const GUIDES: GuideMeta[] = [
     description:
       "When to snipe, how to set max bids from comps, and when to walk away — practical ShopGoodwill bidding tips.",
     keywords: "shopgoodwill bidding tips, shopgoodwill bidding strategy",
-    priority: 0.85,
-  },
-  {
-    href: "/guides/shopgoodwill-sniper-pricing",
-    title: "ShopGoodwill sniper pricing models compared",
-    description: `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL}); Pro is ${PRO_PRICE_SHORT}. Compare with flat per-win fees and tools that bill every bid attempt.`,
-    keywords: "shopgoodwill sniper pricing, pay per win, sniper pricing models",
     priority: 0.85,
   },
 ];
