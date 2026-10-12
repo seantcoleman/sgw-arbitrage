@@ -8,6 +8,7 @@ import {
   auctionHasEnded,
   displaySniperStatus,
   isMissedSnipe,
+  watchlistOutcomeStatus,
   isTerminalSniperStatus,
   parseEndTime,
 } from "@/components/listingCard";
@@ -62,8 +63,8 @@ function isActiveWatchlistItem(item: WatchlistItem): boolean {
 function lostDetailLine(item: WatchlistItem): string {
   if (isMissedSnipe(item)) {
     return item.final_price != null
-      ? `No bid placed — sold for $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
-      : `No bid placed — max was $${item.max_bid.toFixed(2)}`;
+      ? `Bid not sent — sold for $${item.final_price.toFixed(2)}. Your max was $${item.max_bid.toFixed(2)}`
+      : `Bid not sent. Your max was $${item.max_bid.toFixed(2)}`;
   }
   return item.final_price != null
     ? `Outbid — won at $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
@@ -129,7 +130,7 @@ const STATUS_LABEL: Record<string, string> = {
   awaiting_payment:   "Pay now",
   shipped:            "Shipped",
   lost:               "Lost",
-  missed:             "No bid placed",
+  missed:             "Bid not sent",
   ended:              "Ended",
   skipped:            "Above max",
   rejected:           "Bid rejected",
@@ -359,9 +360,7 @@ export default function WatchlistPage() {
 
   const renderListRow = (item: WatchlistItem) => {
             const { label: timeLabel, urgency } = countdown(item.end_time);
-            const displayStatus = isMissedSnipe(item)
-              ? "missed"
-              : displaySniperStatus(item.sniper_status, item.end_time);
+            const displayStatus = watchlistOutcomeStatus(item);
             const status = STATUS_STYLE[displayStatus] ?? STATUS_STYLE.scheduled;
             const statusLabel = STATUS_LABEL[displayStatus] ?? displayStatus;
             const timeColor = { urgent: "text-red-400", soon: "text-amber-400", normal: "text-zinc-200" }[urgency];
@@ -861,8 +860,8 @@ export default function WatchlistPage() {
                 <p className="text-zinc-600 text-center py-8">No log entries yet — sniper will write here when it checks favorites or places a bid.</p>
               ) : (
                 logs.map((entry, i) => {
-                  const isError = /error|exception|failed|rejected|skipped|aborted/i.test(entry.line);
-                  const isBid = /bid accepted|placing bid|bid placed|high bidder/i.test(entry.line);
+                  const isError = /error|exception|failed|rejected|skipped|aborted|didn't send|couldn't send|too slow|already ended|never reached/i.test(entry.line);
+                  const isBid = /bid accepted|placing bid|bid placed|high bidder|sending your/i.test(entry.line);
                   const isWarn = /warning|immediately outbid|unclear|already above/i.test(entry.line);
                   const color = isError ? "text-red-400" : isBid ? "text-green-400" : isWarn ? "text-amber-400" : "text-zinc-500";
                   return (

@@ -22,6 +22,26 @@ from requests.models import PreparedRequest, Response
 _SHIPPING_COST_PATTERN = re.compile(r"Shipping: \$(\d+\.\d+) \(.*\)<\/span>")
 _SGW_BUYERAPI_DOMAIN = "buyerapi.shopgoodwill.com"
 
+
+def bidder_is_us(winner: Optional[str], username: str) -> bool:
+    """Match a ShopGoodwill bidder string to our username.
+
+    Masks sometimes keep the full length (s********n) and sometimes do not
+    (SpecGood is shown as S****d). First and last characters are the signal
+    SGW still exposes.
+    """
+    if not winner or not username:
+        return False
+    w, u = winner.strip().lower(), username.strip().lower()
+    if not w or not u or w == u:
+        return w == u and bool(w)
+    if "*" not in w or w[0] != u[0] or w[-1] != u[-1]:
+        return False
+    if len(w) == len(u):
+        return True
+    middle = w[1:-1]
+    return bool(middle) and set(middle) <= {"*"}
+
 # Connect timeout, read timeout — never hang forever on SGW (critical for snipes)
 _DEFAULT_TIMEOUT = (5, 20)
 
@@ -333,14 +353,21 @@ class Shopgoodwill:
             {"id": 468, "name": "Wedding"},
         ]
 
-    def get_item_info(self, item_id: int) -> Dict:
+    def get_item_info(self, item_id: int, timeout: Optional[Tuple[float, float]] = None) -> Dict:
+        kwargs: Dict = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
         return self.shopgoodwill_session.get(
-            f"{Shopgoodwill.API_ROOT}/itemDetail/GetItemDetailModelByItemId/{item_id}"
+            f"{Shopgoodwill.API_ROOT}/itemDetail/GetItemDetailModelByItemId/{item_id}",
+            **kwargs,
         ).json()
 
-    def get_item_bid_info(self, item_id: int) -> Dict:
+    def get_item_bid_info(self, item_id: int, timeout: Optional[Tuple[float, float]] = None) -> Dict:
+        kwargs: Dict = {"params": {"itemId": item_id}}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
         return self.shopgoodwill_session.get(
-            f"{Shopgoodwill.API_ROOT}/itemBid/ShowBidModal", params={"itemId": item_id}
+            f"{Shopgoodwill.API_ROOT}/itemBid/ShowBidModal", **kwargs
         ).json()
 
     @requires_auth

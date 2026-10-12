@@ -20,7 +20,7 @@ import os
 import socket
 import time
 from json.decoder import JSONDecodeError
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import parsedatetime
@@ -131,14 +131,67 @@ class BidSniper:
         db.log_snipe_activity((job or {}).get("user_id"), line, item_id)
 
     @staticmethod
-    def _outcome_message(outcome: Optional[str], title: str) -> str:
-        return {
-            "accepted": f"Bid placed on '{title}'",
-            "outbid": f"Outbid on '{title}' — someone had a higher max",
-            "rejected": f"Bid rejected by ShopGoodwill for '{title}'",
-            "skipped": f"Skipped '{title}' — current price is above your max",
-            "unclear": f"Bid submitted for '{title}', outcome unconfirmed",
-        }.get(outcome or "", f"No bid placed for '{title}'")
+    def _bid_phrase(max_bid: Optional[float]) -> str:
+        if max_bid is None:
+            return "your bid"
+        return f"your ${max_bid:.2f} bid"
+
+    @staticmethod
+    def _sgw_says_closed(detail: str) -> bool:
+        msg = (detail or "").lower()
+        return any(
+            phrase in msg
+            for phrase in (
+                "auction has closed",
+                "auction ended",
+                "auction has ended",
+                "auction is closed",
+                "bidding has ended",
+                "bidding is closed",
+                "no longer accepting",
+            )
+        )
+
+    @staticmethod
+    def _outcome_message(
+        outcome: Optional[str],
+        title: str,
+        max_bid: Optional[float] = None,
+        detail: str = "",
+    ) -> str:
+        """User-facing result line. Empty string means 'don't log this'."""
+        bid = BidSniper._bid_phrase(max_bid)
+        if outcome == "duplicate":
+            return ""
+        if outcome == "accepted":
+            return f"Bid placed on '{title}'"
+        if outcome == "outbid":
+            return f"Outbid on '{title}' — someone had a higher max"
+        if outcome == "skipped":
+            return f"Skipped '{title}' — current price is above your max"
+        if outcome == "unclear":
+            return f"Bid submitted for '{title}', but ShopGoodwill didn't confirm it"
+        if outcome == "too_late":
+            return (
+                f"Didn't send {bid} on '{title}' — "
+                "ShopGoodwill was too slow, and the auction had already ended"
+            )
+        if outcome == "rejected":
+            if BidSniper._sgw_says_closed(detail):
+                return (
+                    f"ShopGoodwill rejected {bid} on '{title}' — "
+                    "the auction had already ended"
+                )
+            reason = (detail or "").strip()
+            if reason:
+                return f"ShopGoodwill rejected {bid} on '{title}' — {reason[:180]}"
+            return f"ShopGoodwill rejected {bid} on '{title}'"
+        if outcome == "aborted":
+            reason = (detail or "the bid never reached ShopGoodwill").strip()
+            return f"Couldn't send {bid} on '{title}' — {reason[:180]}"
+        if outcome is None:
+            return f"Couldn't send {bid} on '{title}' — ShopGoodwill gave no answer"
+        return f"Couldn't send {bid} on '{title}'"
 
     @staticmethod
     def _is_auth_failure(exc: BaseException) -> bool:
@@ -334,21 +387,73 @@ class BidSniper:
         title = favorite["title"] if favorite else str(item_id)
         self.logger.info(f"Upcoming snipe for '{title}' in {when_label}")
 
-    async def place_bid(self, item_id: int, job: Optional[Dict] = None) -> Optional[str]:
+    def _end_datetime(self, end_time_str: Optional[str]) -> Optional[datetime.datetime]:
+        if not end_time_str:
+            return None
+        try:
+            return self._parse_end_time(end_time_str)
+        except Exception:
+            return None
+
+    def _seconds_until(self, end_dt: Optional[datetime.datetime]) -> Optional[float]:
+        if end_dt is None:
+            return None
+        return (end_dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+
+    def _prepare_snipe(self, job: Dict, item_id: int) -> Dict[str, Any]:
+        """Log in and resolve seller/price before the final wait.
+
+        ShopGoodwill lookups use a 20s read timeout. Doing them at fire time
+        burned John's 5-second lead and the bid went out after the auction ended.
+        """
+        client = self._client_for_job(job)
+        ctx: Dict[str, Any] = {
+            "client": client,
+            "seller_id": None,
+            "current_price": None,
+            "minimum_bid": None,
+        }
+        try:
+            bid_info = client.get_item_bid_info(item_id, timeout=(5, 8))
+            ctx["current_price"] = float(bid_info.get("currentPrice") or 0)
+            ctx["minimum_bid"] = float(bid_info.get("minimumBid") or ctx["current_price"] or 0)
+            ctx["seller_id"] = bid_info.get("sellerId")
+        except Exception as e:
+            self.logger.warning(f"Prep bid info failed for {item_id}: {e}")
+        if ctx["seller_id"] is None:
+            try:
+                info = client.get_item_info(item_id, timeout=(5, 8))
+                ctx["seller_id"] = info.get("sellerId")
+            except Exception as e:
+                self.logger.warning(f"Prep seller lookup failed for {item_id}: {e}")
+        return ctx
+
+    async def place_bid(
+        self,
+        item_id: int,
+        job: Optional[Dict] = None,
+        prepared: Optional[Dict] = None,
+    ) -> Tuple[str, str]:
         """
         Place a snipe bid using watchlist/job max_bid (favorites optional).
-        Returns outcome: accepted|outbid|rejected|skipped|aborted|None
+        Returns (outcome, detail).
+        outcome: accepted|outbid|rejected|skipped|aborted|too_late|unclear|duplicate|None
         """
         # Hard idempotency: at most one in-flight / completed bid attempt per item
         if item_id in self.bids_placed:
             self.logger.info(f"Skipping duplicate bid attempt for item {item_id}")
-            return "aborted"
+            return "duplicate", ""
         self.bids_placed.add(item_id)
 
         watch = None
+        owner = (job or {}).get("user_id")
         try:
             watch = next(
-                (dict(w) for w in db.get_watchlist() if int(w["item_id"]) == int(item_id)),
+                (
+                    dict(w)
+                    for w in db.get_watchlist(owner)
+                    if int(w["item_id"]) == int(item_id)
+                ),
                 None,
             )
         except Exception:
@@ -370,31 +475,60 @@ class BidSniper:
         if max_bid is None:
             self.logger.error(f"Snipe aborted for '{title}': no max_bid on job/watchlist")
             self.bids_placed.discard(item_id)
-            return "aborted"
+            return "aborted", "no max bid was saved"
 
-        seller_id = None
-        current_price = None
-        minimum_bid = None
-        try:
-            bid_info = self.shopgoodwill_client.get_item_bid_info(item_id)
-            current_price = float(bid_info.get("currentPrice") or 0)
-            minimum_bid = float(bid_info.get("minimumBid") or current_price or 0)
-            seller_id = bid_info.get("sellerId")
-        except Exception as e:
-            self.logger.warning(
-                f"Could not fetch live bid info for '{title}' before snipe: {e}"
+        end_time_str = (job or {}).get("end_time") or (watch or {}).get("end_time") or ""
+        end_dt = self._end_datetime(end_time_str)
+        seller_id = (prepared or {}).get("seller_id")
+        current_price = (prepared or {}).get("current_price")
+        minimum_bid = (prepared or {}).get("minimum_bid")
+
+        def seconds_left() -> Optional[float]:
+            return self._seconds_until(end_dt)
+
+        left = seconds_left()
+        if left is not None and left < 0:
+            self.logger.error(
+                f"Bid not sent for '{title}' — auction already ended "
+                f"(max ${max_bid:.2f})"
             )
-            try:
-                current_price = float((watch or {}).get("current_bid") or 0) or None
-            except (TypeError, ValueError):
-                current_price = None
+            return "too_late", ""
 
-        if seller_id is None:
+        # Refresh the price only when a slow lookup cannot push us past the end.
+        # A hung ShopGoodwill call here is what made the suit bid land a minute late.
+        if seller_id is None or left is None or left > 4:
+            lookup_timeout = (2, 2) if (left is not None and left < 15) else (5, 8)
             try:
-                info = self.shopgoodwill_client.get_item_info(item_id)
+                bid_info = self.shopgoodwill_client.get_item_bid_info(
+                    item_id, timeout=lookup_timeout
+                )
+                current_price = float(bid_info.get("currentPrice") or 0)
+                minimum_bid = float(bid_info.get("minimumBid") or current_price or 0)
+                seller_id = bid_info.get("sellerId") or seller_id
+            except Exception as e:
+                self.logger.warning(
+                    f"Could not fetch live bid info for '{title}' before snipe: {e}"
+                )
+                if current_price is None:
+                    try:
+                        current_price = float((watch or {}).get("current_bid") or 0) or None
+                    except (TypeError, ValueError):
+                        current_price = None
+
+        left = seconds_left()
+        if left is not None and left < 0:
+            return "too_late", ""
+
+        if seller_id is None and (left is None or left > 1):
+            try:
+                info = self.shopgoodwill_client.get_item_info(item_id, timeout=(2, 2))
                 seller_id = info.get("sellerId")
             except Exception as e:
                 self.logger.warning(f"Could not fetch sellerId for '{title}': {e}")
+
+        left = seconds_left()
+        if left is not None and left < 0:
+            return "too_late", ""
 
         if current_price is not None or minimum_bid is not None:
             cur_s = f"${current_price:.2f}" if current_price is not None else "?"
@@ -414,11 +548,13 @@ class BidSniper:
                 db.update_watchlist_status(item_id, "skipped")
             except Exception:
                 pass
-            return "skipped"
+            return "skipped", ""
 
-        if self.config.get("friend_list", list()):
+        # Friend-list lookup is another slow page fetch. Skip it when the
+        # auction is about to end so the bid itself still goes out.
+        if self.config.get("friend_list", list()) and (left is None or left > 8):
             try:
-                item_info = self.shopgoodwill_client.get_item_info(item_id)
+                item_info = self.shopgoodwill_client.get_item_info(item_id, timeout=(2, 3))
                 bid_summary = item_info["bidHistory"].get("bidSummary", list())
                 if bid_summary:
                     bidder_name = bid_summary[0]["bidderName"]
@@ -427,23 +563,28 @@ class BidSniper:
                             f"Canceling bid due to friendship for item '{title}'"
                         )
                         self.bids_placed.discard(item_id)
-                        return "aborted"
+                        return "aborted", "high bidder is on your friend list"
             except BaseException as be:
                 self.logger.error(
                     f"{type(be).__name__} getting info for item ID '{item_id}' - continuing"
                 )
 
+        left = seconds_left()
+        if left is not None and left < 0:
+            return "too_late", ""
+
+        if seller_id is None:
+            self.logger.error(f"Bid aborted for '{title}': missing sellerId")
+            self.bids_placed.discard(item_id)
+            return "aborted", "ShopGoodwill didn't say which seller to bid with"
+
+        self._user_log(job, f"Sending your ${max_bid:.2f} bid on '{title}'", item_id)
         self.logger.warning(
             f"{self.dry_run_msg}Placing bid on '{title}' for ${max_bid:.2f}"
         )
 
         if self.dry_run:
-            return "accepted"
-
-        if seller_id is None:
-            self.logger.error(f"Bid aborted for '{title}': missing sellerId")
-            self.bids_placed.discard(item_id)
-            return "aborted"
+            return "accepted", ""
 
         try:
             bid_res = self.bid_shopgoodwill_client.place_bid(
@@ -452,7 +593,7 @@ class BidSniper:
         except (Timeout, RequestException, HTTPError) as he:
             self.bids_placed.discard(item_id)
             self.logger.error(f"Bid failed on '{title}' - {type(he).__name__}: {he}")
-            return "aborted"
+            return "aborted", "ShopGoodwill didn't respond"
 
         outcome, detail = shopgoodwill.Shopgoodwill.interpret_place_bid_response(bid_res)
         short = (detail[:160] + "…") if len(detail) > 160 else detail
@@ -475,27 +616,27 @@ class BidSniper:
                 db.update_watchlist_status(item_id, "rejected")
             except Exception as e:
                 self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
-            return "rejected"
+            return "rejected", detail
         else:
             self.logger.warning(
                 f"Bid response unclear for '{title}' at max ${max_bid:.2f}"
                 + (f" — {short}" if short else "")
             )
+            outcome = "unclear"
 
         try:
             db.update_watchlist_status(item_id, "bid_placed")
         except Exception as e:
             self.logger.error(f"Failed to update watchlist status for {item_id}: {e}")
 
-        end_time_str = (job or {}).get("end_time") or (watch or {}).get("end_time") or ""
-        if end_time_str:
+        if end_dt is not None:
             try:
-                end_dt = self._parse_end_time(end_time_str)
                 check_dt = end_dt + datetime.timedelta(minutes=2)
-                owner = (job or {}).get("user_id")
                 self.event_loop.create_task(
                     self.schedule_task(
-                        lambda i=item_id, u=owner: self.check_win(i, user_id=u),
+                        lambda i=item_id, u=owner, j=job: self.check_win(
+                            i, user_id=u, job=j
+                        ),
                         check_dt,
                         [self.task_err_handler],
                     )
@@ -503,7 +644,7 @@ class BidSniper:
             except Exception as e:
                 self.logger.error(f"Could not schedule win check for {item_id}: {e}")
 
-        return outcome
+        return outcome, detail
 
     def _client_for_job(self, job: Optional[Dict] = None):
         """Resolve bid client for a job's sgw_account_id with session caching."""
@@ -565,14 +706,16 @@ class BidSniper:
         except Exception:
             pass
 
-        # Pre-warm SGW session ~60s before fire when we claimed early
+        # Log in and look up the seller BEFORE sleeping out the lead time.
+        # The old path only did that when more than 65s remained, so a job armed
+        # at 59s signed in at fire time and the bid left after the auction ended.
+        prepared = None
         snipe_at = db.parse_end_time_utc(job.get("snipe_at"))
         if snipe_at is not None:
             delay = (snipe_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
-            if delay > 65:
-                await asyncio.sleep(delay - 60)
+            if delay > 5:
                 try:
-                    self._client_for_job(job)
+                    prepared = self._prepare_snipe(job, item_id)
                     self.logger.info(f"Pre-warmed SGW session for job {job_id}")
                 except Exception as e:
                     self.logger.warning(f"Pre-warm failed for job {job_id}: {e}")
@@ -587,11 +730,18 @@ class BidSniper:
 
         # Swap bid client for this account for the duration of place_bid
         prev = self.bid_shopgoodwill_client
-        self.bid_shopgoodwill_client = self._client_for_job(job)
-        self.shopgoodwill_client = self.bid_shopgoodwill_client
+        client = (prepared or {}).get("client") or self._client_for_job(job)
+        self.bid_shopgoodwill_client = client
+        self.shopgoodwill_client = client
         try:
-            outcome = await self.place_bid(item_id, job=job)
-            self._user_log(job, self._outcome_message(outcome, title), item_id)
+            outcome, detail = await self.place_bid(item_id, job=job, prepared=prepared)
+            try:
+                max_bid = float(job["max_bid"]) if job.get("max_bid") is not None else None
+            except (TypeError, ValueError):
+                max_bid = None
+            message = self._outcome_message(outcome, title, max_bid, detail)
+            if message:
+                self._user_log(job, message, item_id)
             if outcome in ("accepted", "outbid", "unclear"):
                 db.mark_snipe_job_fired(job_id)
                 db.complete_snipe_job(job_id, status="done")
@@ -601,7 +751,28 @@ class BidSniper:
             elif outcome == "skipped":
                 db.complete_snipe_job(job_id, status="done", last_error="skipped: above max")
             elif outcome == "rejected":
-                db.complete_snipe_job(job_id, status="done", last_error="rejected by SGW")
+                db.complete_snipe_job(
+                    job_id, status="done", last_error=(detail or "rejected by SGW")[:300]
+                )
+            elif outcome == "too_late":
+                db.complete_snipe_job(
+                    job_id,
+                    status="done",
+                    last_error="auction ended before the bid was sent",
+                )
+            elif outcome == "duplicate":
+                db.complete_snipe_job(job_id, status="done", last_error="duplicate bid attempt")
+            elif (
+                (remaining := self._seconds_until(self._end_datetime(job.get("end_time"))))
+                is not None
+                and remaining <= 0
+            ):
+                # Retrying after the close only produces a second "rejected" line.
+                db.complete_snipe_job(
+                    job_id,
+                    status="done",
+                    last_error=(detail or "aborted after the auction ended")[:300],
+                )
             else:
                 attempts = int(job.get("attempt_count") or 1)
                 self.bids_placed.discard(item_id)
@@ -616,25 +787,38 @@ class BidSniper:
             self._user_log(job, f"Snipe failed for '{title}': {e}"[:300], item_id)
             attempts = int(job.get("attempt_count") or 1)
             self.bids_placed.discard(item_id)
+            remaining = self._seconds_until(self._end_datetime(job.get("end_time")))
+            ended = remaining is not None and remaining <= 0
             db.release_snipe_job(
                 job_id,
                 last_error=str(e)[:300],
-                retry=attempts < 3,
+                retry=attempts < 3 and not ended,
             )
         finally:
             self.bid_shopgoodwill_client = prev
             self.shopgoodwill_client = prev
             self.in_flight_jobs.discard(job_id)
 
-    async def check_win(self, item_id: int, user_id: Optional[str] = None) -> None:
+    async def check_win(
+        self,
+        item_id: int,
+        user_id: Optional[str] = None,
+        job: Optional[Dict] = None,
+    ) -> None:
         """Check SGW ~2 min after auction end to see if we won."""
         try:
+            client = (
+                self._client_for_job(job)
+                if job and job.get("sgw_account_id")
+                else self.shopgoodwill_client
+            )
             username = (
-                os.getenv("SGW_USERNAME")
+                getattr(client, "username", "")
+                or os.getenv("SGW_USERNAME")
                 or self.config.get("auth_info", {}).get("username")
                 or ""
             ).lower()
-            info = self.shopgoodwill_client.get_item_info(item_id)
+            info = client.get_item_info(item_id)
 
             our_max = None
             try:
@@ -659,7 +843,7 @@ class BidSniper:
             won = False
             try:
                 open_ids = {
-                    int(o["itemId"]) for o in self.shopgoodwill_client.get_open_orders()
+                    int(o["itemId"]) for o in client.get_open_orders()
                 }
                 if item_id in open_ids:
                     won = True
@@ -670,16 +854,7 @@ class BidSniper:
             if not won:
                 bid_summary = info.get("bidHistory", {}).get("bidSummary", [])
                 winner = bid_summary[0]["bidderName"] if bid_summary else None
-                w = (winner or "").strip().lower()
-                if w and username and (
-                    w == username
-                    or (
-                        "*" in w
-                        and len(w) == len(username)
-                        and w[0] == username[0]
-                        and w[-1] == username[-1]
-                    )
-                ):
+                if shopgoodwill.bidder_is_us(winner, username):
                     won = True
 
             status = "won" if won else "lost"
@@ -688,16 +863,7 @@ class BidSniper:
                 we_bid = False
                 try:
                     for b in info.get("bidHistory", {}).get("bidSummary", []) or []:
-                        bn = (b.get("bidderName") or "").strip().lower()
-                        if bn and username and (
-                            bn == username
-                            or (
-                                "*" in bn
-                                and len(bn) == len(username)
-                                and bn[0] == username[0]
-                                and bn[-1] == username[-1]
-                            )
-                        ):
+                        if shopgoodwill.bidder_is_us(b.get("bidderName"), username):
                             we_bid = True
                             break
                 except Exception:
@@ -708,16 +874,21 @@ class BidSniper:
             db.update_watchlist_result(item_id, status, final_price, final_shipping)
 
             title = info.get("title", item_id)
+            sold = f" — sold for ${final_price:.2f}" if final_price is not None else ""
+            your_max = f" (your max was ${our_max:.2f})" if our_max else ""
             db.log_snipe_activity(
                 user_id,
                 {
                     "won": f"Won '{title}'"
                     + (f" at ${final_price:.2f}" if final_price is not None else ""),
-                    "missed": f"Missed '{title}' — no bid was placed",
+                    "missed": (
+                        f"Missed '{title}' — your bid never reached ShopGoodwill"
+                        + sold
+                        + your_max
+                    ),
                 }.get(
                     status,
-                    f"Lost '{title}'"
-                    + (f" — sold for ${final_price:.2f}" if final_price is not None else ""),
+                    f"Lost '{title}'" + sold + your_max,
                 ),
                 item_id,
             )

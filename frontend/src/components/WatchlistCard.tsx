@@ -14,6 +14,7 @@ import {
   auctionHasEnded,
   displaySniperStatus,
   isMissedSnipe,
+  watchlistOutcomeStatus,
   isTerminalSniperStatus,
   timeUntil,
 } from "@/components/listingCard";
@@ -47,7 +48,7 @@ const STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Pay now",
   shipped: "Shipped",
   lost: "Lost",
-  missed: "No bid placed",
+  missed: "Bid not sent",
   ended: "Ended",
   skipped: "Above max",
   rejected: "Bid rejected",
@@ -240,8 +241,7 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
   const [rechecking, setRechecking] = useState(false);
 
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
-  const rawStatus = displaySniperStatus(item.sniper_status, item.end_time);
-  const status = isMissedSnipe(item) ? "missed" : rawStatus;
+  const status = watchlistOutcomeStatus(item);
   const terminal = isTerminalSniperStatus(status);
   const statusLabel = STATUS_LABEL[status] ?? status;
   const statusTone = STATUS_TONE[status] ?? "blue";
@@ -413,8 +413,8 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
           <div className="text-xs text-zinc-500 rounded-xl bg-zinc-800/50 px-3 py-2.5">
             {isMissedSnipe(item)
               ? (item.final_price != null
-                  ? `No bid placed — sold for $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
-                  : `No bid placed — max was $${item.max_bid.toFixed(2)}`)
+                  ? `Bid not sent — sold for $${item.final_price.toFixed(2)}. Your max was $${item.max_bid.toFixed(2)}`
+                  : `Bid not sent. Your max was $${item.max_bid.toFixed(2)}`)
               : (item.final_price != null
                   ? `Outbid — won at $${item.final_price.toFixed(2)} · max was $${item.max_bid.toFixed(2)}`
                   : `Outbid — max was $${item.max_bid.toFixed(2)}`)}

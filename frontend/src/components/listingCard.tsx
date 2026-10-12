@@ -47,17 +47,35 @@ export function displaySniperStatus(status: string, endTime: string | null): str
   return s || status;
 }
 
-/** True when we lost without ever landing a bid (final ≤ max is a strong signal). */
+/** True when the bid never reached ShopGoodwill and the close was still within max. */
 export function isMissedSnipe(item: {
   sniper_status: string;
   final_price?: number | null;
   max_bid?: number | null;
 }): boolean {
   const status = (item.sniper_status || "").toLowerCase();
-  if (status === "missed") return true;
+  const underMax =
+    item.final_price == null ||
+    item.max_bid == null ||
+    item.final_price <= item.max_bid + 1e-9;
+  if (status === "missed") return underMax;
   if (status !== "lost") return false;
   if (item.final_price == null || item.max_bid == null) return false;
   return item.final_price <= item.max_bid + 1e-9;
+}
+
+/** Badge status for an ended row. A "missed" row that closed above max is a loss. */
+export function watchlistOutcomeStatus(
+  item: {
+    sniper_status: string;
+    end_time?: string | null;
+    final_price?: number | null;
+    max_bid?: number | null;
+  },
+): string {
+  if (isMissedSnipe(item)) return "missed";
+  if ((item.sniper_status || "").toLowerCase() === "missed") return "lost";
+  return displaySniperStatus(item.sniper_status, item.end_time ?? null);
 }
 
 export function timeUntil(endTime: string | null): { label: string; urgency: Urgency } {

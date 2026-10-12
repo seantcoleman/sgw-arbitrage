@@ -798,15 +798,8 @@ def _watchlist_item_ended(item: dict) -> Optional[bool]:
 
 
 def _bidder_is_us(winner: Optional[str], username: str) -> bool:
-    """Match SGW high-bidder strings, including masked names like s********n."""
-    if not winner or not username:
-        return False
-    w, u = winner.strip().lower(), username.strip().lower()
-    if w == u:
-        return True
-    if "*" in w and len(w) == len(u) and w[0] == u[0] and w[-1] == u[-1]:
-        return True
-    return False
+    """Match SGW high-bidder strings, including short masks like S****d."""
+    return shopgoodwill.bidder_is_us(winner, username)
 
 
 def _check_bid_results() -> None:
@@ -949,16 +942,23 @@ def _check_bid_results_for_owner(user_id: Optional[str]) -> None:
                 )
             elif ended is True and (info.get("isClosed") or winner):
                 we_bid = any(_bidder_is_us(b.get("bidderName"), username) for b in bid_summary)
-                status = "lost" if we_bid else "missed"
-                # Also treat prior bid_placed as evidence we attempted a bid
-                if (item.get("sniper_status") or "").lower() == "bid_placed":
+                prior = (item.get("sniper_status") or "").lower()
+                # A real bid or an intentional skip should keep its own label.
+                # Relabeling those as "missed" made the card say no bid was placed.
+                if we_bid or prior == "bid_placed":
                     status = "lost"
+                elif prior == "skipped":
+                    status = "skipped"
+                elif prior == "rejected":
+                    status = "rejected"
+                else:
+                    status = "missed"
                 db.update_watchlist_result(item_id, status, final_price, final_shipping)
                 our_max = item.get("max_bid")
                 max_bit = f", our max ${float(our_max):.2f}" if our_max else ""
                 if status == "missed":
                     logger.error(
-                        f"MISSED snipe: '{item.get('title', item_id)}' — no bid placed "
+                        f"MISSED snipe: '{item.get('title', item_id)}' — bid never reached ShopGoodwill "
                         f"(final ${final_price:.2f}{max_bit}, winner: {winner or 'unknown'})"
                     )
                 else:
