@@ -81,7 +81,7 @@ export default function AboutPage() {
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Guides and comparisons are written by the {SITE_NAME} team. We disclose that we build the
         product. We do not invent competitor pricing — tables are dated and you should verify on
-        their sites. Pages show published and updated dates when content changes.
+        their sites. Pages show an Updated date when content changes.
       </p>
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">Learn more</h2>

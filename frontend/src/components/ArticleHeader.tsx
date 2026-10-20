@@ -20,9 +20,7 @@ export function ArticleHeader({
   title,
   children,
 }: Props) {
-  const published = formatGuideDate(meta.datePublished);
   const updated = formatGuideDate(meta.dateModified);
-  const showPublished = meta.datePublished !== meta.dateModified;
 
   return (
     <header>
@@ -46,17 +44,7 @@ export function ArticleHeader({
         <span className="text-zinc-700" aria-hidden>
           ·
         </span>
-        {showPublished ? (
-          <>
-            <time dateTime={meta.datePublished}>Published {published}</time>
-            <span className="text-zinc-700" aria-hidden>
-              ·
-            </span>
-            <time dateTime={meta.dateModified}>Updated {updated}</time>
-          </>
-        ) : (
-          <time dateTime={meta.dateModified}>Updated {updated}</time>
-        )}
+        <time dateTime={meta.dateModified}>Updated: {updated}</time>
       </div>
       {children ? <div className="mt-4 text-base text-zinc-400">{children}</div> : null}
     </header>
