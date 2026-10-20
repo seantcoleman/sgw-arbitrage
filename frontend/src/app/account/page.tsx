@@ -9,6 +9,7 @@ import {
   MeResponse,
   verifySgwAccount,
 } from "@/lib/api";
+import { STANDARD_BILL_AT_USD } from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 async function openPortal() {
@@ -103,7 +104,8 @@ export default function AccountPage() {
         <div className="px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-100">Billing</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Standard: 2% on confirmed wins. Pro: $10/mo with 0% commission.
+            Standard: 2% on confirmed wins, billed on the 1st or at ${STANDARD_BILL_AT_USD}. Pro:
+            $10/mo with 0% commission.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3 text-sm">
@@ -115,7 +117,7 @@ export default function AccountPage() {
               <div className="text-xs text-zinc-500 mt-0.5">
                 {isPro
                   ? "0% success fee · monthly subscription"
-                  : "2% of hammer on confirmed wins · no monthly fee"}
+                  : `2% of hammer on confirmed wins · billed on the 1st or at $${STANDARD_BILL_AT_USD}`}
               </div>
               {billing?.billing_blocked && (
                 <div className="text-xs text-red-400 mt-1">

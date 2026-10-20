@@ -9,6 +9,7 @@ import {
   PRICING_FAQS,
   PRO_MONTHLY_USD,
   PRO_SUCCESS_FEE_PCT,
+  STANDARD_BILL_AT_USD,
   STANDARD_FEE_LABEL,
 } from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
@@ -82,9 +83,9 @@ export default function PricingPage() {
           Pay only when you win.
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-sm sm:text-base text-zinc-500">
-          Standard has no monthly fee — we charge {STANDARD_FEE_LABEL} of the hammer on confirmed
-          wins. Or go Pro for ${PRO_MONTHLY_USD}/month and {PRO_SUCCESS_FEE_PCT}% commission. Small
-          fees may batch until they meet Stripe&apos;s charge minimum.
+          Standard has no monthly subscription — we charge {STANDARD_FEE_LABEL} of the hammer on
+          confirmed wins, billed on the 1st or when unpaid fees reach ${STANDARD_BILL_AT_USD}. Or go
+          Pro for ${PRO_MONTHLY_USD}/month and {PRO_SUCCESS_FEE_PCT}% commission.
         </p>
         {signedIn && billing && (
           <p className="mx-auto mt-4 max-w-lg text-sm text-zinc-400">
@@ -128,7 +129,7 @@ export default function PricingPage() {
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 sm:p-8 flex flex-col">
           <h2 className="text-xl font-bold text-zinc-100">Standard</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {STANDARD_FEE_LABEL} success fee · No monthly fee
+            {STANDARD_FEE_LABEL} success fee · Billed on the 1st or at ${STANDARD_BILL_AT_USD}
           </p>
           <p className="mt-6 text-4xl font-black text-zinc-100">
             {STANDARD_FEE_LABEL}
@@ -141,6 +142,7 @@ export default function PricingPage() {
             <li>✓ Add from ShopGoodwill Favorites</li>
             <li>✓ Automatic last-second bids</li>
             <li>✓ No win, no success fee</li>
+            <li>✓ Billed on the 1st, or at ${STANDARD_BILL_AT_USD}</li>
           </ul>
           <button
             type="button"
@@ -194,8 +196,9 @@ export default function PricingPage() {
       <FaqSection faqs={PRICING_FAQS} />
 
       <p className="text-center text-xs text-zinc-600 pb-12 max-w-xl mx-auto">
-        Standard bills a {STANDARD_FEE_LABEL} success fee on confirmed wins (fees may batch for
-        Stripe&apos;s minimum). Pro is a flat monthly fee with {PRO_SUCCESS_FEE_PCT}% commission. A
+        Standard bills a {STANDARD_FEE_LABEL} success fee on confirmed wins on the 1st, or sooner
+        if unpaid fees reach ${STANDARD_BILL_AT_USD}. Pro is a flat monthly fee with{" "}
+        {PRO_SUCCESS_FEE_PCT}% commission. A
         saved card or active Pro plan is required to queue snipes.{" "}
         <Link href="/terms" className="text-zinc-500 hover:text-zinc-300">
           Terms

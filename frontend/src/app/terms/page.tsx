@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { STANDARD_BILL_AT_USD } from "@/lib/seo";
 
 export const metadata = {
   title: "Terms of Service",
@@ -13,7 +14,7 @@ export default function TermsPage() {
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">
         Terms of Service
       </h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: September 28, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: October 20, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -56,12 +57,12 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold text-zinc-100 mb-2">4. Fees and billing</h2>
           <ul className="list-disc pl-5 space-y-2">
             <li>
-              <strong className="text-zinc-200">Standard:</strong> no monthly fee. We charge a{" "}
+              <strong className="text-zinc-200">Standard:</strong> no monthly subscription. We charge a{" "}
               <strong className="text-zinc-200">2% success fee</strong> on the hammer price
               (winning bid amount) of auctions you win through the Service, based on confirmed
               ShopGoodwill order outcomes. If you do not win, you owe no success fee for that
-              auction. Small fees may accrue and be charged together when they meet Stripe&apos;s
-              minimum charge amount.
+              auction. Accrued fees are charged on the 1st of each month (Pacific time), or sooner
+              if unpaid fees reach ${STANDARD_BILL_AT_USD}. Amounts below $0.50 roll into a later bill.
             </li>
             <li>
               <strong className="text-zinc-200">Pro:</strong> a monthly subscription (currently

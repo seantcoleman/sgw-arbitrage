@@ -6,6 +6,7 @@ import {
   PRO_MONTHLY_USD,
   PRO_SUCCESS_FEE_PCT,
   SITE_URL,
+  STANDARD_BILL_AT_USD,
   STANDARD_FEE_LABEL,
   STANDARD_SUCCESS_FEE_PCT,
 } from "@/lib/seo";
@@ -37,7 +38,7 @@ const softwareLd = {
       name: "Standard",
       price: "0",
       priceCurrency: "USD",
-      description: `${STANDARD_SUCCESS_FEE_PCT}% success fee on confirmed wins. No monthly fee.`,
+      description: `${STANDARD_SUCCESS_FEE_PCT}% success fee on confirmed wins, billed on the 1st or at $${STANDARD_BILL_AT_USD}.`,
     },
     {
       "@type": "Offer",
@@ -168,15 +169,15 @@ export default function LandingPage() {
           Pay only when you win
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-center text-sm text-zinc-500">
-          Standard charges {STANDARD_FEE_LABEL} of the hammer on confirmed wins (fees may batch until
-          they reach Stripe&apos;s charge minimum). Pro is ${PRO_MONTHLY_USD}/month with{" "}
+          Standard charges {STANDARD_FEE_LABEL} of the hammer on confirmed wins, billed on the 1st
+          or when unpaid fees reach ${STANDARD_BILL_AT_USD}. Pro is ${PRO_MONTHLY_USD}/month with{" "}
           {PRO_SUCCESS_FEE_PCT}% commission.
         </p>
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
             <h3 className="font-semibold text-zinc-100">Standard</h3>
             <p className="mt-1 text-xs text-zinc-500">
-              {STANDARD_FEE_LABEL} success fee · No monthly fee
+              {STANDARD_FEE_LABEL} success fee · Billed on the 1st or at ${STANDARD_BILL_AT_USD}
             </p>
             <p className="mt-4 text-3xl font-black text-zinc-100">{STANDARD_FEE_LABEL}</p>
             <ul className="mt-4 space-y-1.5 text-sm text-zinc-500">

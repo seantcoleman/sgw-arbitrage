@@ -1696,6 +1696,25 @@ def upsert_win_fee(
     return dict(row) if row else None
 
 
+def list_user_ids_with_aged_pending_win_fees(before: datetime) -> List[str]:
+    """Users with a chargeable pending balance that includes a fee from before `before`."""
+    if not using_postgres():
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id
+            FROM win_fees
+            WHERE status = 'pending'
+            GROUP BY user_id
+            HAVING SUM(fee_cents) >= ?
+               AND MIN(created_at) < ?
+            """,
+            (50, before),
+        ).fetchall()
+    return [str(r["user_id"]) for r in rows]
+
+
 def list_pending_win_fees(user_id: UserId) -> List[Dict]:
     if not using_postgres():
         return []

@@ -5,7 +5,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { RelatedGuides } from "@/components/RelatedGuides";
 import { absoluteUrl } from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
-import { SITE_NAME, SITE_URL } from "@/lib/seo";
+import { SITE_NAME, SITE_URL, STANDARD_BILL_AT_USD } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "How ShopGoodwill Sniping Works",
@@ -224,7 +224,8 @@ export default function SnipingGuidePage() {
           BuzzerBidder Standard
         </Link>{" "}
         is already a per-successful-snipe plan: 2% of the hammer on confirmed wins and nothing when
-        you lose. Fees can batch until they reach Stripe&apos;s minimum charge. Pro is $10 per month
+        you lose. Fees are billed on the 1st, or sooner if unpaid fees reach ${STANDARD_BILL_AT_USD}.
+        Pro is $10 per month
         with a 0% success fee while
         the subscription is active. ShopGoodwill still invoices you separately for the item,
         shipping, and tax.

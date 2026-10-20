@@ -7,7 +7,7 @@ import {
 
 export const metadata: Metadata = {
   title: "Pricing — Pay Only When You Win",
-  description: `BuzzerBidder Standard is a ${STANDARD_FEE_LABEL} ShopGoodwill success fee with no monthly charge. Pro is $${PRO_MONTHLY_USD}/month with ${PRO_SUCCESS_FEE_PCT}% commission. No fee if you do not win.`,
+  description: `BuzzerBidder Standard is a ${STANDARD_FEE_LABEL} ShopGoodwill success fee, billed monthly or at $10. Pro is $${PRO_MONTHLY_USD}/month with ${PRO_SUCCESS_FEE_PCT}% commission. No fee if you do not win.`,
   alternates: { canonical: "/pricing" },
   openGraph: {
     title: "BuzzerBidder pricing — pay only when you win",

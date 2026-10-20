@@ -4,6 +4,8 @@ export const SITE_NAME = "BuzzerBidder";
 
 /** Single source of truth for marketing + JSON-LD claim copy. Keep in sync with Stripe. */
 export const STANDARD_SUCCESS_FEE_PCT = 2;
+/** Charge accrued Standard fees immediately once they reach this. Keep in sync with IMMEDIATE_CHARGE_CENTS in backend/billing.py. */
+export const STANDARD_BILL_AT_USD = 10;
 export const PRO_MONTHLY_USD = 10;
 export const PRO_SUCCESS_FEE_PCT = 0;
 
@@ -35,7 +37,7 @@ export const HOME_FAQS: Faq[] = [
   },
   {
     q: "When do you charge?",
-    a: `Standard has no monthly fee. We charge ${STANDARD_FEE_LABEL} of the hammer price on confirmed wins. If you do not win, there is no success fee for that auction. Small fees may batch until they meet Stripe's minimum charge. Pro is ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% commission while the subscription is active.`,
+    a: `Standard has no monthly subscription. We charge ${STANDARD_FEE_LABEL} of the hammer price on confirmed wins. Those fees are billed on the 1st of each month, or sooner if unpaid fees reach $${STANDARD_BILL_AT_USD}. If you do not win, there is no success fee for that auction. Pro is ${PRO_PRICE_LABEL} with ${PRO_SUCCESS_FEE_PCT}% commission while the subscription is active.`,
   },
   {
     q: "Does BuzzerBidder have a pay-per-win / per-snipe option?",
@@ -61,8 +63,8 @@ export const PRICING_FAQS: Faq[] = [
     a: "No. Standard only bills a success fee when ShopGoodwill confirms you won. A lost or skipped snipe does not create a success fee.",
   },
   {
-    q: "Why might fees be charged together?",
-    a: `Stripe has a minimum charge amount. Small ${STANDARD_FEE_LABEL} fees can accrue and be invoiced together once they reach that minimum.`,
+    q: "When are success fees charged?",
+    a: `On the 1st of each month (Pacific time), or sooner if unpaid fees reach $${STANDARD_BILL_AT_USD}. Fees under $0.50 roll into a later bill.`,
   },
   {
     q: "Do I need a card on file to snipe?",

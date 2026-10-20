@@ -14,7 +14,10 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 SUCCESS_FEE_PCT = 0.02
-STRIPE_MIN_CENTS = 50  # US card minimum
+STRIPE_MIN_CENTS = 50  # USD card minimum; smaller balances roll forward
+# Charge mid-cycle once unpaid fees hit this. Keep in sync with
+# STANDARD_BILL_AT_USD in frontend/src/lib/seo.ts.
+IMMEDIATE_CHARGE_CENTS = 1000
 
 
 def _stripe_client():
@@ -40,7 +43,7 @@ def record_and_maybe_invoice(
     final_price: float,
     title: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Insert win_fees row (idempotent) and invoice if accrued pending >= $0.50."""
+    """Insert win_fees row (idempotent) and invoice if accrued pending >= $10."""
     import db
 
     if not db.using_postgres():
@@ -71,15 +74,19 @@ def record_and_maybe_invoice(
 
     if status == "pending":
         try:
-            maybe_invoice_pending_fees(user_id)
+            maybe_invoice_pending_fees(user_id, minimum_cents=IMMEDIATE_CHARGE_CENTS)
         except Exception as e:
             logger.error(f"Invoice drain failed for {user_id}: {e}")
 
     return row
 
 
-def maybe_invoice_pending_fees(user_id: str) -> Optional[str]:
-    """Create/finalize a Stripe invoice when pending fee total >= $0.50."""
+def maybe_invoice_pending_fees(
+    user_id: str,
+    *,
+    minimum_cents: int = STRIPE_MIN_CENTS,
+) -> Optional[str]:
+    """Create and pay a Stripe invoice when pending fees reach minimum_cents."""
     import db
 
     profile = db.get_billing_profile(user_id)
@@ -92,7 +99,7 @@ def maybe_invoice_pending_fees(user_id: str) -> Optional[str]:
 
     pending = db.list_pending_win_fees(user_id)
     total = sum(int(r["fee_cents"]) for r in pending)
-    if total < STRIPE_MIN_CENTS:
+    if total < minimum_cents or total < STRIPE_MIN_CENTS:
         return None
 
     stripe = _stripe_client()
@@ -148,3 +155,29 @@ def maybe_invoice_pending_fees(user_id: str) -> Optional[str]:
     fid = finalized["id"] if isinstance(finalized, dict) else getattr(finalized, "id", invoice_id)
     logger.info(f"Invoiced {total}¢ win fees for user {user_id} as {fid}")
     return fid
+
+
+def invoice_prior_month_fees() -> int:
+    """Bill pending fees from before this month when the total can be charged.
+
+    Runs daily. Fees earned this month wait until the 1st unless they hit
+    IMMEDIATE_CHARGE_CENTS. Totals under STRIPE_MIN_CENTS stay pending.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    import db
+
+    if not db.using_postgres():
+        return 0
+
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    charged = 0
+    for user_id in db.list_user_ids_with_aged_pending_win_fees(month_start):
+        try:
+            if maybe_invoice_pending_fees(user_id, minimum_cents=STRIPE_MIN_CENTS):
+                charged += 1
+        except Exception as e:
+            logger.error(f"Monthly invoice failed for {user_id}: {e}")
+    return charged

@@ -154,6 +154,16 @@ async def lifespan(app: FastAPI):
         id="prune_snipe_activity",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _invoice_prior_month_win_fees,
+        "cron",
+        hour=8,
+        minute=0,
+        timezone="America/Los_Angeles",
+        id="monthly_win_fees",
+        replace_existing=True,
+        misfire_grace_time=6 * 60 * 60,
+    )
     _scheduler.start()
     logger.info("Scheduler started")
     # Auto-start in-process sniper unless workers own bidding
@@ -168,6 +178,18 @@ async def lifespan(app: FastAPI):
     _scheduler.shutdown(wait=False)
     if _sniper_process and _sniper_process.poll() is None:
         _sniper_process.terminate()
+
+
+def _invoice_prior_month_win_fees() -> None:
+    """Bill Standard win fees left over from previous months."""
+    try:
+        import billing as billing_mod
+
+        n = billing_mod.invoice_prior_month_fees()
+        if n:
+            logger.info(f"Monthly win-fee billing charged {n} customer(s)")
+    except Exception as e:
+        logger.error(f"Monthly win-fee billing failed: {e}")
 
 
 def _ensure_sniper_running() -> None:
