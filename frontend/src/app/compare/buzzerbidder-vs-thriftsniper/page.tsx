@@ -1,28 +1,35 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
 import {
   PRO_MONTHLY_USD,
   PRO_PRICE_LABEL,
   PRO_SUCCESS_FEE_PCT,
-  SITE_NAME,
-  SITE_URL,
   STANDARD_FEE_LABEL,
 } from "@/lib/seo";
 
+const meta = getContentMeta("/compare/buzzerbidder-vs-thriftsniper")!;
+
 export const metadata: Metadata = {
   title: "BuzzerBidder vs ThriftSniper",
-  description: `Compare BuzzerBidder (${STANDARD_FEE_LABEL} on wins or ${PRO_PRICE_LABEL} Pro + eBay comps) with ThriftSniper’s flat per-win fee for ShopGoodwill sniping.`,
-  alternates: { canonical: "/compare/buzzerbidder-vs-thriftsniper" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "BuzzerBidder vs ThriftSniper",
-    description:
-      "Hosted ShopGoodwill sniping with eBay comps versus ThriftSniper’s per-win flat fee.",
-    url: absoluteUrl("/compare/buzzerbidder-vs-thriftsniper"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -37,49 +44,36 @@ const FAQS: Faq[] = [
   },
 ];
 
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "BuzzerBidder vs ThriftSniper",
-  description: "Factual comparison of two ShopGoodwill sniping tools.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/compare/buzzerbidder-vs-thriftsniper"),
-  datePublished: "2026-10-06",
-  dateModified: "2026-10-06",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    {
-      "@type": "ListItem",
-      position: 2,
-      name: "Compare",
-      item: absoluteUrl("/compare/buzzerbidder-vs-thriftsniper"),
-    },
-  ],
-};
-
 export default function VsThriftSniperPage() {
   return (
     <article className="max-w-3xl mx-auto">
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "vs ThriftSniper", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Compare</p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        BuzzerBidder vs ThriftSniper
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        Looking for a <strong className="font-medium text-zinc-300">ThriftSniper alternative</strong>
-        — or deciding between flat per-win fees and a percentage / subscription? This page compares
-        public positioning. Competitor facts last checked{" "}
-        <strong className="font-medium text-zinc-300">2026-10-06</strong>; always confirm on their
-        site before you buy.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Compare">
+        <p>
+          Looking for a <strong className="font-medium text-zinc-300">ThriftSniper alternative</strong>
+          — or deciding between flat per-win fees and a percentage / subscription? This page compares
+          public positioning. Competitor facts last checked{" "}
+          <strong className="font-medium text-zinc-300">2026-10-06</strong>; always confirm on their
+          site before you buy.
+        </p>
+      </ArticleHeader>
+
+      <KeyTakeaways
+        items={[
+          "ThriftSniper markets a flat fee per win; BuzzerBidder Standard is % of hammer on wins.",
+          "BuzzerBidder adds eBay comps in the queue / Favorites flow.",
+          "High hammer + flat per-win can beat a percentage — model your own numbers.",
+          "Neither tool is affiliated with ShopGoodwill.",
+        ]}
+      />
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">Side-by-side</h2>
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
@@ -157,8 +151,9 @@ export default function VsThriftSniperPage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/compare/buzzerbidder-vs-thriftsniper" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

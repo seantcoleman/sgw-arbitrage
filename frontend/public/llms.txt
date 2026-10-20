@@ -8,6 +8,7 @@
 
 - Home: https://buzzerbidder.com/
 - Pricing: https://buzzerbidder.com/pricing
+- About: https://buzzerbidder.com/about
 - Guides hub: https://buzzerbidder.com/guides
 - Alternatives: https://buzzerbidder.com/alternatives/shopgoodwill-snipers
 - Max bid calculator: https://buzzerbidder.com/tools/max-bid-calculator

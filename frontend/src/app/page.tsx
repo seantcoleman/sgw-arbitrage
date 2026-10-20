@@ -235,8 +235,8 @@ export default function LandingPage() {
             Guides
           </Link>
           {" · "}
-          <Link href="/guides/shopgoodwill-sniping" className="hover:text-zinc-400">
-            Sniping
+          <Link href="/about" className="hover:text-zinc-400">
+            About
           </Link>
           {" · "}
           <Link href="/pricing" className="hover:text-zinc-400">

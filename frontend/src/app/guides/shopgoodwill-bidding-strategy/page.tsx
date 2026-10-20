@@ -1,22 +1,30 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
+import { GuideToc } from "@/components/GuideToc";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
-import { SITE_NAME, SITE_URL } from "@/lib/seo";
+
+const meta = getContentMeta("/guides/shopgoodwill-bidding-strategy")!;
 
 export const metadata: Metadata = {
   title: "ShopGoodwill Bidding Strategy & Tips",
-  description:
-    "When to snipe, how to set max bids from eBay comps, and when to walk away — practical ShopGoodwill bidding tips for resellers.",
-  alternates: { canonical: "/guides/shopgoodwill-bidding-strategy" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "ShopGoodwill bidding strategy & tips",
-    description:
-      "Practical bidding tips: max bids from comps, when not to snipe, and last-second timing.",
-    url: absoluteUrl("/guides/shopgoodwill-bidding-strategy"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -35,61 +43,55 @@ const FAQS: Faq[] = [
   },
 ];
 
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "ShopGoodwill bidding strategy & tips",
-  description: "Practical ShopGoodwill bidding tips for resellers.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/guides/shopgoodwill-bidding-strategy"),
-  datePublished: "2026-10-06",
-  dateModified: "2026-10-06",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    { "@type": "ListItem", position: 2, name: "Guides", item: absoluteUrl("/guides") },
-    {
-      "@type": "ListItem",
-      position: 3,
-      name: "Bidding strategy",
-      item: absoluteUrl("/guides/shopgoodwill-bidding-strategy"),
-    },
-  ],
-};
+const TOC = [
+  { id: "price-exit", label: "Price the exit before the bid" },
+  { id: "last-second", label: "Prefer last-second over early bids" },
+  { id: "written-max", label: "Cap emotion with a written max" },
+  { id: "when-not", label: "When not to snipe" },
+  { id: "track", label: "Track outcomes, not just wins" },
+];
 
 export default function BiddingStrategyGuidePage() {
   return (
     <article className="max-w-3xl mx-auto">
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "Bidding strategy", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
-        <Link href="/guides" className="hover:underline">
-          Guides
-        </Link>
-        {" / Bidding strategy"}
-      </p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        ShopGoodwill bidding strategy &amp; tips
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        Winning more auctions is not the goal —{" "}
-        <strong className="font-medium text-zinc-300">winning lots that still profit after fees
-        and shipping</strong>{" "}
-        is. These ShopGoodwill bidding tips assume you may resell (often on eBay) and that you use
-        last-second{" "}
-        <Link href="/guides/shopgoodwill-sniping" className="text-emerald-400 hover:underline">
-          sniping
-        </Link>{" "}
-        instead of early proxy wars.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Bidding strategy" title="ShopGoodwill bidding strategy & tips">
+        <p>
+          Winning more auctions is not the goal —{" "}
+          <strong className="font-medium text-zinc-300">
+            winning lots that still profit after fees and shipping
+          </strong>{" "}
+          is. These ShopGoodwill bidding tips assume you may resell (often on eBay) and that you use
+          last-second{" "}
+          <Link href="/guides/shopgoodwill-sniping" className="text-emerald-400 hover:underline">
+            sniping
+          </Link>{" "}
+          instead of early proxy wars.
+        </p>
+      </ArticleHeader>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">1. Price the exit before the bid</h2>
+      <KeyTakeaways
+        items={[
+          "Decide max from net comps, not auction adrenaline.",
+          "Last-second bids reduce the signal early high bids create.",
+          "Write the max before the final minute — then honor it.",
+          "Skip thin comps, freight killers, and lots you cannot price from photos.",
+          "Track full P&L; win rate alone is a vanity metric.",
+        ]}
+      />
+      <GuideToc items={TOC} />
+
+      <h2 id="price-exit" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        1. Price the exit before the bid
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Pull recent sold comps for the same model/condition. Net out marketplace fees and shipping
         to the buyer (and from ShopGoodwill to you). Only then set a max. Our{" "}
@@ -106,7 +108,9 @@ export default function BiddingStrategyGuidePage() {
         walk through the math. BuzzerBidder also surfaces comps when you queue.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">2. Prefer last-second over early bids</h2>
+      <h2 id="last-second" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        2. Prefer last-second over early bids
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Early bids raise the visible price and invite snipers. Scheduling a max near close keeps
         your interest quieter. Hosted{" "}
@@ -116,13 +120,17 @@ export default function BiddingStrategyGuidePage() {
         tools do that while you sleep — with the caveat that misses still happen.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">3. Cap emotion with a written max</h2>
+      <h2 id="written-max" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        3. Cap emotion with a written max
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Decide the number before the final minute. If the auction is already above your max after
         fees, skip. “I almost had it” is how margins die.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">4. When not to snipe</h2>
+      <h2 id="when-not" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        4. When not to snipe
+      </h2>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
         <li>Comps are old, mixed condition, or too few to trust</li>
         <li>Photos hide damage you cannot price</li>
@@ -130,7 +138,9 @@ export default function BiddingStrategyGuidePage() {
         <li>You would need a heroic sell-through speed to free cash</li>
       </ul>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">5. Track outcomes, not just wins</h2>
+      <h2 id="track" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        5. Track outcomes, not just wins
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Log hammer, shipping in, sell price, fees, and days to sell. A 60% win rate with thin
         margins can lose to a 20% win rate with fat spreads. Adjust maxes from that data, not from
@@ -152,8 +162,9 @@ export default function BiddingStrategyGuidePage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/guides/shopgoodwill-bidding-strategy" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

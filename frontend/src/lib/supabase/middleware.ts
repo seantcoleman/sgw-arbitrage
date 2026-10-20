@@ -44,6 +44,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicPage =
     path === "/" ||
     path === "/pricing" ||
+    path === "/about" ||
     path === "/terms" ||
     path === "/privacy" ||
     path === "/guides" ||
