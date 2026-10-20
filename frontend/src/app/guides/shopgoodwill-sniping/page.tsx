@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ArticleHeader } from "@/components/ArticleHeader";
-import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { GuideToc } from "@/components/GuideToc";
 import { JsonLd } from "@/components/JsonLd";
@@ -321,8 +320,6 @@ export default function SnipingGuidePage() {
           See pricing
         </Link>
       </p>
-
-      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
       <RelatedGuides currentHref={meta.href} />
     </article>
