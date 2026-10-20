@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ArticleHeader } from "@/components/ArticleHeader";
-import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { JsonLd } from "@/components/JsonLd";
 import { KeyTakeaways } from "@/components/KeyTakeaways";
@@ -141,8 +140,6 @@ export default function VsBidPulsePage() {
           Buyer&apos;s guide
         </Link>
       </p>
-
-      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
       <RelatedGuides currentHref={meta.href} />
     </article>
