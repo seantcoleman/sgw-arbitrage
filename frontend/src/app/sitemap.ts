@@ -8,13 +8,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: SITE_URL, lastModified, changeFrequency: "weekly", priority: 1 },
     { url: `${SITE_URL}/pricing`, lastModified, changeFrequency: "monthly", priority: 0.9 },
     { url: `${SITE_URL}/guides`, lastModified, changeFrequency: "weekly", priority: 0.85 },
+    { url: `${SITE_URL}/about`, lastModified, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/terms`, lastModified, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
   ];
 
   const content = allContentPages().map((page) => ({
     url: `${SITE_URL}${page.href}`,
-    lastModified,
+    lastModified: new Date(`${page.dateModified}T12:00:00.000Z`),
     changeFrequency: "monthly" as const,
     priority: page.priority ?? 0.8,
   }));

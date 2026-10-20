@@ -25,6 +25,10 @@ export function RelatedGuides({ currentHref }: { currentHref: string }) {
           All guides
         </Link>
         {" · "}
+        <Link href="/about" className="text-emerald-400 hover:underline">
+          About
+        </Link>
+        {" · "}
         <Link href="/pricing" className="text-emerald-400 hover:underline">
           Pricing
         </Link>

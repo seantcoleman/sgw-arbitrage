@@ -1,22 +1,31 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
+import { GuideToc } from "@/components/GuideToc";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
-import { SITE_NAME, SITE_URL, STANDARD_BILL_AT_USD } from "@/lib/seo";
+import { PRO_MONTHLY_USD, STANDARD_FEE_LABEL } from "@/lib/seo";
+
+const meta = getContentMeta("/guides/shopgoodwill-sniping")!;
 
 export const metadata: Metadata = {
   title: "How ShopGoodwill Sniping Works",
-  description:
-    "How last-second ShopGoodwill bidding works, how to use eBay comps before you bid, and how pay-per-win Standard compares with monthly Pro and other fee models.",
-  alternates: { canonical: "/guides/shopgoodwill-sniping" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "How ShopGoodwill sniping works",
-    description:
-      "Last-second bids, eBay comps, and pay-when-you-win pricing for ShopGoodwill auctions.",
-    url: absoluteUrl("/guides/shopgoodwill-sniping"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -31,7 +40,7 @@ const FAQS: Faq[] = [
   },
   {
     q: "Does BuzzerBidder have a pay-per-win option?",
-    a: "Yes. Standard charges 2% of the hammer only on confirmed wins (no monthly fee). That is our pay-as-you-go plan. Pro is $10/month with no success fee if you prefer a flat bill. Some other tools bill a credit every time a bid fires, including losses.",
+    a: `Yes. Standard charges ${STANDARD_FEE_LABEL} of the hammer only on confirmed wins (no monthly fee). Pro is $${PRO_MONTHLY_USD}/month with no success fee if you prefer a flat bill.`,
   },
   {
     q: "What is ShopGoodwill proxy bidding?",
@@ -73,60 +82,54 @@ const howToLd = {
   ],
 };
 
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "How ShopGoodwill sniping works",
-  description:
-    "How last-second ShopGoodwill bidding works, eBay comps, and pay-when-you-win pricing.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/guides/shopgoodwill-sniping"),
-  datePublished: "2026-09-30",
-  dateModified: "2026-10-01",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    { "@type": "ListItem", position: 2, name: "Guides", item: absoluteUrl("/guides") },
-    {
-      "@type": "ListItem",
-      position: 3,
-      name: "ShopGoodwill sniping",
-      item: absoluteUrl("/guides/shopgoodwill-sniping"),
-    },
-  ],
-};
+const TOC = [
+  { id: "proxy-bidding", label: "Proxy bidding on ShopGoodwill" },
+  { id: "early-bids", label: "Why early bids raise prices" },
+  { id: "last-second", label: "What a last-second bid does" },
+  { id: "what-we-see", label: "What we see when sniping (experience)" },
+  { id: "ebay-comps", label: "Using eBay sold comps" },
+  { id: "max-bid-math", label: "Max bid math / ROI checklist" },
+  { id: "manual-vs-hosted", label: "Manual vs hosted vs desktop" },
+  { id: "pricing", label: "Pricing: Standard vs Pro" },
+  { id: "get-started", label: "How to start" },
+];
 
 export default function SnipingGuidePage() {
   return (
     <article className="max-w-3xl mx-auto">
       <JsonLd data={howToLd} />
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "ShopGoodwill sniping", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
-        <Link href="/guides" className="hover:underline">
-          Guides
-        </Link>
-        {" / Sniping"}
-      </p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        How ShopGoodwill sniping works
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        ShopGoodwill sniping means submitting your max bid in the final seconds of an auction —
-        not hours early. A{" "}
-        <strong className="font-medium text-zinc-300">ShopGoodwill sniper</strong> schedules that
-        last-second bid so you are not advertising a high max while the listing is still open.
-        BuzzerBidder is a hosted sniper: the queue lives on our workers, you bid with your own
-        ShopGoodwill account, and you can check eBay comps before you commit.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Sniping">
+        <p>
+          ShopGoodwill sniping means submitting your max bid in the final seconds of an auction —
+          not hours early. A{" "}
+          <strong className="font-medium text-zinc-300">ShopGoodwill sniper</strong> schedules that
+          last-second bid so you are not advertising a high max while the listing is still open.
+          BuzzerBidder is a hosted sniper: the queue lives on our workers, you bid with your own
+          ShopGoodwill account, and you can check eBay comps before you commit.
+        </p>
+      </ArticleHeader>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">
+      <KeyTakeaways
+        items={[
+          "Sniping places your max near close so early bids do not advertise your ceiling.",
+          "Wins are never guaranteed — higher proxy maxes and site/network failures still happen.",
+          "Price the exit with eBay sold comps minus fees and shipping before you set a max.",
+          `BuzzerBidder Standard is pay-per-win (${STANDARD_FEE_LABEL} on confirmed wins); Pro is $${PRO_MONTHLY_USD}/mo.`,
+          "Hosted queues help when many lots end while you sleep — they do not eliminate misses.",
+        ]}
+      />
+      <GuideToc items={TOC} />
+
+      <h2 id="proxy-bidding" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
         Proxy bidding on ShopGoodwill, explained
       </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
@@ -140,14 +143,18 @@ export default function SnipingGuidePage() {
         there is little time left for others to respond.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Why early bids raise prices</h2>
+      <h2 id="early-bids" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Why early bids raise prices
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Resellers watch activity. A climbing bid history, or a sudden jump, signals that someone
         thinks the lot is worth more. Sniping does not remove competition that already has a
         higher proxy max, but it reduces the chance that <em>you</em> create that signal.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">What a last-second bid does</h2>
+      <h2 id="last-second" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        What a last-second bid does
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         You pick an item and a max you will pay. BuzzerBidder stores that as a scheduled job. A
         worker places the bid a few seconds before close, using the ShopGoodwill account you
@@ -160,7 +167,37 @@ export default function SnipingGuidePage() {
         limits — tools that promise “never miss” are selling you a story.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">
+      <h2 id="what-we-see" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        What we see when sniping (experience)
+      </h2>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+        Building a hosted sniper means living with ShopGoodwill’s real failure modes — not a demo
+        happy path. In practice:
+      </p>
+      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
+        <li>
+          <strong className="font-medium text-zinc-300">Session / login friction</strong> — stale
+          credentials or site challenges can prevent a fire even when the job is scheduled.
+        </li>
+        <li>
+          <strong className="font-medium text-zinc-300">Already above max</strong> — if the minimum
+          to bid is past your ceiling, we skip rather than overbid. That is a “miss” relative to
+          winning, and the correct money decision.
+        </li>
+        <li>
+          <strong className="font-medium text-zinc-300">Latency near close</strong> — the last
+          seconds are crowded; workers pre-warm, but the auction site still has the final say.
+        </li>
+        <li>
+          <strong className="font-medium text-zinc-300">Comps are estimates</strong> — eBay solds
+          help set a ceiling; condition, shipping, and sell-through still move the real P&amp;L.
+        </li>
+      </ul>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+        We document those constraints on purpose. Trustworthy sniper content does not sell magic.
+      </p>
+
+      <h2 id="ebay-comps" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
         Using eBay sold comps (fees and shipping)
       </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
@@ -170,83 +207,107 @@ export default function SnipingGuidePage() {
         <Link href="/guides/shopgoodwill-ebay-arbitrage" className="text-emerald-400 hover:underline">
           net arbitrage number
         </Link>
-        , not the raw eBay median, when you set a max bid.
+        , not the raw eBay median, when you set a max bid. For quick scenarios without an account,
+        use the{" "}
+        <Link href="/tools/max-bid-calculator" className="text-emerald-400 hover:underline">
+          max bid calculator
+        </Link>
+        .
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Max bid math / ROI checklist</h2>
+      <h2 id="max-bid-math" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Max bid math / ROI checklist
+      </h2>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
         <li>Median or recent sold comps that match condition and model</li>
         <li>eBay fees (or your channel’s fees) on the expected sale</li>
         <li>Outbound shipping and packaging</li>
         <li>ShopGoodwill buyer premium / shipping / tax on the win</li>
         <li>Your time and return risk</li>
-        <li>BuzzerBidder Standard 2% on the hammer (or Pro at $10/mo with 0% fee)</li>
+        <li>
+          BuzzerBidder Standard {STANDARD_FEE_LABEL} on the hammer (or Pro at $
+          {PRO_MONTHLY_USD}/mo with 0% fee)
+        </li>
       </ul>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Max bid ≈ expected net resale − costs − margin you actually want. If the math is thin,
-        skip the lot. Sniping does not fix a bad purchase.
-      </p>
-
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">
-        Manual vs hosted sniper vs desktop
-      </h2>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        <strong className="font-medium text-zinc-300">Manual:</strong> you watch the clock and click.
-        Fine for one auction; brittle when you have many ending at once.
-      </p>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        <strong className="font-medium text-zinc-300">Desktop sniper:</strong> software on your
-        machine fires near close. Often priced per bid attempt. Your PC must be online.
-      </p>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        <strong className="font-medium text-zinc-300">Hosted sniper (BuzzerBidder):</strong> the
-        queue lives on a server with durable jobs and leases, so a laptop sleep does not wipe your
-        schedule. You still need a valid ShopGoodwill session and realistic expectations about
-        misses.
-      </p>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        For more on{" "}
-        <Link href="/guides/shopgoodwill-auto-bid" className="text-emerald-400 hover:underline">
-          auto bid / scheduled sniping
-        </Link>
-        , see the dedicated guide.         For plans and fees, see{" "}
-        <Link href="/pricing" className="text-emerald-400 hover:underline">
-          pricing
+        skip the lot. Sniping does not fix a bad purchase. More tactics in{" "}
+        <Link
+          href="/guides/shopgoodwill-bidding-strategy"
+          className="text-emerald-400 hover:underline"
+        >
+          bidding strategy
         </Link>
         .
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">
-        Standard is pay-per-win; Pro is monthly
+      <h2 id="manual-vs-hosted" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Manual vs hosted sniper vs desktop
+      </h2>
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
+        <table className="w-full min-w-[32rem] text-left text-sm">
+          <thead className="bg-zinc-900 text-zinc-300">
+            <tr>
+              <th className="px-4 py-3 font-medium">Approach</th>
+              <th className="px-4 py-3 font-medium">Strength</th>
+              <th className="px-4 py-3 font-medium">Weakness</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800 text-zinc-400">
+            <tr>
+              <td className="px-4 py-3 text-zinc-200">Manual</td>
+              <td className="px-4 py-3">No tool fee</td>
+              <td className="px-4 py-3">Fails when many lots end at once</td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-zinc-200">Desktop sniper</td>
+              <td className="px-4 py-3">Credentials often stay local</td>
+              <td className="px-4 py-3">PC must be online; some bill per fire</td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-zinc-200">Hosted (BuzzerBidder)</td>
+              <td className="px-4 py-3">Durable queue + comps in flow</td>
+              <td className="px-4 py-3">Cloud credential storage; misses still possible</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+        Criteria checklist:{" "}
+        <Link href="/guides/best-shopgoodwill-sniper" className="text-emerald-400 hover:underline">
+          best ShopGoodwill sniper guide
+        </Link>
+        . Auto-bid detail:{" "}
+        <Link href="/guides/shopgoodwill-auto-bid" className="text-emerald-400 hover:underline">
+          ShopGoodwill auto bid
+        </Link>
+        .
+      </p>
+
+      <h2 id="pricing" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Pricing: Standard vs Pro
       </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         <Link href="/pricing" className="text-emerald-400 hover:underline">
-          BuzzerBidder Standard
+          Standard
         </Link>{" "}
-        is already a per-successful-snipe plan: 2% of the hammer on confirmed wins and nothing when
-        you lose. Fees are billed on the 1st, or sooner if unpaid fees reach ${STANDARD_BILL_AT_USD}.
-        Pro is $10 per month
-        with a 0% success fee while
-        the subscription is active. ShopGoodwill still invoices you separately for the item,
-        shipping, and tax.
+        is already pay-per-win: {STANDARD_FEE_LABEL} of the hammer on confirmed wins and nothing
+        when you lose. Fees can batch until they reach Stripe&apos;s minimum charge. Pro is $
+        {PRO_MONTHLY_USD} per month with a 0% success fee while active — usually better when
+        monthly {STANDARD_FEE_LABEL} fees would exceed that flat amount.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Safety and trust</h2>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-        You bid with <em>your</em> ShopGoodwill account. Credentials are encrypted at rest
-        (AES-256-GCM); the decryption key stays on the bidding server and is used to place bids you
-        schedule and to check outcomes. BuzzerBidder is not affiliated with ShopGoodwill or
-        Goodwill Industries.
-      </p>
-
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">What you need to start</h2>
+      <h2 id="get-started" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        How to start
+      </h2>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
-        <li>A BuzzerBidder account and a card on file, or an active Pro plan.</li>
-        <li>Your own ShopGoodwill login, stored encrypted at rest.</li>
-        <li>An auction URL or a Favorites sync, plus a max bid under the eBay net.</li>
-        <li>A clear margin after fees, shipping, and the 2% success fee (unless on Pro).</li>
+        <li>Create a BuzzerBidder account and choose Standard (card) or Pro.</li>
+        <li>Connect your ShopGoodwill login (encrypted at rest).</li>
+        <li>Paste an auction URL or pull from Favorites; review eBay comps.</li>
+        <li>Set a max under your net resale estimate and queue the snipe.</li>
       </ol>
-      <p className="mt-6 flex flex-wrap gap-3">
+
+      <p className="mt-8 flex flex-wrap gap-3">
         <Link
           href="/signup"
           className="inline-block rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
@@ -261,8 +322,9 @@ export default function SnipingGuidePage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/guides/shopgoodwill-sniping" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

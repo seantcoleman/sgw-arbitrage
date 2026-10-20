@@ -1,28 +1,30 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
-import type { Faq } from "@/lib/seo";
 import {
-  PRO_MONTHLY_USD,
-  PRO_PRICE_LABEL,
-  SITE_NAME,
-  SITE_URL,
-  STANDARD_FEE_LABEL,
-} from "@/lib/seo";
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
+import type { Faq } from "@/lib/seo";
+import { PRO_MONTHLY_USD, PRO_PRICE_LABEL, STANDARD_FEE_LABEL } from "@/lib/seo";
+
+const meta = getContentMeta("/alternatives/shopgoodwill-snipers")!;
 
 export const metadata: Metadata = {
   title: "ShopGoodwill Sniper Alternatives (2026)",
-  description:
-    "Criteria-led roundup of ShopGoodwill sniping tools — pricing models, hosted vs desktop, eBay comps, and when each fits. Includes BuzzerBidder.",
-  alternates: { canonical: "/alternatives/shopgoodwill-snipers" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "ShopGoodwill sniper alternatives",
-    description:
-      "Compare ThriftSniper, BidPulse, AuctionBotPro, desktop snipers, and BuzzerBidder by criteria — not hype.",
-    url: absoluteUrl("/alternatives/shopgoodwill-snipers"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -36,32 +38,6 @@ const FAQS: Faq[] = [
     a: "No. None of the tools on this page are ShopGoodwill or Goodwill Industries products unless they say otherwise — treat them as independent software.",
   },
 ];
-
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "ShopGoodwill sniper alternatives (2026)",
-  description: "Criteria-led roundup of ShopGoodwill sniping tools.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/alternatives/shopgoodwill-snipers"),
-  datePublished: "2026-10-06",
-  dateModified: "2026-10-06",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    {
-      "@type": "ListItem",
-      position: 2,
-      name: "Alternatives",
-      item: absoluteUrl("/alternatives/shopgoodwill-snipers"),
-    },
-  ],
-};
 
 const OPTIONS = [
   {
@@ -101,19 +77,32 @@ const OPTIONS = [
 export default function AlternativesPage() {
   return (
     <article className="max-w-3xl mx-auto">
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta, "ShopGoodwill sniper alternatives (2026)")} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "Alternatives", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Alternatives</p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        ShopGoodwill sniper alternatives
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        A criteria-led roundup — not a hit piece. Pricing and features below were checked against
-        public pages and marketing on{" "}
-        <strong className="font-medium text-zinc-300">2026-10-06</strong>. Confirm before you pay.
-        We build BuzzerBidder; that bias is disclosed.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Alternatives" title="ShopGoodwill sniper alternatives">
+        <p>
+          A criteria-led roundup — not a hit piece. Pricing and features below were checked against
+          public pages and marketing on{" "}
+          <strong className="font-medium text-zinc-300">2026-10-06</strong>. Confirm before you pay.
+          We build BuzzerBidder; that bias is disclosed.
+        </p>
+      </ArticleHeader>
+
+      <KeyTakeaways
+        items={[
+          "Decide on fee model first: flat per-win, % of hammer, credits, or monthly.",
+          "Hosted vs desktop is a credentials / sleep tradeoff.",
+          "Comps in-product matter if you flip to eBay.",
+          "Verify competitor prices on their sites — tables go stale.",
+        ]}
+      />
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">Decision criteria</h2>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
@@ -163,8 +152,9 @@ export default function AlternativesPage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/alternatives/shopgoodwill-snipers" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

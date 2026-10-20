@@ -1,23 +1,31 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
 import { SITE_NAME, SITE_URL } from "@/lib/seo";
 import { MaxBidCalculator } from "./MaxBidCalculator";
 
+const meta = getContentMeta("/tools/max-bid-calculator")!;
+
 export const metadata: Metadata = {
   title: "ShopGoodwill Max Bid Calculator",
-  description:
-    "Free ShopGoodwill max bid calculator — turn eBay sold comps, fees, shipping, and target profit into a max bid you can snipe with.",
-  alternates: { canonical: "/tools/max-bid-calculator" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "ShopGoodwill max bid calculator",
-    description:
-      "Estimate a profitable ShopGoodwill max bid from eBay sold prices, fees, and shipping.",
-    url: absoluteUrl("/tools/max-bid-calculator"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -38,42 +46,43 @@ const webAppLd = {
   name: "ShopGoodwill max bid calculator",
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
-  url: absoluteUrl("/tools/max-bid-calculator"),
+  url: absoluteUrl(meta.href),
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    { "@type": "ListItem", position: 2, name: "Tools", item: absoluteUrl("/tools/max-bid-calculator") },
-    {
-      "@type": "ListItem",
-      position: 3,
-      name: "Max bid calculator",
-      item: absoluteUrl("/tools/max-bid-calculator"),
-    },
-  ],
+  datePublished: meta.datePublished,
+  dateModified: meta.dateModified,
 };
 
 export default function MaxBidCalculatorPage() {
   return (
     <article className="max-w-3xl mx-auto">
       <JsonLd data={webAppLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "Max bid calculator", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Free tool</p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        ShopGoodwill max bid calculator
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        Turn an expected eBay sale, fees, and shipping into a{" "}
-        <strong className="font-medium text-zinc-300">ShopGoodwill max bid</strong> that still
-        leaves profit. No login required — then queue the lot in BuzzerBidder with live comps if you
-        want the sniper to fire.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Free tool">
+        <p>
+          Turn an expected eBay sale, fees, and shipping into a{" "}
+          <strong className="font-medium text-zinc-300">ShopGoodwill max bid</strong> that still
+          leaves profit. No login required — then queue the lot in BuzzerBidder with live comps if
+          you want the sniper to fire.
+        </p>
+      </ArticleHeader>
+
+      <KeyTakeaways
+        items={[
+          "Use sold comps, not listing asks.",
+          "Max bid = net after fees & shipping − the profit you need.",
+          "Negative result means skip the lot or lower your profit target.",
+          "In-app comps use the same style of math when you queue a snipe.",
+        ]}
+      />
 
       <MaxBidCalculator />
 
@@ -107,8 +116,9 @@ export default function MaxBidCalculatorPage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/tools/max-bid-calculator" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

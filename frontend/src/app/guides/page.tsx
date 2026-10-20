@@ -79,8 +79,12 @@ export default function GuidesPage() {
         Ready to queue a snipe?{" "}
         <Link href="/pricing" className="text-emerald-400 hover:underline">
           See pricing
-        </Link>{" "}
-        or{" "}
+        </Link>
+        {" · "}
+        <Link href="/about" className="text-emerald-400 hover:underline">
+          About BuzzerBidder
+        </Link>
+        {" · "}
         <Link href="/signup" className="text-emerald-400 hover:underline">
           get started
         </Link>

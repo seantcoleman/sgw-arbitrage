@@ -1,28 +1,35 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
 import {
   PRO_MONTHLY_USD,
   PRO_PRICE_LABEL,
   PRO_SUCCESS_FEE_PCT,
-  SITE_NAME,
-  SITE_URL,
   STANDARD_FEE_LABEL,
 } from "@/lib/seo";
 
+const meta = getContentMeta("/compare/buzzerbidder-vs-bidpulse")!;
+
 export const metadata: Metadata = {
   title: "BuzzerBidder vs BidPulse",
-  description: `Compare BuzzerBidder (${STANDARD_FEE_LABEL} on wins or ${PRO_PRICE_LABEL}) with BidPulse for ShopGoodwill sniping — pricing models, comps, and hosting.`,
-  alternates: { canonical: "/compare/buzzerbidder-vs-bidpulse" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "BuzzerBidder vs BidPulse",
-    description:
-      "Win-fee / Pro pricing and eBay comps versus subscription-style ShopGoodwill sniping.",
-    url: absoluteUrl("/compare/buzzerbidder-vs-bidpulse"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -37,50 +44,37 @@ const FAQS: Faq[] = [
   },
 ];
 
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "BuzzerBidder vs BidPulse",
-  description: "Comparison of two ShopGoodwill sniping products.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/compare/buzzerbidder-vs-bidpulse"),
-  datePublished: "2026-10-06",
-  dateModified: "2026-10-06",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    {
-      "@type": "ListItem",
-      position: 2,
-      name: "Compare",
-      item: absoluteUrl("/compare/buzzerbidder-vs-bidpulse"),
-    },
-  ],
-};
-
 export default function VsBidPulsePage() {
   return (
     <article className="max-w-3xl mx-auto">
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "vs BidPulse", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Compare</p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        BuzzerBidder vs BidPulse
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        Both target resellers who want{" "}
-        <strong className="font-medium text-zinc-300">ShopGoodwill auto bidding</strong> without
-        watching the clock. The tradeoffs are pricing shape, comps, and where credentials live.
-        BidPulse plan details below reflect public community marketing (e.g. Reddit) as of{" "}
-        <strong className="font-medium text-zinc-300">2026-10-06</strong> — verify live pricing on
-        bidpulse.app.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Compare">
+        <p>
+          Both target resellers who want{" "}
+          <strong className="font-medium text-zinc-300">ShopGoodwill auto bidding</strong> without
+          watching the clock. The tradeoffs are pricing shape, comps, and where credentials live.
+          BidPulse plan details below reflect public community marketing (e.g. Reddit) as of{" "}
+          <strong className="font-medium text-zinc-300">2026-10-06</strong> — verify live pricing on
+          bidpulse.app.
+        </p>
+      </ArticleHeader>
+
+      <KeyTakeaways
+        items={[
+          "BidPulse has been marketed as a monthly Pro plan — confirm current price on their site.",
+          `BuzzerBidder offers Standard (${STANDARD_FEE_LABEL}/win) or Pro ($${PRO_MONTHLY_USD}/mo).`,
+          "Credential models differ: hosted encrypted vs device-local claims — pick what you trust.",
+          "eBay comps in-queue are a BuzzerBidder wedge for flippers.",
+        ]}
+      />
 
       <h2 className="mt-10 text-xl font-bold text-zinc-100">Side-by-side</h2>
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
@@ -148,8 +142,9 @@ export default function VsBidPulsePage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/compare/buzzerbidder-vs-bidpulse" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }

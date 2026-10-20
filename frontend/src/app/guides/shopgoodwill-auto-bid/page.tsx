@@ -1,22 +1,31 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArticleHeader } from "@/components/ArticleHeader";
+import { EditorialDisclosure } from "@/components/EditorialDisclosure";
 import { FaqSection } from "@/components/FaqSection";
+import { GuideToc } from "@/components/GuideToc";
 import { JsonLd } from "@/components/JsonLd";
+import { KeyTakeaways } from "@/components/KeyTakeaways";
 import { RelatedGuides } from "@/components/RelatedGuides";
-import { absoluteUrl } from "@/lib/guides";
+import {
+  absoluteUrl,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  getContentMeta,
+} from "@/lib/guides";
 import type { Faq } from "@/lib/seo";
-import { SITE_NAME, SITE_URL } from "@/lib/seo";
+import { PRO_MONTHLY_USD, STANDARD_FEE_LABEL } from "@/lib/seo";
+
+const meta = getContentMeta("/guides/shopgoodwill-auto-bid")!;
 
 export const metadata: Metadata = {
   title: "ShopGoodwill Auto Bid & Scheduled Sniping",
-  description:
-    "How automatic last-second bidding works on ShopGoodwill, what can miss, and how hosted snipers compare to manual bidding.",
-  alternates: { canonical: "/guides/shopgoodwill-auto-bid" },
+  description: meta.description,
+  alternates: { canonical: meta.href },
   openGraph: {
-    title: "ShopGoodwill auto bid & scheduled sniping",
-    description:
-      "Automatic last-second bids on ShopGoodwill — how scheduled sniping works and what can go wrong.",
-    url: absoluteUrl("/guides/shopgoodwill-auto-bid"),
+    title: meta.title,
+    description: meta.description,
+    url: absoluteUrl(meta.href),
   },
 };
 
@@ -59,60 +68,51 @@ const howToLd = {
   ],
 };
 
-const articleLd = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  headline: "ShopGoodwill auto bid & scheduled sniping",
-  description: "How automatic last-second bidding works on ShopGoodwill.",
-  author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  mainEntityOfPage: absoluteUrl("/guides/shopgoodwill-auto-bid"),
-  datePublished: "2026-10-01",
-  dateModified: "2026-10-01",
-};
-
-const breadcrumbLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-    { "@type": "ListItem", position: 2, name: "Guides", item: absoluteUrl("/guides") },
-    {
-      "@type": "ListItem",
-      position: 3,
-      name: "Auto bid",
-      item: absoluteUrl("/guides/shopgoodwill-auto-bid"),
-    },
-  ],
-};
+const TOC = [
+  { id: "manual-vs-auto", label: "Manual vs auto bid" },
+  { id: "how-scheduled", label: "How BuzzerBidder schedules bids" },
+  { id: "what-goes-wrong", label: "What can still go wrong" },
+  { id: "pricing", label: "Pricing for automatic bidding" },
+];
 
 export default function AutoBidGuidePage() {
   return (
     <article className="max-w-3xl mx-auto">
       <JsonLd data={howToLd} />
-      <JsonLd data={articleLd} />
-      <JsonLd data={breadcrumbLd} />
+      <JsonLd data={articleJsonLd(meta)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", href: "/" },
+          { name: "Guides", href: "/guides" },
+          { name: "Auto bid", href: meta.href },
+        ])}
+      />
 
-      <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
-        <Link href="/guides" className="hover:underline">
-          Guides
-        </Link>
-        {" / Auto bid"}
-      </p>
-      <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-zinc-100">
-        ShopGoodwill auto bid &amp; scheduled sniping
-      </h1>
-      <p className="mt-4 text-base text-zinc-400">
-        <strong className="font-medium text-zinc-300">ShopGoodwill auto bid</strong> is scheduled
-        last-second bidding: you set a max once, and software fires near close. That is the core
-        of{" "}
-        <Link href="/guides/shopgoodwill-sniping" className="text-emerald-400 hover:underline">
-          sniping
-        </Link>
-        — automatic instead of manual clicking.
-      </p>
+      <ArticleHeader meta={meta} sectionLabel="Auto bid" title="ShopGoodwill auto bid & scheduled sniping">
+        <p>
+          <strong className="font-medium text-zinc-300">ShopGoodwill auto bid</strong> is scheduled
+          last-second bidding: you set a max once, and software fires near close. That is the core
+          of{" "}
+          <Link href="/guides/shopgoodwill-sniping" className="text-emerald-400 hover:underline">
+            sniping
+          </Link>{" "}
+          — automatic instead of manual clicking.
+        </p>
+      </ArticleHeader>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Manual bidding vs auto bid</h2>
+      <KeyTakeaways
+        items={[
+          "Auto bid queues last-second maxes so you are not watching ten clocks at once.",
+          "Hosted queues survive laptop sleep; they do not guarantee every fire succeeds.",
+          "Skip when the live minimum is already above your max — that is correct behavior.",
+          `Standard: ${STANDARD_FEE_LABEL} on wins only. Pro: $${PRO_MONTHLY_USD}/mo, 0% success fee.`,
+        ]}
+      />
+      <GuideToc items={TOC} />
+
+      <h2 id="manual-vs-auto" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Manual bidding vs auto bid
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Manual works when you have one ending and a free evening. It falls apart when ten lots end
         in the same minute, or when you are asleep. Auto bid queues those bids ahead of time.
@@ -122,7 +122,9 @@ export default function AutoBidGuidePage() {
         comps, and accept that some fires will miss.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">How BuzzerBidder schedules bids</h2>
+      <h2 id="how-scheduled" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        How BuzzerBidder schedules bids
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Each snipe is a durable job in the database with leases. Workers pre-warm a ShopGoodwill
         session and submit your max a few seconds before close. If the minimum is already above
@@ -133,7 +135,9 @@ export default function AutoBidGuidePage() {
         desktop-only tool can when the machine sleeps.
       </p>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">What can still go wrong</h2>
+      <h2 id="what-goes-wrong" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        What can still go wrong
+      </h2>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
         <li>ShopGoodwill latency or maintenance near close</li>
         <li>Credential / session problems</li>
@@ -142,17 +146,15 @@ export default function AutoBidGuidePage() {
         <li>Your max already below the live minimum (intentional skip)</li>
       </ul>
 
-      <h2 className="mt-10 text-xl font-bold text-zinc-100">Pricing for automatic bidding</h2>
+      <h2 id="pricing" className="mt-10 scroll-mt-24 text-xl font-bold text-zinc-100">
+        Pricing for automatic bidding
+      </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Standard: no monthly fee;{" "}
         <Link href="/pricing" className="text-emerald-400 hover:underline">
-          2% of the hammer on confirmed wins
+          {STANDARD_FEE_LABEL} of the hammer on confirmed wins
         </Link>
-        . Lose → no success fee. Pro: $10/month, 0% success fee while active. See{" "}
-        <Link href="/pricing" className="text-emerald-400 hover:underline">
-          pricing
-        </Link>{" "}
-        for both plans.
+        . Lose → no success fee. Pro: ${PRO_MONTHLY_USD}/month, 0% success fee while active.
       </p>
 
       <p className="mt-8 flex flex-wrap gap-3">
@@ -170,8 +172,9 @@ export default function AutoBidGuidePage() {
         </Link>
       </p>
 
+      <EditorialDisclosure />
       <FaqSection faqs={FAQS} />
-      <RelatedGuides currentHref="/guides/shopgoodwill-auto-bid" />
+      <RelatedGuides currentHref={meta.href} />
     </article>
   );
 }
