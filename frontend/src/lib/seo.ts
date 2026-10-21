@@ -1,5 +1,7 @@
 export const SITE_URL = "https://buzzerbidder.com";
 
+export const SUPPORT_EMAIL = "support@buzzerbidder.com";
+
 export const SITE_NAME = "BuzzerBidder";
 
 /** Single source of truth for marketing + JSON-LD claim copy. Keep in sync with Stripe. */

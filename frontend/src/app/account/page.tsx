@@ -9,7 +9,7 @@ import {
   MeResponse,
   verifySgwAccount,
 } from "@/lib/api";
-import { STANDARD_BILL_AT_USD } from "@/lib/seo";
+import { STANDARD_BILL_AT_USD, SUPPORT_EMAIL } from "@/lib/seo";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 async function openPortal() {
@@ -277,6 +277,10 @@ export default function AccountPage() {
       </div>
 
       <p className="text-xs text-zinc-600 mb-4">
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-zinc-400">
+          {SUPPORT_EMAIL}
+        </a>
+        {" · "}
         <Link href="/terms" className="hover:text-zinc-400">
           Terms
         </Link>

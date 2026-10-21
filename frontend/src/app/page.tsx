@@ -9,6 +9,7 @@ import {
   STANDARD_BILL_AT_USD,
   STANDARD_FEE_LABEL,
   STANDARD_SUCCESS_FEE_PCT,
+  SUPPORT_EMAIL,
 } from "@/lib/seo";
 
 export const metadata: Metadata = {
@@ -242,6 +243,10 @@ export default function LandingPage() {
           <Link href="/pricing" className="hover:text-zinc-400">
             Pricing
           </Link>
+          {" · "}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-zinc-400">
+            Support
+          </a>
           {" · "}
           <Link href="/terms" className="hover:text-zinc-400">
             Terms

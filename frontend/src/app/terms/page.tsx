@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { STANDARD_BILL_AT_USD } from "@/lib/seo";
+import { STANDARD_BILL_AT_USD, SUPPORT_EMAIL } from "@/lib/seo";
 
 export const metadata = {
   title: "Terms of Service",
@@ -14,7 +14,7 @@ export default function TermsPage() {
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">
         Terms of Service
       </h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: October 20, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: October 21, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -145,8 +145,8 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold text-zinc-100 mb-2">11. Contact</h2>
           <p>
             Questions about these Terms: email{" "}
-            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
-              scoleman2296@gmail.com
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-400 hover:underline">
+              {SUPPORT_EMAIL}
             </a>
             .
           </p>

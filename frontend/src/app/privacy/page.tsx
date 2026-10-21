@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SUPPORT_EMAIL } from "@/lib/seo";
 
 export const metadata = {
   title: "Privacy Policy",
@@ -11,7 +12,7 @@ export default function PrivacyPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">Privacy Policy</h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: September 28, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: October 21, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -69,8 +70,8 @@ export default function PrivacyPage() {
             accounting, fraud prevention, and legal compliance. Encrypted ShopGoodwill credentials
             are deleted when you disconnect them or delete your account. You may request account
             deletion by emailing{" "}
-            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
-              scoleman2296@gmail.com
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-400 hover:underline">
+              {SUPPORT_EMAIL}
             </a>
             .
           </p>
@@ -104,8 +105,8 @@ export default function PrivacyPage() {
           <h2 className="text-base font-semibold text-zinc-100 mb-2">8. Contact</h2>
           <p>
             Privacy questions: email{" "}
-            <a href="mailto:scoleman2296@gmail.com" className="text-emerald-400 hover:underline">
-              scoleman2296@gmail.com
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-400 hover:underline">
+              {SUPPORT_EMAIL}
             </a>
             . See also our{" "}
             <Link href="/terms" className="text-emerald-400 hover:underline">
