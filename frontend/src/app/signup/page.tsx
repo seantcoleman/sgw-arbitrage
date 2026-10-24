@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import toast from "react-hot-toast";
+import { acquisitionMetadata, readAcquisitionCookie } from "@/lib/acquisition";
 import { authConfigured, createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
@@ -39,7 +40,11 @@ export default function SignupPage() {
         password,
         options: {
           emailRedirectTo: `${origin}/auth/callback`,
-          data: { tos_accepted: true, tos_accepted_at: new Date().toISOString() },
+          data: {
+            tos_accepted: true,
+            tos_accepted_at: new Date().toISOString(),
+            ...acquisitionMetadata(readAcquisitionCookie()),
+          },
         },
       });
       if (error) throw error;

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Geist_Mono, Geist } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
@@ -74,6 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AppToaster />
           <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">{children}</main>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );

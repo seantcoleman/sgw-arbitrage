@@ -1,8 +1,10 @@
 import { type NextRequest } from "next/server";
+import { attachAcquisition } from "@/lib/capture-acquisition";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
-  return updateSession(request);
+  const response = await updateSession(request);
+  return attachAcquisition(request, response);
 }
 
 export const config = {

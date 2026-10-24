@@ -12,7 +12,7 @@ export default function PrivacyPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-3xl font-black text-zinc-100 tracking-tight mb-2">Privacy Policy</h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: October 21, 2026</p>
+      <p className="text-sm text-zinc-500 mb-10">Last updated: October 24, 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed text-zinc-400">
         <section>
@@ -35,6 +35,11 @@ export default function PrivacyPage() {
               <strong className="text-zinc-200">Billing:</strong> Stripe customer ID and payment
               method references. We never store full card numbers — Stripe does.
             </li>
+            <li>
+              <strong className="text-zinc-200">Acquisition:</strong> the first page you opened,
+              the referring site, and campaign parameters on that link (such as utm_source). We
+              save this with your account when you sign up.
+            </li>
           </ul>
         </section>
 
@@ -45,6 +50,7 @@ export default function PrivacyPage() {
             <li>Place bids you schedule and check win/loss results</li>
             <li>Charge success fees or subscriptions</li>
             <li>Provide support and prevent abuse</li>
+            <li>See which pages and campaigns lead to signups</li>
           </ul>
           <p className="mt-3">
             We do not sell your personal data. We do not use ShopGoodwill credentials for any
@@ -88,8 +94,10 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-base font-semibold text-zinc-100 mb-2">6. Cookies</h2>
           <p>
-            We use session cookies for authentication (Supabase). We do not use third-party
-            advertising trackers on the app.
+            We use session cookies for authentication (Supabase) and a first-party cookie named
+            bb_acq that remembers your first visit for 90 days. Vercel Web Analytics counts page
+            views, including referring site and rough location, without an advertising cookie. We
+            do not use third-party advertising trackers.
           </p>
         </section>
 
