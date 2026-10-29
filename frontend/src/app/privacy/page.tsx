@@ -74,7 +74,7 @@ export default function PrivacyPage() {
           <p>
             Account and billing records are kept while your account is active and as needed for
             accounting, fraud prevention, and legal compliance. Encrypted ShopGoodwill credentials
-            are deleted when you disconnect them or delete your account. You may request account
+            are deleted when you disconnect them or delete your account from the Account page. You may also request account
             deletion by emailing{" "}
             <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-400 hover:underline">
               {SUPPORT_EMAIL}

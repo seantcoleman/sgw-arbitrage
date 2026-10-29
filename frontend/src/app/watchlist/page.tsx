@@ -135,6 +135,7 @@ const STATUS_LABEL: Record<string, string> = {
   skipped:            "Above max",
   rejected:           "Bid rejected",
   error:              "Above max", // legacy
+  cancelled:          "Cancelled",
 };
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
   scheduled:        { bg: "bg-blue-950/40 light:bg-blue-50",       text: "text-blue-300 light:text-blue-700",       dot: "bg-blue-500 animate-pulse" },

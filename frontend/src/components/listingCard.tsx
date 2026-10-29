@@ -25,6 +25,7 @@ export const TERMINAL_SNIPER_STATUSES = [
   "skipped",
   "rejected",
   "error",
+  "cancelled",
 ] as const;
 
 /** Final outcomes that never belong in the active sniper queue. */

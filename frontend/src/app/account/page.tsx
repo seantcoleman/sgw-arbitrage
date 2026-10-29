@@ -33,6 +33,10 @@ export default function AccountPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [booting, setBooting] = useState(true);
 
   const refresh = async () => {
@@ -75,11 +79,61 @@ export default function AccountPage() {
     }
   };
 
+  const authHeader = async () => {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Not signed in");
+    return { Authorization: `Bearer ${token}` };
+  };
+
   const signOut = async () => {
     if (!authConfigured()) return;
     const supabase = createClient();
     await supabase.auth.signOut();
     window.location.href = "/login";
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect ShopGoodwill and cancel queued snipes?")) return;
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/account/disconnect", {
+        method: "POST",
+        headers: await authHeader(),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not disconnect");
+      toast.success("ShopGoodwill disconnected");
+      await refresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not disconnect");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const deleteAccount = async (e: FormEvent) => {
+    e.preventDefault();
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: {
+          ...(await authHeader()),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: deleteEmail }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not delete account");
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      window.location.href = "/";
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not delete account");
+      setDeleting(false);
+    }
   };
 
   if (booting) {
@@ -217,22 +271,32 @@ export default function AccountPage() {
                   <div className="text-xs text-red-400 mt-1">{account.last_error}</div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await verifySgwAccount(account.id);
-                    toast.success("Still valid");
-                    await refresh();
-                  } catch (err: unknown) {
-                    toast.error(err instanceof Error ? err.message : "Verify failed");
-                    await refresh();
-                  }
-                }}
-                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-zinc-100"
-              >
-                Re-check
-              </button>
+              <div className="flex flex-col gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await verifySgwAccount(account.id);
+                      toast.success("Still valid");
+                      await refresh();
+                    } catch (err: unknown) {
+                      toast.error(err instanceof Error ? err.message : "Verify failed");
+                      await refresh();
+                    }
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-zinc-100"
+                >
+                  Re-check
+                </button>
+                <button
+                  type="button"
+                  disabled={disconnecting}
+                  onClick={disconnect}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-amber-400/90">
@@ -291,13 +355,71 @@ export default function AccountPage() {
       </p>
 
       {authConfigured() && (
-        <button
-          type="button"
-          onClick={signOut}
-          className="text-sm text-zinc-500 hover:text-zinc-300"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4 mb-8">
+          <Link href="/reset-password" className="text-sm text-zinc-500 hover:text-zinc-300">
+            Change password
+          </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            className="text-sm text-zinc-500 hover:text-zinc-300"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+
+      {authConfigured() && (
+        <div className="border border-red-950/80 rounded-2xl p-5">
+          <h2 className="text-sm font-semibold text-zinc-200">Delete account</h2>
+          <p className="text-xs text-zinc-500 mt-1">
+            Cancels queued snipes, removes your ShopGoodwill password, and cancels Pro if it is
+            active. Billing invoices stay in Stripe.
+          </p>
+          {!deleteOpen ? (
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="mt-4 text-xs px-3 py-1.5 rounded-lg border border-red-900 text-red-400 hover:bg-red-950/40"
+            >
+              Delete account
+            </button>
+          ) : (
+            <form onSubmit={deleteAccount} className="mt-4 space-y-3">
+              <label className="block">
+                <span className="text-xs text-zinc-500">
+                  Type {email || me?.email || "your email"} to confirm
+                </span>
+                <input
+                  type="email"
+                  required
+                  value={deleteEmail}
+                  onChange={(e) => setDeleteEmail(e.target.value)}
+                  className="mt-1 w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={deleting}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Delete permanently"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteEmail("");
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       )}
     </div>
   );
