@@ -1495,7 +1495,7 @@ def _run_scan(refresh_deals: bool = False):
 def _build_sniper_config() -> dict:
     """Build sniper config from env vars + DB settings."""
     settings = db.get_settings()
-    snipe_secs = int(settings.get("snipe_seconds_before", 30))
+    snipe_secs = db.clamp_snipe_seconds(settings.get("snipe_seconds_before"))
 
     if os.getenv("SGW_ENCRYPTED_USERNAME"):
         auth_info = {
@@ -1588,15 +1588,14 @@ def _restart_sniper() -> None:
 @app.put("/settings")
 def update_setting(req: SettingsUpdateRequest, user: RequireUser):
     db.ensure_user_profile(user.id, user.email)
-    db.update_setting(req.key, req.value, user_id=user.id)
+    value = req.value
+    if req.key == "snipe_seconds_before":
+        value = db.clamp_snipe_seconds(value)
+    db.update_setting(req.key, value, user_id=user.id)
     # Fire times live on the durable job rows, so only this user's queue moves.
     if req.key == "snipe_seconds_before":
-        try:
-            secs = int(req.value)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            secs = 5
-        db.refresh_pending_snipe_times(secs, user_id=user.id)
-    return {"success": True, "key": req.key, "value": req.value}
+        db.refresh_pending_snipe_times(value, user_id=user.id)
+    return {"success": True, "key": req.key, "value": value}
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

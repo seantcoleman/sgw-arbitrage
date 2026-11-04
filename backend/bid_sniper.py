@@ -99,7 +99,7 @@ class BidSniper:
             if time_delta != datetime.timedelta(0):
                 self.alert_time_deltas.append(time_delta)
 
-        bid_time_delta_str = self.config["bid_sniper"].get("bid_snipe_time_delta", "30 seconds")
+        bid_time_delta_str = self.config["bid_sniper"].get("bid_snipe_time_delta", "6 seconds")
         self.bid_time_delta = (
             cal.parseDT(bid_time_delta_str, sourceTime=datetime.datetime.min)[0] - datetime.datetime.min
         )

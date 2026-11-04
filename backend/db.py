@@ -10,6 +10,19 @@ from db_conn import get_conn, using_postgres
 
 UserId = Union[str, int]
 
+SNIPE_SECONDS_MIN = 6
+SNIPE_SECONDS_MAX = 15
+SNIPE_SECONDS_DEFAULT = 6
+
+
+def clamp_snipe_seconds(value: Any) -> int:
+    """Keep the lead inside 6–15 seconds. Missing or junk values become 6."""
+    try:
+        secs = int(value)
+    except (TypeError, ValueError):
+        return SNIPE_SECONDS_DEFAULT
+    return max(SNIPE_SECONDS_MIN, min(SNIPE_SECONDS_MAX, secs))
+
 
 def init_db():
     # Postgres schema is applied via supabase/migrations — only bootstrap SQLite.
@@ -103,7 +116,7 @@ def init_db():
                 ('max_bid_cap', '300'),
                 ('min_bid_floor', '3'),
                 ('scan_interval_minutes', '15'),
-                ('snipe_seconds_before', '30'),
+                ('snipe_seconds_before', '6'),
                 ('your_zip_code', '90210'),
                 ('ebay_days_back', '90'),
                 ('scan_category_ids', '[]'),
@@ -117,6 +130,20 @@ def init_db():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_resale_shipping', '7')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ebay_display_mode', '\"net\"')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auctions_only', 'true')")
+        stored_lead = conn.execute(
+            "SELECT value FROM settings WHERE key = 'snipe_seconds_before'"
+        ).fetchone()
+        if stored_lead:
+            try:
+                current_lead = json.loads(stored_lead["value"])
+            except (json.JSONDecodeError, TypeError):
+                current_lead = stored_lead["value"]
+            clamped_lead = clamp_snipe_seconds(current_lead)
+            if clamped_lead != current_lead:
+                conn.execute(
+                    "UPDATE settings SET value = ? WHERE key = 'snipe_seconds_before'",
+                    (json.dumps(clamped_lead),),
+                )
         # Migrate existing DBs that predate final_price / final_shipping columns
         existing = {r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
         for col, typedef in [
@@ -987,7 +1014,7 @@ def compute_snipe_at(end_time_str: Optional[str], snipe_seconds_before: int) -> 
     end_dt = parse_end_time_utc(end_time_str)
     if end_dt is None:
         return None
-    snipe_at = end_dt - timedelta(seconds=max(1, int(snipe_seconds_before)))
+    snipe_at = end_dt - timedelta(seconds=clamp_snipe_seconds(snipe_seconds_before))
     return snipe_at.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -1042,20 +1069,17 @@ def _snipe_seconds_before_conn(conn) -> int:
             try:
                 return int(row["snipe_seconds_before"])
             except (TypeError, ValueError):
-                return 5
-        return 5
+                return SNIPE_SECONDS_DEFAULT
+        return SNIPE_SECONDS_DEFAULT
     row = conn.execute(
         "SELECT value FROM settings WHERE key = 'snipe_seconds_before'"
     ).fetchone()
     if not row:
-        return 5
+        return SNIPE_SECONDS_DEFAULT
     try:
-        return int(json.loads(row["value"]))
+        return clamp_snipe_seconds(json.loads(row["value"]))
     except Exception:
-        try:
-            return int(row["value"])
-        except Exception:
-            return 5
+        return clamp_snipe_seconds(row["value"])
 
 
 def _backfill_snipe_jobs_postgres(conn) -> int:
@@ -1064,7 +1088,7 @@ def _backfill_snipe_jobs_postgres(conn) -> int:
         """
         SELECT w.id AS watchlist_id, w.item_id, w.max_bid, w.end_time,
                w.user_id, w.sgw_account_id,
-               COALESCE(us.snipe_seconds_before, 5) AS snipe_seconds_before
+               COALESCE(us.snipe_seconds_before, 6) AS snipe_seconds_before
         FROM watchlist w
         LEFT JOIN user_settings us ON us.user_id = w.user_id
         WHERE LOWER(COALESCE(w.sniper_status, 'scheduled')) = 'scheduled'
@@ -1072,7 +1096,7 @@ def _backfill_snipe_jobs_postgres(conn) -> int:
     ).fetchall()
     created = 0
     for w in rows:
-        snipe_at = compute_snipe_at(w["end_time"], int(w["snipe_seconds_before"] or 5))
+        snipe_at = compute_snipe_at(w["end_time"], int(w["snipe_seconds_before"] or SNIPE_SECONDS_DEFAULT))
         if not snipe_at:
             continue
         existing = conn.execute(
@@ -1209,7 +1233,9 @@ def upsert_snipe_job(
             raise ValueError("user_id required on Postgres")
         if snipe_seconds_before is None:
             settings = get_settings(user_id)
-            snipe_seconds_before = int(settings.get("snipe_seconds_before", 5))
+            snipe_seconds_before = clamp_snipe_seconds(
+                settings.get("snipe_seconds_before", SNIPE_SECONDS_DEFAULT)
+            )
         snipe_at = compute_snipe_at(end_time, int(snipe_seconds_before))
         if not snipe_at:
             return None
@@ -1270,7 +1296,9 @@ def upsert_snipe_job(
     sgw_account_id = sgw_account_id or owner["sgw_account_id"]
     if snipe_seconds_before is None:
         settings = get_settings()
-        snipe_seconds_before = int(settings.get("snipe_seconds_before", 5))
+        snipe_seconds_before = clamp_snipe_seconds(
+            settings.get("snipe_seconds_before", SNIPE_SECONDS_DEFAULT)
+        )
     snipe_at = compute_snipe_at(end_time, int(snipe_seconds_before))
     if not snipe_at:
         return None
@@ -1342,7 +1370,9 @@ def refresh_pending_snipe_times(
 ) -> int:
     """Recompute snipe_at for pending jobs (e.g. after a settings change)."""
     if snipe_seconds_before is None:
-        snipe_seconds_before = int(get_settings(user_id).get("snipe_seconds_before", 5))
+        snipe_seconds_before = clamp_snipe_seconds(
+            get_settings(user_id).get("snipe_seconds_before", SNIPE_SECONDS_DEFAULT)
+        )
     with get_conn() as conn:
         if using_postgres() and user_id is not None:
             rows = conn.execute(
@@ -1623,7 +1653,7 @@ def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
                             result[k] = us[k]
                 else:
                     # defaults
-                    result.setdefault("snipe_seconds_before", 5)
+                    result.setdefault("snipe_seconds_before", SNIPE_SECONDS_DEFAULT)
                     result.setdefault("your_zip_code", DEFAULT_ZIP)
                     result.setdefault("zip_confirmed", False)
                     result.setdefault("ebay_fee_pct", 13)
@@ -1637,6 +1667,9 @@ def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
                     result[row["key"]] = json.loads(row["value"])
                 except (json.JSONDecodeError, TypeError):
                     result[row["key"]] = row["value"]
+    result["snipe_seconds_before"] = clamp_snipe_seconds(
+        result.get("snipe_seconds_before", SNIPE_SECONDS_DEFAULT)
+    )
     result["scan_keywords"] = _coerce_str_list(result.get("scan_keywords"))
     result["scan_category_ids"] = _coerce_int_list(result.get("scan_category_ids"))
     return result
@@ -1668,6 +1701,8 @@ def _coerce_int_list(value: Any) -> List[int]:
 
 
 def update_setting(key: str, value: Any, user_id: Optional[UserId] = None) -> None:
+    if key == "snipe_seconds_before":
+        value = clamp_snipe_seconds(value)
     with get_conn() as conn:
         if using_postgres():
             if key in _USER_SETTING_KEYS:

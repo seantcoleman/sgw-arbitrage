@@ -20,7 +20,7 @@ function Section({ title, description, children }: {
   );
 }
 
-function NumField({ label, description, value, onChange, onSave, suffix = "", min = 0, step = 1, readOnly = false }: {
+function NumField({ label, description, value, onChange, onSave, suffix = "", min = 0, max, step = 1, readOnly = false }: {
   label: string;
   description?: string;
   value: number;
@@ -28,6 +28,7 @@ function NumField({ label, description, value, onChange, onSave, suffix = "", mi
   onSave: (v: number) => void;
   suffix?: string;
   min?: number;
+  max?: number;
   step?: number;
   readOnly?: boolean;
 }) {
@@ -42,6 +43,7 @@ function NumField({ label, description, value, onChange, onSave, suffix = "", mi
           type="number"
           value={value}
           min={min}
+          max={max}
           step={step}
           readOnly={readOnly}
           onChange={e => !readOnly && onChange(Number(e.target.value))}
@@ -93,10 +95,14 @@ export default function SettingsPage() {
       <Section title="Scanner & Sniper">
         <NumField
           label="Snipe timing" description="Place bid this many seconds before auction ends"
-          value={settings.snipe_seconds_before ?? 30}
+          value={settings.snipe_seconds_before ?? 6}
           onChange={v => setSettings(prev => ({ ...prev, snipe_seconds_before: v }))}
-          onSave={v => save("snipe_seconds_before", v)}
-          suffix="sec" min={5} step={5}
+          onSave={v => {
+            const clamped = Math.min(15, Math.max(6, Math.round(Number.isFinite(v) ? v : 6)));
+            setSettings(prev => ({ ...prev, snipe_seconds_before: clamped }));
+            save("snipe_seconds_before", clamped);
+          }}
+          suffix="sec" min={6} max={15} step={1}
         />
         <div className="flex items-center justify-between py-4 border-b border-zinc-800/60">
           <div>
