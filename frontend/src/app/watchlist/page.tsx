@@ -52,6 +52,23 @@ function endTimeMs(endTime: string | null): number {
   return parseEndTime(endTime).getTime();
 }
 
+const SOON_MS = 10 * 60 * 1000;
+const JUST_ENDED_MS = 5 * 60 * 1000;
+
+/** 15s while a bid is inside the last 10 minutes or still settling. Otherwise 60s. */
+function watchlistPollDelay(items: WatchlistItem[]): number {
+  const now = Date.now();
+  const hot = items.some(item => {
+    const status = (item.sniper_status || "").toLowerCase();
+    if (status === "bid_placed") return true;
+    if (isTerminalSniperStatus(status)) return false;
+    if (!item.end_time) return false;
+    const delta = parseEndTime(item.end_time).getTime() - now;
+    return delta <= SOON_MS && delta >= -JUST_ENDED_MS;
+  });
+  return hot ? 15_000 : 60_000;
+}
+
 /** Active queue = still-live auctions that are not a final outcome. */
 function isActiveWatchlistItem(item: WatchlistItem): boolean {
   if (isMissedSnipe(item)) return false;
@@ -171,6 +188,8 @@ export default function WatchlistPage() {
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const logBottomRef = useRef<HTMLDivElement>(null);
   const addingRef = useRef(false);
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
 
   useEffect(() => {
     const saved = localStorage.getItem("watchlist-view");
@@ -178,37 +197,93 @@ export default function WatchlistPage() {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      if (addingRef.current) return;
-      const [wl, sniper, settings, me] = await Promise.all([
-        getWatchlist().catch(() => ({ watchlist: [] })),
-        getSniperStatus().catch(() => ({ running: false })),
+    let stopped = false;
+    let timer = 0;
+    let requestId = 0;
+
+    const loadAccount = async () => {
+      const [settings, me] = await Promise.all([
         getSettings().catch(() => null),
         getMe().catch(() => null),
       ]);
-      if (addingRef.current) return;
-      setWatchlist(wl.watchlist);
-      setSniperRunning(sniper.running);
+      if (stopped) return;
       if (settings) setSnipeSeconds(Number(settings.snipe_seconds_before));
       if (me) setHasSgw(!!me.has_sgw);
+    };
+
+    const loadQueue = async (force = false) => {
+      if (addingRef.current) return;
+      if (!force && document.visibilityState === "hidden") return;
+      const id = ++requestId;
+      const [wl, sniper] = await Promise.all([
+        getWatchlist().catch(() => ({ watchlist: [] as WatchlistItem[] })),
+        getSniperStatus().catch(() => ({ running: false })),
+      ]);
+      if (stopped || id !== requestId || addingRef.current) return;
+      watchlistRef.current = wl.watchlist;
+      setWatchlist(wl.watchlist);
+      setSniperRunning(sniper.running);
       setLoading(false);
     };
-    load();
-    const tickInterval = setInterval(() => setTick(t => t + 1), 1000);
-    const pollInterval = setInterval(load, 15000);
-    return () => { clearInterval(tickInterval); clearInterval(pollInterval); };
+
+    const schedule = () => {
+      window.clearTimeout(timer);
+      if (stopped || document.visibilityState === "hidden") return;
+      timer = window.setTimeout(async () => {
+        await loadQueue();
+        schedule();
+      }, watchlistPollDelay(watchlistRef.current));
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        window.clearTimeout(timer);
+        return;
+      }
+      loadQueue(true).finally(schedule);
+    };
+
+    loadAccount();
+    loadQueue(true).finally(schedule);
+    document.addEventListener("visibilitychange", onVisible);
+    const tickInterval = window.setInterval(() => setTick(t => t + 1), 1000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      window.clearInterval(tickInterval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   useEffect(() => {
     if (!showLogs) return;
+    let timer = 0;
     const fetchLogs = async () => {
+      if (document.visibilityState === "hidden") return;
       const data = await getSniperLogs(200).catch(() => ({ logs: [] }));
       setLogs(data.logs);
       setTimeout(() => logBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     };
+    const start = () => {
+      window.clearInterval(timer);
+      if (document.visibilityState === "hidden") return;
+      timer = window.setInterval(fetchLogs, 3000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        window.clearInterval(timer);
+        return;
+      }
+      fetchLogs();
+      start();
+    };
     fetchLogs();
-    const interval = setInterval(fetchLogs, 3000);
-    return () => clearInterval(interval);
+    start();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [showLogs]);
 
   void tick;

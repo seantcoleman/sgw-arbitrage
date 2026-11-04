@@ -387,15 +387,54 @@ export default function FavoritesPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let timer = 0;
+    let sawRunning = false;
+    const startedAt = Date.now();
+
     const poll = async () => {
+      if (document.visibilityState === "hidden") return;
       const status = await getFavoritesScanStatus().catch(() => ({ running: false }));
-      const wasRunning = scanning;
-      setScanning(status.running);
-      if (wasRunning && !status.running) fetchFavorites(true);
+      if (cancelled) return;
+      if (status.running) sawRunning = true;
+      // The scan flag flips on a background task, so the first check after
+      // clicking can still say idle. Stay in the scanning state until it
+      // has actually started, or until that wait is clearly over.
+      const gaveUp = scanning && !sawRunning && Date.now() - startedAt > 20_000;
+      const finished = scanning && sawRunning && !status.running;
+      if (!scanning && status.running) {
+        setScanning(true);
+        return;
+      }
+      if (finished || gaveUp) {
+        setScanning(false);
+        fetchFavorites(true);
+      }
     };
+
+    const start = () => {
+      window.clearInterval(timer);
+      if (cancelled || !scanning || document.visibilityState === "hidden") return;
+      timer = window.setInterval(poll, 10_000);
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        window.clearInterval(timer);
+        return;
+      }
+      poll();
+      start();
+    };
+
     poll();
-    const interval = setInterval(poll, 10000);
-    return () => clearInterval(interval);
+    start();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [scanning]);
 
   const handleScan = async () => {
