@@ -132,7 +132,7 @@ export default function SettingsPage() {
           onSave={v => save("ebay_days_back", v)}
           suffix="days" min={7} step={7}
         />
-        <div className="flex items-center justify-between py-4">
+        <div id="zip" className="flex items-center justify-between py-4">
           <div>
             <div className="text-sm font-medium text-zinc-200">ZIP code</div>
             <div className="text-xs text-zinc-600 mt-0.5">Used for shipping estimates</div>

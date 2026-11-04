@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { ListingMeta } from "@/components/WatchlistCard";
 import {
   addToWatchlist,
   FavoriteItem,
@@ -54,7 +55,7 @@ function FavCard({
   const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
   const [rechecking, setRechecking] = useState(false);
   const { label: timeLabel, urgency } = timeUntil(item.end_time);
-  const sgwShipping = item.shipping_est ?? 12;
+  const sgwShipping = item.pickup_only ? 0 : item.shipping_est ?? 12;
   const totalCost = item.current_bid + sgwShipping;
   const hasEbay = item.ebay_median != null;
   const youGetAmt = resolveYouGetAmount({
@@ -190,12 +191,19 @@ function FavCard({
         >
           {item.title}
         </a>
+        <ListingMeta item={item} />
 
         {hasEbay ? (
           <div className="space-y-1.5">
             <PriceCompareRow
               youPay={`$${totalCost.toFixed(2)}`}
-              youPayDetail={`$${item.current_bid.toFixed(2)} bid`}
+              youPayDetail={
+                item.pickup_only
+                  ? `$${item.current_bid.toFixed(2)} bid · Pickup only`
+                  : item.shipping_est != null
+                    ? `$${item.current_bid.toFixed(2)} bid + $${item.shipping_est.toFixed(2)} ship`
+                    : `$${item.current_bid.toFixed(2)} bid`
+              }
               ebayLabel={ebayWell!.ebayLabel}
               ebayValue={ebayWell!.ebayValue}
               ebayDetail={ebayWell!.ebayDetail}

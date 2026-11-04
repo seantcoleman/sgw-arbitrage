@@ -400,6 +400,14 @@ class BidSniper:
             return None
         return (end_dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
 
+    @staticmethod
+    def _needs_live_bid_refresh(seller_id, current_price, minimum_bid, seconds_left) -> bool:
+        """Whether to call ShopGoodwill for the price again before placing the bid."""
+        have_price = current_price is not None or minimum_bid is not None
+        if seller_id is not None and have_price and seconds_left is not None and seconds_left <= 8:
+            return False
+        return seller_id is None or seconds_left is None or seconds_left > 4
+
     def _prepare_snipe(self, job: Dict, item_id: int) -> Dict[str, Any]:
         """Log in and resolve seller/price before the final wait.
 
@@ -496,7 +504,10 @@ class BidSniper:
 
         # Refresh the price only when a slow lookup cannot push us past the end.
         # A hung ShopGoodwill call here is what made the suit bid land a minute late.
-        if seller_id is None or left is None or left > 4:
+        # With a seller and price already loaded, skip this inside the last 8
+        # seconds. ShopGoodwill rejects a bid under the new minimum, and the
+        # extra call can use up the lead.
+        if self._needs_live_bid_refresh(seller_id, current_price, minimum_bid, left):
             lookup_timeout = (2, 2) if (left is not None and left < 15) else (5, 8)
             try:
                 bid_info = self.shopgoodwill_client.get_item_bid_info(

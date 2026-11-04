@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { repriceItem, updateWatchlistMaxBid, WatchlistItem } from "@/lib/api";
+import { repriceItem, shippingCostLabel, updateWatchlistMaxBid, updateWatchlistNote, WatchlistItem } from "@/lib/api";
 import {
   CardImage,
   CardTopBadges,
@@ -228,14 +229,143 @@ export function EditableMaxBid({
   );
 }
 
+const NOTE_MAX = 500;
+
+export function bidCountLabel(count: number | null | undefined): string | null {
+  if (count == null || count < 0) return null;
+  return count === 1 ? "1 bid" : `${count} bids`;
+}
+
+export function bidderCountLabel(count: number | null | undefined): string | null {
+  if (count == null || count < 0) return null;
+  return count === 1 ? "1 bidder" : `${count} bidders`;
+}
+
+export function ListingMeta({
+  item,
+  className = "text-[11px] text-zinc-500 -mt-1",
+}: {
+  item: {
+    bid_count?: number | null;
+    bidder_count?: number | null;
+    pickup_only?: boolean | null;
+    shipping_est?: number | null;
+    needs_zip?: boolean | null;
+  };
+  className?: string;
+}) {
+  const parts = [
+    bidCountLabel(item.bid_count),
+    bidderCountLabel(item.bidder_count),
+    item.needs_zip ? null : shippingCostLabel(item),
+  ].filter(Boolean);
+  if (!parts.length && !item.needs_zip) return null;
+  return (
+    <p className={className}>
+      {parts.join(" · ")}
+      {item.needs_zip && (
+        <>
+          {parts.length > 0 && " · "}
+          <Link href="/settings#zip" className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200">
+            Add your ZIP for shipping
+          </Link>
+        </>
+      )}
+    </p>
+  );
+}
+
+export function WatchlistNote({
+  item,
+  onUpdated,
+}: {
+  item: WatchlistItem;
+  onUpdated?: (itemId: number, note: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(item.note ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setValue(item.note ?? "");
+    setEditing(true);
+  };
+
+  const save = async () => {
+    const next = value.trim();
+    if (next.length > NOTE_MAX) {
+      toast.error("Note must be 500 characters or fewer");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await updateWatchlistNote(item.item_id, next);
+      onUpdated?.(item.item_id, result.note);
+      setEditing(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not save note");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="space-y-1.5">
+        <textarea
+          value={value}
+          maxLength={NOTE_MAX}
+          rows={2}
+          onChange={e => setValue(e.target.value)}
+          placeholder="Note to yourself…"
+          className="w-full bg-zinc-800 border border-zinc-700 focus:border-zinc-500 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none resize-none"
+          autoFocus
+        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-100 text-xs px-2.5 py-1 rounded-lg font-semibold"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-zinc-500 hover:text-zinc-300 text-xs">
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.note) {
+    return (
+      <button
+        type="button"
+        onClick={startEdit}
+        className="text-left text-[11px] text-zinc-400 hover:text-zinc-200 line-clamp-2"
+      >
+        {item.note}
+      </button>
+    );
+  }
+
+  return (
+    <button type="button" onClick={startEdit} className="text-left text-[11px] text-zinc-600 hover:text-zinc-400">
+      Add note
+    </button>
+  );
+}
+
 interface WatchlistCardProps {
   item: WatchlistItem;
   onRemove: (itemId: number) => void;
   onRepriced: (itemId: number, update: Partial<WatchlistItem>) => void;
   onMaxBidUpdated?: (itemId: number, maxBid: number) => void;
+  onNoteUpdated?: (itemId: number, note: string | null) => void;
 }
 
-export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: WatchlistCardProps) {
+export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated, onNoteUpdated }: WatchlistCardProps) {
   const [showRecheck, setShowRecheck] = useState(false);
   const [searchTerm, setSearchTerm] = useState(item.ebay_search ?? "");
   const [rechecking, setRechecking] = useState(false);
@@ -343,6 +473,7 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
         >
           {item.title}
         </a>
+        <ListingMeta item={item} />
 
         {status === "awaiting_payment" ? (
           <div className="text-xs space-y-1.5">
@@ -489,6 +620,8 @@ export function WatchlistCard({ item, onRemove, onRepriced, onMaxBidUpdated }: W
             </div>
           )}
         </div>
+
+        <WatchlistNote item={item} onUpdated={onNoteUpdated} />
 
         <button
           onClick={() => onRemove(item.item_id)}

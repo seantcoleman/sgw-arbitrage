@@ -343,6 +343,111 @@ class WatchlistAddRequest(BaseModel):
     max_bid: float
 
 
+def _bid_count_from(payload: dict) -> Optional[int]:
+    """ShopGoodwill's bid-event count. Not the number of unique bidders."""
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("numberOfBids")
+    if raw is None or raw == "":
+        raw = payload.get("numBids")
+    if raw is None or raw == "":
+        return None
+    try:
+        count = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return count if count >= 0 else None
+
+
+def _bidder_count_from(payload: dict) -> Optional[int]:
+    """Unique bidder names in ShopGoodwill's bid history."""
+    if not isinstance(payload, dict):
+        return None
+    hist = payload.get("bidHistory")
+    if not isinstance(hist, dict):
+        return None
+    rows = hist.get("bidComplete")
+    if not isinstance(rows, list):
+        rows = hist.get("bidSummary")
+    if not isinstance(rows, list):
+        return None
+    names = set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get("retracted") is True:
+            continue
+        name = str(row.get("bidderName") or "").strip().lower()
+        if name:
+            names.add(name)
+    return len(names)
+
+
+def _attach_bidder_count(item: dict, info: dict) -> None:
+    if "bidder_count" in item:
+        return
+    count = _bidder_count_from(info)
+    if count is not None:
+        item["bidder_count"] = count
+
+
+_BIDDER_COUNT_CAP = 12
+
+
+def _fill_bidder_counts(items: list, sgw=None, user_id=None) -> None:
+    """Count distinct bidders from item detail. Failures leave the item unchanged."""
+    need = [item for item in items if "bidder_count" not in item]
+    if not need:
+        return
+    if sgw is None:
+        try:
+            sgw = _get_sgw_client_for_user(user_id)
+        except Exception as e:
+            logger.warning(f"Bidder count skipped: {e}")
+            return
+    for item in need[:_BIDDER_COUNT_CAP]:
+        try:
+            info = sgw.get_item_info(int(item["item_id"]), timeout=(2, 3))
+        except Exception as e:
+            logger.debug(f"Bidder count for {item.get('item_id')} skipped: {e}")
+            continue
+        if isinstance(info, dict):
+            _attach_bidder_count(item, info)
+
+
+_BID_COUNT_REFRESH_CAP = 6
+
+
+def _refresh_watchlist_bid_counts(user_id, items: list, price_changed: set, already_set: set) -> None:
+    """Fill missing bid counts from item detail. Failures leave the watchlist response alone."""
+    need = []
+    for w in items:
+        item_id = int(w["item_id"])
+        if item_id in already_set:
+            continue
+        missing = w.get("bid_count") is None
+        open_price_changed = item_id in price_changed and _watchlist_item_ended(w) is not True
+        if missing or open_price_changed:
+            need.append(w)
+    if not need:
+        return
+    try:
+        sgw = _get_sgw_client_for_user(user_id)
+    except Exception as e:
+        logger.warning(f"Bid count refresh skipped: {e}")
+        return
+    for w in need[:_BID_COUNT_REFRESH_CAP]:
+        try:
+            info = sgw.get_item_info(int(w["item_id"]), timeout=(2, 3))
+            if isinstance(info, dict):
+                _attach_bidder_count(w, info)
+            count = _bid_count_from(info)
+            if count is None:
+                continue
+            db.update_watchlist_bid_count(int(w["item_id"]), count, user_id=user_id)
+            w["bid_count"] = count
+        except Exception as e:
+            logger.debug(f"Bid count for {w.get('item_id')} skipped: {e}")
+
+
 @app.get("/watchlist")
 def get_watchlist(user: RequireUser):
     fee_pct, resale_ship = profit_calc.fee_settings(db.get_settings(user.id))
@@ -357,6 +462,8 @@ def get_watchlist(user: RequireUser):
         )
         and _watchlist_item_ended(w) is not True
     ]
+    price_changed: set = set()
+    bid_count_from_favorites: set = set()
     if active:
         try:
             favs = _get_sgw_client_for_user(user.id).get_favorites()
@@ -371,13 +478,24 @@ def get_watchlist(user: RequireUser):
                 if live_bid > 0 and abs(live_bid - stored_bid) >= 0.01:
                     db.update_watchlist_live_bid(w["item_id"], live_bid, live_end)
                     w["current_bid"] = live_bid
+                    price_changed.add(int(w["item_id"]))
                     if live_end:
                         w["end_time"] = live_end
                 elif live_end and live_end != w.get("end_time"):
                     db.update_watchlist_live_bid(w["item_id"], stored_bid or live_bid, live_end)
                     w["end_time"] = live_end
+                fav_count = _bid_count_from(fav)
+                if fav_count is not None:
+                    if fav_count != w.get("bid_count"):
+                        db.update_watchlist_bid_count(int(w["item_id"]), fav_count, user_id=user.id)
+                        w["bid_count"] = fav_count
+                    bid_count_from_favorites.add(int(w["item_id"]))
         except Exception as e:
             logger.warning(f"Watchlist live-bid sync skipped: {e}")
+
+    _refresh_watchlist_bid_counts(user.id, items, price_changed, bid_count_from_favorites)
+    _fill_shipping_estimates(user, items)
+    _fill_bidder_counts(items, user_id=user.id)
 
     items = [profit_calc.annotate_deal(w, fee_pct, resale_ship) for w in items]
     # Attach success-fee ledger rows for won/awaiting/shipped items
@@ -391,6 +509,116 @@ def get_watchlist(user: RequireUser):
     except Exception as e:
         logger.warning(f"Win-fee annotate skipped: {e}")
     return {"watchlist": items}
+
+
+_SHIPPING_FILL_CAP = 12
+
+
+def _is_pickup_only(info: dict) -> bool:
+    value = info.get("pickupOnly")
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes")
+    return bool(value)
+
+
+def _flat_shipping_price(info: dict) -> Optional[float]:
+    """Seller's listed flat rate. $0.01 is the common one-penny rate."""
+    raw = info.get("shippingPrice")
+    if raw is None or raw == "":
+        return None
+    try:
+        price = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return price if price >= 0 else None
+
+
+def _resolve_missing_shipping_quote(item: dict, sgw, item_id: int) -> bool:
+    """Decide the card when the ZIP calculator returns no amount."""
+    if sgw is None:
+        return False
+    try:
+        info = sgw.get_item_info(item_id, timeout=(2, 3))
+    except Exception as e:
+        logger.debug(f"Shipping fallback for {item_id} skipped: {e}")
+        return False
+    if not isinstance(info, dict):
+        return False
+    _attach_bidder_count(item, info)
+    if _is_pickup_only(info):
+        item["pickup_only"] = True
+        item["shipping_est"] = 0.0
+        return True
+    # No ZIP quote. The listing's own shippingPrice is the flat rate, including $0.01.
+    price = _flat_shipping_price(info)
+    if price is not None and price > 0:
+        item["pickup_only"] = False
+        item["shipping_est"] = price
+        return True
+    return False
+
+
+def _fill_shipping_estimates(user, items: list, sgw=None) -> None:
+    """Attach a ShopGoodwill ZIP shipping quote. Failures leave the item unchanged."""
+    if not items:
+        return
+    zip_code, ready = db.shipping_zip_ready(db.get_settings(user.id))
+    if not ready:
+        for item in items:
+            item["needs_zip"] = True
+            item["shipping_est"] = None
+            item.pop("pickup_only", None)
+        return
+    if not zip_code:
+        return
+    ids = [int(item["item_id"]) for item in items]
+    try:
+        cached = db.get_shipping_quotes(user.id, zip_code, ids)
+    except Exception as e:
+        logger.warning(f"Shipping quote lookup skipped: {e}")
+        cached = {}
+    deal_shipping: dict = {}
+    try:
+        for deal in db.get_deals_by_ids(ids):
+            if deal.get("shipping_est") is not None:
+                deal_shipping[int(deal["item_id"])] = float(deal["shipping_est"])
+    except Exception as e:
+        logger.warning(f"Deal shipping lookup skipped: {e}")
+
+    need = []
+    for item in items:
+        item_id = int(item["item_id"])
+        if item_id in cached:
+            item["shipping_est"] = cached[item_id]
+            continue
+        need.append(item)
+    if not need:
+        return
+    if sgw is None:
+        try:
+            sgw = _get_sgw_client_for_user(user.id)
+        except Exception as e:
+            logger.warning(f"Shipping estimate skipped: {e}")
+            sgw = None
+    for item in need[:_SHIPPING_FILL_CAP]:
+        item_id = int(item["item_id"])
+        amount = None
+        if sgw is not None:
+            try:
+                amount, _weight_invalid = sgw.quote_item_shipping(item_id, zip_code, timeout=(2, 3))
+            except Exception as e:
+                logger.debug(f"Shipping estimate for {item_id} skipped: {e}")
+        if amount is None:
+            if _resolve_missing_shipping_quote(item, sgw, item_id):
+                continue
+            if item.get("shipping_est") is None and item_id in deal_shipping:
+                item["shipping_est"] = deal_shipping[item_id]
+            continue
+        try:
+            db.save_shipping_quote(user.id, item_id, zip_code, amount)
+        except Exception as e:
+            logger.debug(f"Could not save shipping quote for {item_id}: {e}")
+        item["shipping_est"] = amount
 
 
 def _sgw_item_image_url(item_info: dict) -> Optional[str]:
@@ -502,6 +730,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
                 "profit": None,
                 "ebay_search": None,
                 "shipping_est": float(item_info.get("defaultShippingPrice") or item_info.get("shippingPrice") or 12.0),
+                "bid_count": _bid_count_from(item_info),
             }
         except Exception as e:
             raise HTTPException(status_code=404, detail=f"Deal not found and could not fetch from SGW: {e}")
@@ -510,7 +739,11 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         try:
             sgw = _get_sgw_client_for_user(user.id)
             item_info = sgw.get_item_info(req.item_id)
-            deal = {**deal, "image_url": _sgw_item_image_url(item_info) or deal.get("image_url")}
+            deal = {
+                **deal,
+                "image_url": _sgw_item_image_url(item_info) or deal.get("image_url"),
+                "bid_count": _bid_count_from(item_info),
+            }
         except Exception as e:
             logger.debug(f"Could not refresh image for {req.item_id}: {e}")
 
@@ -548,6 +781,7 @@ def add_to_watchlist(req: WatchlistAddRequest, background_tasks: BackgroundTasks
         "ebay_median": deal.get("ebay_median"),
         "profit": deal.get("profit"),
         "ebay_search": deal.get("ebay_search"),
+        "bid_count": deal.get("bid_count"),
         "user_id": user.id,
         "sgw_account_id": sgw_account_id,
     })
@@ -613,6 +847,29 @@ def update_watchlist_max_bid(item_id: int, req: WatchlistMaxBidRequest, user: Re
 
     db.update_watchlist_max_bid(item_id, req.max_bid, user_id=user.id)
     return {"success": True, "item_id": item_id, "max_bid": req.max_bid}
+
+
+NOTE_MAX_LENGTH = 500
+
+
+class WatchlistNoteRequest(BaseModel):
+    note: str = ""
+
+
+@app.patch("/watchlist/{item_id}/note")
+def update_watchlist_note(item_id: int, req: WatchlistNoteRequest, user: RequireUser):
+    """Save a private note. Not sent to ShopGoodwill, and still editable after the auction ends."""
+    watch = next((w for w in db.get_watchlist(user.id) if w["item_id"] == item_id), None)
+    if not watch:
+        raise HTTPException(status_code=404, detail="Item not on watchlist")
+
+    text = (req.note or "").strip()
+    if len(text) > NOTE_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
+
+    stored = text or None
+    db.update_watchlist_note(item_id, stored, user_id=user.id)
+    return {"success": True, "item_id": item_id, "note": stored}
 
 
 class RepriceRequest(BaseModel):
@@ -1396,12 +1653,17 @@ def get_all_favorites(user: RequireUser):
             "profit": record["profit"] if record else None,
             "margin": record["margin"] if record else None,
             "shipping_est": record["shipping_est"] if record else None,
+            "bid_count": _bid_count_from(fav),
         }
-        if record and record.get("ebay_median") is not None:
-            # Prefer live SGW bid for cost basis when annotating
+        if record and record.get("shipping_est") is not None:
             entry["shipping_est"] = record.get("shipping_est")
-            profit_calc.annotate_deal(entry, fee_pct, resale_ship)
         result.append(entry)
+
+    _fill_shipping_estimates(user, result, sgw)
+    _fill_bidder_counts(result, sgw)
+    for entry in result:
+        if entry.get("ebay_median") is not None:
+            profit_calc.annotate_deal(entry, fee_pct, resale_ship)
 
     # Soonest ending first; missing end times last
     result.sort(key=lambda x: (x["end_time"] is None, x["end_time"] or ""))

@@ -131,9 +131,21 @@ def init_db():
             ("ebay_search",    "TEXT"),
             ("user_id",        "INTEGER"),
             ("sgw_account_id", "INTEGER"),
+            ("bid_count",      "INTEGER"),
+            ("note",           "TEXT"),
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typedef}")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS shipping_quotes (
+                user_id TEXT NOT NULL,
+                item_id INTEGER NOT NULL,
+                zip     TEXT NOT NULL,
+                amount  REAL NOT NULL,
+                PRIMARY KEY (user_id, item_id, zip)
+            )
+        """)
 
         # Multi-tenant foundations (Phase 1 seeds a single local owner + env SGW account)
         conn.executescript("""
@@ -430,6 +442,41 @@ def get_deals(
     return [dict(r) for r in rows]
 
 
+def get_shipping_quotes(user_id: UserId, zip_code: str, item_ids: List[int]) -> Dict[int, float]:
+    """ZIP shipping estimates already fetched from ShopGoodwill."""
+    if not item_ids or not zip_code:
+        return {}
+    placeholders = ",".join("?" * len(item_ids))
+    params: List[Any] = [str(user_id), zip_code, *item_ids]
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT item_id, amount FROM shipping_quotes
+            WHERE user_id = ? AND zip = ? AND item_id IN ({placeholders})
+            """,
+            params,
+        ).fetchall()
+    out: Dict[int, float] = {}
+    for row in rows:
+        try:
+            out[int(row["item_id"])] = float(row["amount"])
+        except (TypeError, ValueError, KeyError):
+            continue
+    return out
+
+
+def save_shipping_quote(user_id: UserId, item_id: int, zip_code: str, amount: float) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO shipping_quotes (user_id, item_id, zip, amount)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (user_id, item_id, zip) DO UPDATE SET amount = excluded.amount
+            """,
+            (str(user_id), item_id, zip_code, amount),
+        )
+
+
 def get_deals_by_ids(item_ids: List[int]) -> List[Dict]:
     """Fetch deals/skipped records by item ID with no profit or status filter."""
     if not item_ids:
@@ -562,9 +609,9 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
                 """
                 INSERT INTO watchlist (
                     user_id, item_id, sgw_account_id, title, max_bid, current_bid, end_time,
-                    sgw_url, image_url, ebay_median, profit, ebay_search
+                    sgw_url, image_url, ebay_median, profit, ebay_search, bid_count
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 ON CONFLICT (user_id, item_id) DO UPDATE SET
                     max_bid = EXCLUDED.max_bid,
@@ -576,6 +623,7 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
                     profit = COALESCE(EXCLUDED.profit, watchlist.profit),
                     ebay_search = COALESCE(EXCLUDED.ebay_search, watchlist.ebay_search),
                     sgw_account_id = COALESCE(EXCLUDED.sgw_account_id, watchlist.sgw_account_id),
+                    bid_count = COALESCE(EXCLUDED.bid_count, watchlist.bid_count),
                     sniper_status = 'scheduled'
                 """,
                 (
@@ -591,6 +639,7 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
                     item.get("ebay_median"),
                     item.get("profit"),
                     item.get("ebay_search"),
+                    item.get("bid_count"),
                 ),
             )
         return
@@ -601,17 +650,32 @@ def add_to_watchlist(item: Dict[str, Any]) -> None:
         "user_id": item.get("user_id") or owner["user_id"],
         "sgw_account_id": item.get("sgw_account_id") or owner["sgw_account_id"],
     }
+    payload["bid_count"] = item.get("bid_count")
     with get_conn() as conn:
         conn.execute("""
-            INSERT OR REPLACE INTO watchlist (
+            INSERT INTO watchlist (
                 item_id, title, max_bid, current_bid, end_time,
                 sgw_url, image_url, ebay_median, profit, ebay_search,
-                user_id, sgw_account_id
+                user_id, sgw_account_id, bid_count
             ) VALUES (
                 :item_id, :title, :max_bid, :current_bid, :end_time,
                 :sgw_url, :image_url, :ebay_median, :profit, :ebay_search,
-                :user_id, :sgw_account_id
+                :user_id, :sgw_account_id, :bid_count
             )
+            ON CONFLICT(item_id) DO UPDATE SET
+                title = excluded.title,
+                max_bid = excluded.max_bid,
+                current_bid = excluded.current_bid,
+                end_time = excluded.end_time,
+                sgw_url = COALESCE(excluded.sgw_url, watchlist.sgw_url),
+                image_url = COALESCE(excluded.image_url, watchlist.image_url),
+                ebay_median = COALESCE(excluded.ebay_median, watchlist.ebay_median),
+                profit = COALESCE(excluded.profit, watchlist.profit),
+                ebay_search = COALESCE(excluded.ebay_search, watchlist.ebay_search),
+                user_id = excluded.user_id,
+                sgw_account_id = COALESCE(excluded.sgw_account_id, watchlist.sgw_account_id),
+                bid_count = COALESCE(excluded.bid_count, watchlist.bid_count),
+                sniper_status = 'scheduled'
         """, payload)
 
 
@@ -788,6 +852,42 @@ def update_watchlist_live_bid(
             user_id=row["user_id"],
             sgw_account_id=row["sgw_account_id"],
         )
+
+
+def update_watchlist_bid_count(
+    item_id: int,
+    bid_count: int,
+    user_id: Optional[UserId] = None,
+) -> None:
+    with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                "UPDATE watchlist SET bid_count = ? WHERE user_id = ? AND item_id = ?",
+                (bid_count, str(user_id), item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET bid_count = ? WHERE item_id = ?",
+                (bid_count, item_id),
+            )
+
+
+def update_watchlist_note(
+    item_id: int,
+    note: Optional[str],
+    user_id: Optional[UserId] = None,
+) -> None:
+    with get_conn() as conn:
+        if using_postgres() and user_id is not None:
+            conn.execute(
+                "UPDATE watchlist SET note = ? WHERE user_id = ? AND item_id = ?",
+                (note, str(user_id), item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET note = ? WHERE item_id = ?",
+                (note, item_id),
+            )
 
 
 def update_watchlist_status(item_id: int, status: str, user_id: Optional[UserId] = None) -> None:
@@ -1479,11 +1579,26 @@ def get_snipe_job_for_item(item_id: int, user_id: Optional[UserId] = None) -> Op
 _USER_SETTING_KEYS = {
     "snipe_seconds_before",
     "your_zip_code",
+    "zip_confirmed",
     "ebay_fee_pct",
     "ebay_resale_shipping",
     "ebay_display_mode",
     "ebay_days_back",
 }
+
+DEFAULT_ZIP = "90210"
+
+
+def shipping_zip_ready(settings: Dict[str, Any]) -> tuple:
+    """Return (zip, ready). The default 90210 is not a saved ZIP until the user saves it."""
+    zip_code = str((settings or {}).get("your_zip_code") or "").strip()
+    flag = (settings or {}).get("zip_confirmed")
+    confirmed = flag in (True, 1, "1", "true", "True")
+    if confirmed and zip_code:
+        return zip_code, True
+    if zip_code and zip_code != DEFAULT_ZIP:
+        return zip_code, True
+    return zip_code, False
 
 
 def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
@@ -1509,7 +1624,8 @@ def get_settings(user_id: Optional[UserId] = None) -> Dict[str, Any]:
                 else:
                     # defaults
                     result.setdefault("snipe_seconds_before", 5)
-                    result.setdefault("your_zip_code", "90210")
+                    result.setdefault("your_zip_code", DEFAULT_ZIP)
+                    result.setdefault("zip_confirmed", False)
                     result.setdefault("ebay_fee_pct", 13)
                     result.setdefault("ebay_resale_shipping", 7)
                     result.setdefault("ebay_display_mode", "net")
@@ -1562,10 +1678,21 @@ def update_setting(key: str, value: Any, user_id: Optional[UserId] = None) -> No
                     "INSERT INTO user_settings (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING",
                     (str(user_id),),
                 )
-                conn.execute(
-                    f"UPDATE user_settings SET {key} = ?, updated_at = now() WHERE user_id = ?",
-                    (value, str(user_id)),
-                )
+                if key == "your_zip_code":
+                    zip_value = str(value or "").strip()
+                    conn.execute(
+                        """
+                        UPDATE user_settings
+                        SET your_zip_code = ?, zip_confirmed = ?, updated_at = now()
+                        WHERE user_id = ?
+                        """,
+                        (zip_value, bool(zip_value), str(user_id)),
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE user_settings SET {key} = ?, updated_at = now() WHERE user_id = ?",
+                        (value, str(user_id)),
+                    )
             else:
                 conn.execute(
                     """
@@ -1579,6 +1706,12 @@ def update_setting(key: str, value: Any, user_id: Optional[UserId] = None) -> No
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                 (key, json.dumps(value)),
             )
+            if key == "your_zip_code":
+                zip_value = str(value or "").strip()
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    ("zip_confirmed", json.dumps(bool(zip_value))),
+                )
 
 
 def ensure_user_profile(user_id: UserId, email: Optional[str] = None) -> None:

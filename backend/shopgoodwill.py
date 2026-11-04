@@ -20,6 +20,11 @@ from requests.exceptions import HTTPError
 from requests.models import PreparedRequest, Response
 
 _SHIPPING_COST_PATTERN = re.compile(r"Shipping: \$(\d+\.\d+) \(.*\)<\/span>")
+# Current CalculateShipping HTML is "Shipping: <span ...>$8.58 (GROUND...)</span>".
+_SHIPPING_AMOUNT_PATTERN = re.compile(
+    r"Shipping:\s*(?:<[^>]*>)?\s*\$(\d+\.\d+)",
+    re.IGNORECASE,
+)
 _SGW_BUYERAPI_DOMAIN = "buyerapi.shopgoodwill.com"
 
 
@@ -451,7 +456,21 @@ class Shopgoodwill:
             "total": sr.get("itemCount") or 0,
         }
 
-    def get_item_shipping_estimate(self, item_id: int, zip_code: str) -> Optional[float]:
+    def quote_item_shipping(
+        self,
+        item_id: int,
+        zip_code: str,
+        timeout: Optional[Tuple[float, float]] = None,
+    ) -> Tuple[Optional[float], bool]:
+        """Return (amount, weight_invalid).
+
+        weight_invalid means ShopGoodwill refused the ZIP quote because the
+        seller did not enter a package weight. Those listings often charge a
+        flat rate, including the one-penny rate, on shippingPrice instead.
+        """
+        kwargs: Dict = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
         resp = self.shopgoodwill_session.post(
             f"{Shopgoodwill.API_ROOT}/itemDetail/CalculateShipping",
             json={
@@ -462,8 +481,38 @@ class Shopgoodwill:
                 "quantity": 1,
                 "clientIP": "0.0.0.0",
             },
+            **kwargs,
         )
-        shipping_est_price = _SHIPPING_COST_PATTERN.findall(resp.text)
-        if len(shipping_est_price) > 0:
-            return float(shipping_est_price[0])
-        return None
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            for key in ("shippingCost", "shippingPrice", "shipping", "totalShippingCost"):
+                raw = data.get(key)
+                if raw is None or raw == "":
+                    continue
+                try:
+                    return float(raw), False
+                except (TypeError, ValueError):
+                    continue
+        body = data if isinstance(data, str) else (resp.text or "")
+        lower = body.lower()
+        weight_invalid = (
+            "package weight is missing" in lower or "package.weight.invalid" in lower
+        )
+        if "error calculating your shipping" in lower:
+            return None, weight_invalid
+        match = _SHIPPING_AMOUNT_PATTERN.search(body) or _SHIPPING_COST_PATTERN.search(body)
+        if match:
+            return float(match.group(1)), False
+        return None, weight_invalid
+
+    def get_item_shipping_estimate(
+        self,
+        item_id: int,
+        zip_code: str,
+        timeout: Optional[Tuple[float, float]] = None,
+    ) -> Optional[float]:
+        amount, _weight_invalid = self.quote_item_shipping(item_id, zip_code, timeout=timeout)
+        return amount

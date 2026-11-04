@@ -75,6 +75,12 @@ export const updateWatchlistMaxBid = (item_id: number, max_bid: number) =>
     body: JSON.stringify({ max_bid }),
   });
 
+export const updateWatchlistNote = (item_id: number, note: string) =>
+  apiFetch<{ success: boolean; item_id: number; note: string | null }>(`/watchlist/${item_id}/note`, {
+    method: "PATCH",
+    body: JSON.stringify({ note }),
+  });
+
 // Scanner
 export const triggerScan = () => apiFetch("/scan", { method: "POST" });
 export const getScanStatus = () => apiFetch<ScanStatus>("/scan/status");
@@ -163,6 +169,12 @@ export interface WatchlistItem {
   tracking_number: string | null;
   shipper_name: string | null;
   due_date: string | null;
+  bid_count?: number | null;
+  bidder_count?: number | null;
+  note?: string | null;
+  shipping_est?: number | null;
+  pickup_only?: boolean | null;
+  needs_zip?: boolean | null;
   added_at: string;
   success_fee_cents?: number | null;
   success_fee_status?: string | null;
@@ -230,6 +242,15 @@ export function flattenCategories(categories: Category[]): Category[] {
   return out;
 }
 
+export function shippingCostLabel(item: {
+  pickup_only?: boolean | null;
+  shipping_est?: number | null;
+}): string | null {
+  if (item.pickup_only) return "Pickup only";
+  if (item.shipping_est == null) return null;
+  return `Ship $${item.shipping_est.toFixed(2)}`;
+}
+
 export interface FavoriteItem {
   item_id: number;
   title: string;
@@ -250,6 +271,10 @@ export interface FavoriteItem {
   profit: number | null;
   margin: number | null;
   shipping_est: number | null;
+  pickup_only?: boolean | null;
+  needs_zip?: boolean | null;
+  bid_count?: number | null;
+  bidder_count?: number | null;
   ebay_fee_pct?: number;
   ebay_resale_shipping?: number;
 }

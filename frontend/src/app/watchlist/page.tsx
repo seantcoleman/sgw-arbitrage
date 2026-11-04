@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { EditableMaxBid, WatchlistCard } from "@/components/WatchlistCard";
+import { bidCountLabel, bidderCountLabel, EditableMaxBid, WatchlistCard, WatchlistNote } from "@/components/WatchlistCard";
 import {
   auctionHasEnded,
   displaySniperStatus,
@@ -21,6 +21,7 @@ import {
   getWatchlist,
   removeFromWatchlist,
   repriceItem,
+  shippingCostLabel,
   SniperLogEntry,
   WatchlistItem,
 } from "@/lib/api";
@@ -167,12 +168,14 @@ export default function WatchlistPage() {
   const [pasteMaxBid, setPasteMaxBid] = useState("");
   const [adding, setAdding] = useState(false);
   const [pendingAdd, setPendingAdd] = useState<{ itemId: number; maxBid: number } | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
-    if (typeof window === "undefined") return "list";
-    return (localStorage.getItem("watchlist-view") as "list" | "cards") || "list";
-  });
+  const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const logBottomRef = useRef<HTMLDivElement>(null);
   const addingRef = useRef(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("watchlist-view");
+    if (saved === "list" || saved === "cards") setViewMode(saved);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -241,6 +244,10 @@ export default function WatchlistPage() {
 
   const handleMaxBidUpdated = (itemId: number, maxBid: number) => {
     setWatchlist(prev => prev.map(i => (i.item_id === itemId ? { ...i, max_bid: maxBid } : i)));
+  };
+
+  const handleNoteUpdated = (itemId: number, note: string | null) => {
+    setWatchlist(prev => prev.map(i => (i.item_id === itemId ? { ...i, note } : i)));
   };
 
   const handlePasteAdd = async () => {
@@ -356,6 +363,7 @@ export default function WatchlistPage() {
         setWatchlist(prev => prev.map(i => i.item_id === itemId ? { ...i, ...update } : i));
       }}
       onMaxBidUpdated={handleMaxBidUpdated}
+      onNoteUpdated={handleNoteUpdated}
     />
   );
 
@@ -378,14 +386,30 @@ export default function WatchlistPage() {
                 )}
 
                 <div className="flex-1 min-w-0">
-                  <a
-                    href={item.sgw_url ?? "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-semibold text-sm text-zinc-100 hover:text-zinc-50 line-clamp-1 block"
-                  >
-                    {item.title}
-                  </a>
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <a
+                      href={item.sgw_url ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-sm text-zinc-100 hover:text-zinc-50 line-clamp-1 min-w-0"
+                    >
+                      {item.title}
+                    </a>
+                    {bidCountLabel(item.bid_count) && (
+                      <span className="shrink-0 text-[11px] text-zinc-500">{bidCountLabel(item.bid_count)}</span>
+                    )}
+                    {bidderCountLabel(item.bidder_count) && (
+                      <span className="shrink-0 text-[11px] text-zinc-500">{bidderCountLabel(item.bidder_count)}</span>
+                    )}
+                    {!item.needs_zip && shippingCostLabel(item) && (
+                      <span className="shrink-0 text-[11px] text-zinc-500">{shippingCostLabel(item)}</span>
+                    )}
+                    {item.needs_zip && (
+                      <Link href="/settings#zip" className="shrink-0 text-[11px] text-zinc-400 underline underline-offset-2 hover:text-zinc-200">
+                        Add your ZIP for shipping
+                      </Link>
+                    )}
+                  </div>
 
                   {/* Won result — show final price instead of live prices */}
                   {displayStatus === "awaiting_payment" ? (
@@ -520,6 +544,10 @@ export default function WatchlistPage() {
                       )}
                     </div>
                   )}
+
+                  <div className="mt-1.5">
+                    <WatchlistNote item={item} onUpdated={handleNoteUpdated} />
+                  </div>
 
                   {/* eBay search term + override */}
                   {(item.ebay_search || item.ebay_median != null) && (
