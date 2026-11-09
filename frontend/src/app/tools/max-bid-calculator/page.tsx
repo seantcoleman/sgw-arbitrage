@@ -108,10 +108,10 @@ export default function MaxBidCalculatorPage() {
           Snipe with eBay comps
         </Link>
         <Link
-          href="/guides/shopgoodwill-bidding-strategy"
+          href="/tools/bid-strategy-calculator"
           className="inline-block rounded-xl border border-zinc-700 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:border-zinc-500"
         >
-          Bidding strategy guide
+          Bid strategy calculator
         </Link>
       </p>
       <FaqSection faqs={FAQS} />

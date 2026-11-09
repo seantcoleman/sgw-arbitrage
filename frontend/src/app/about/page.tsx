@@ -100,6 +100,14 @@ export default function AboutPage() {
           </Link>
         </li>
         <li>
+          <Link
+            href="/tools/bid-strategy-calculator"
+            className="text-emerald-400 hover:underline"
+          >
+            Bid strategy calculator
+          </Link>
+        </li>
+        <li>
           <Link href="/tools/max-bid-calculator" className="text-emerald-400 hover:underline">
             Max bid calculator
           </Link>
