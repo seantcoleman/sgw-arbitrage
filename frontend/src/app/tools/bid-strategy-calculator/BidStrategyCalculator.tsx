@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   PRO_MONTHLY_USD,
@@ -223,6 +224,23 @@ export function BidStrategyCalculator() {
                   : "?"
               } wins/mo at this hammer size.`}
         </p>
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link
+          href="/signup"
+          className="inline-block rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+        >
+          {result.verdict === "skip"
+            ? "Browse other lots in BuzzerBidder"
+            : "Queue this max with live eBay comps"}
+        </Link>
+        <Link
+          href="/pricing"
+          className="inline-block rounded-xl border border-zinc-700 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:border-zinc-500"
+        >
+          See Standard vs Pro
+        </Link>
       </div>
     </div>
   );

@@ -236,6 +236,10 @@ export default function LandingPage() {
             Guides
           </Link>
           {" · "}
+          <Link href="/tools/bid-strategy-calculator" className="hover:text-zinc-400">
+            Bid calculator
+          </Link>
+          {" · "}
           <Link href="/about" className="hover:text-zinc-400">
             About
           </Link>
