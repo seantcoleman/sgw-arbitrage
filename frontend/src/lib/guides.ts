@@ -62,7 +62,7 @@ export const GUIDES: GuideMeta[] = [
     keywords: "shopgoodwill bidding tips, shopgoodwill bidding strategy",
     priority: 0.85,
     datePublished: "2026-10-06",
-    dateModified: "2026-10-20",
+    dateModified: "2026-11-09",
   },
 ];
 
@@ -103,6 +103,17 @@ export const ALTERNATIVES_PAGES: GuideMeta[] = [
 ];
 
 export const TOOL_PAGES: GuideMeta[] = [
+  {
+    href: "/tools/bid-strategy-calculator",
+    title: "ShopGoodwill bid strategy calculator",
+    description:
+      "Free bid strategy calculator: max bid from eBay comps, snipe vs skip from the current bid, and Standard vs Pro at your win volume.",
+    keywords:
+      "bid strategy calculator, shopgoodwill bid strategy calculator, shopgoodwill bidding calculator",
+    priority: 0.9,
+    datePublished: "2026-11-09",
+    dateModified: "2026-11-09",
+  },
   {
     href: "/tools/max-bid-calculator",
     title: "ShopGoodwill max bid calculator",

@@ -11,6 +11,7 @@
 - About: https://buzzerbidder.com/about
 - Guides hub: https://buzzerbidder.com/guides
 - Alternatives: https://buzzerbidder.com/alternatives/shopgoodwill-snipers
+- Bid strategy calculator: https://buzzerbidder.com/tools/bid-strategy-calculator
 - Max bid calculator: https://buzzerbidder.com/tools/max-bid-calculator
 
 ## Key guides

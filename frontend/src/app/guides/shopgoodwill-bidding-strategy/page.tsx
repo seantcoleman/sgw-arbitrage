@@ -34,7 +34,7 @@ const FAQS: Faq[] = [
   },
   {
     q: "How do I pick a max bid?",
-    a: "Start from recent eBay sold comps, subtract marketplace fees and shipping both ways, then leave profit margin. Use our free max bid calculator, then queue in BuzzerBidder with live comps.",
+    a: "Start from recent eBay sold comps, subtract marketplace fees and shipping both ways, then leave profit margin. Use our free bid strategy calculator (or max bid calculator), then queue in BuzzerBidder with live comps.",
   },
   {
     q: "When should I skip an auction?",
@@ -94,10 +94,14 @@ export default function BiddingStrategyGuidePage() {
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Pull recent sold comps for the same model/condition. Net out marketplace fees and shipping
         to the buyer (and from ShopGoodwill to you). Only then set a max. Our{" "}
+        <Link href="/tools/bid-strategy-calculator" className="text-emerald-400 hover:underline">
+          bid strategy calculator
+        </Link>
+        ,{" "}
         <Link href="/tools/max-bid-calculator" className="text-emerald-400 hover:underline">
           max bid calculator
-        </Link>{" "}
-        and{" "}
+        </Link>
+        , and{" "}
         <Link
           href="/guides/shopgoodwill-ebay-arbitrage"
           className="text-emerald-400 hover:underline"
@@ -148,10 +152,10 @@ export default function BiddingStrategyGuidePage() {
 
       <p className="mt-8 flex flex-wrap gap-3">
         <Link
-          href="/tools/max-bid-calculator"
+          href="/tools/bid-strategy-calculator"
           className="inline-block rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
         >
-          Open max bid calculator
+          Open bid strategy calculator
         </Link>
         <Link
           href="/signup"
