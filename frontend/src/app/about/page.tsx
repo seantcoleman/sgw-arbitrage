@@ -100,6 +100,11 @@ export default function AboutPage() {
           </Link>
         </li>
         <li>
+          <Link href="/guides/auction-item-terms" className="text-emerald-400 hover:underline">
+            Auction item terms (NIB, NWT, …)
+          </Link>
+        </li>
+        <li>
           <Link
             href="/tools/bid-strategy-calculator"
             className="text-emerald-400 hover:underline"

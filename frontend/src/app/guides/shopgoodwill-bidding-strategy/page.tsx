@@ -93,7 +93,12 @@ export default function BiddingStrategyGuidePage() {
       </h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-400">
         Pull recent sold comps for the same model/condition. Net out marketplace fees and shipping
-        to the buyer (and from ShopGoodwill to you). Only then set a max. Our{" "}
+        to the buyer (and from ShopGoodwill to you). Only then set a max — and decode title shorthand
+        like NIB/NWT with our{" "}
+        <Link href="/guides/auction-item-terms" className="text-emerald-400 hover:underline">
+          auction item terms glossary
+        </Link>
+        . Our{" "}
         <Link href="/tools/bid-strategy-calculator" className="text-emerald-400 hover:underline">
           bid strategy calculator
         </Link>
