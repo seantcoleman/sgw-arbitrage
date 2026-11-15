@@ -62,7 +62,18 @@ export const GUIDES: GuideMeta[] = [
     keywords: "shopgoodwill bidding tips, shopgoodwill bidding strategy",
     priority: 0.85,
     datePublished: "2026-10-06",
-    dateModified: "2026-11-09",
+    dateModified: "2026-11-15",
+  },
+  {
+    href: "/guides/auction-item-terms",
+    title: "Auction item terms: NIB, NWT, and more",
+    description:
+      "Glossary of auction and ShopGoodwill listing abbreviations — NIB, NWT, NWOT, MIB, as-is, untested, and how they affect your max bid.",
+    keywords:
+      "NIB meaning, NWT meaning, auction abbreviations, ShopGoodwill abbreviations, NWOT MIB NOS",
+    priority: 0.85,
+    datePublished: "2026-11-15",
+    dateModified: "2026-11-15",
   },
 ];
 
