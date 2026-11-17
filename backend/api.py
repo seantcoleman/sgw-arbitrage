@@ -533,33 +533,58 @@ def _flat_shipping_price(info: dict) -> Optional[float]:
     return price if price >= 0 else None
 
 
-def _resolve_missing_shipping_quote(item: dict, sgw, item_id: int) -> bool:
-    """Decide the card when the ZIP calculator returns no amount."""
-    if sgw is None:
-        return False
-    try:
-        info = sgw.get_item_info(item_id, timeout=(2, 3))
-    except Exception as e:
-        logger.debug(f"Shipping fallback for {item_id} skipped: {e}")
-        return False
-    if not isinstance(info, dict):
-        return False
+def _listing_shipping_rate(info: dict) -> Optional[float]:
+    """Shipping price printed on the listing.
+
+    ShopGoodwill charges this when it is above zero, including the one-penny
+    rate. A zero shippingPrice means the ZIP calculator sets the price.
+    Pickup listings are handled separately and are not a flat rate.
+    """
+    if _is_pickup_only(info):
+        return None
+    price = _flat_shipping_price(info)
+    if price is not None and price > 0:
+        return price
+    return None
+
+
+def _apply_item_shipping(item: dict, info: dict) -> Optional[str]:
+    """Apply pickup or the listing's shipping price. Returns which one, or None."""
     _attach_bidder_count(item, info)
     if _is_pickup_only(info):
         item["pickup_only"] = True
         item["shipping_est"] = 0.0
-        return True
-    # No ZIP quote. The listing's own shippingPrice is the flat rate, including $0.01.
-    price = _flat_shipping_price(info)
-    if price is not None and price > 0:
+        return "pickup"
+    price = _listing_shipping_rate(info)
+    if price is not None:
         item["pickup_only"] = False
         item["shipping_est"] = price
-        return True
-    return False
+        return "listing"
+    return None
+
+
+def _resolve_missing_shipping_quote(item: dict, sgw, item_id: int, info: Optional[dict] = None) -> bool:
+    """Decide the card when the ZIP calculator returns no amount."""
+    if info is None:
+        if sgw is None:
+            return False
+        try:
+            info = sgw.get_item_info(item_id, timeout=(2, 3))
+        except Exception as e:
+            logger.debug(f"Shipping fallback for {item_id} skipped: {e}")
+            return False
+    if not isinstance(info, dict):
+        return False
+    return _apply_item_shipping(item, info) is not None
 
 
 def _fill_shipping_estimates(user, items: list, sgw=None) -> None:
-    """Attach a ShopGoodwill ZIP shipping quote. Failures leave the item unchanged."""
+    """Attach shipping for each card.
+
+    The price printed on the listing wins, including $0.01. The ZIP calculator
+    is only for listings whose shipping price is $0. A saved quote is reused
+    so a page load does not ask ShopGoodwill again.
+    """
     if not items:
         return
     zip_code, ready = db.shipping_zip_ready(db.get_settings(user.id))
@@ -602,6 +627,22 @@ def _fill_shipping_estimates(user, items: list, sgw=None) -> None:
             sgw = None
     for item in need[:_SHIPPING_FILL_CAP]:
         item_id = int(item["item_id"])
+        info = None
+        if sgw is not None:
+            try:
+                info = sgw.get_item_info(item_id, timeout=(2, 3))
+            except Exception as e:
+                logger.debug(f"Shipping listing lookup for {item_id} skipped: {e}")
+        if isinstance(info, dict):
+            kind = _apply_item_shipping(item, info)
+            if kind == "listing":
+                try:
+                    db.save_shipping_quote(user.id, item_id, zip_code, float(item["shipping_est"]))
+                except Exception as e:
+                    logger.debug(f"Could not save shipping quote for {item_id}: {e}")
+                continue
+            if kind == "pickup":
+                continue
         amount = None
         if sgw is not None:
             try:
@@ -609,7 +650,7 @@ def _fill_shipping_estimates(user, items: list, sgw=None) -> None:
             except Exception as e:
                 logger.debug(f"Shipping estimate for {item_id} skipped: {e}")
         if amount is None:
-            if _resolve_missing_shipping_quote(item, sgw, item_id):
+            if info is None and _resolve_missing_shipping_quote(item, sgw, item_id):
                 continue
             if item.get("shipping_est") is None and item_id in deal_shipping:
                 item["shipping_est"] = deal_shipping[item_id]
